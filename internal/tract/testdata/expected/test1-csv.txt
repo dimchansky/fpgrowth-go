@@ -1,0 +1,646 @@
+case test1.csv fmt=csv w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 6 20 a
+code 1 3 7 22 b
+code 2 3 7 22 c
+code 3 3 7 22 d
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 2 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 3
+ta 1 3 0 3 4
+ta 1 2 1 2
+ta 1 3 1 2 3
+ta 1 3 2 3 4
+ta 1 2 3 4
+ifrqs 6 7 7 7 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=0 reorder=0 zmin=1 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 6 20 a
+code 1 3 7 22 b
+code 2 3 7 22 c
+code 3 3 7 22 d
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 2 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 3
+ta 1 3 0 3 4
+ta 1 2 1 2
+ta 1 3 1 2 3
+ta 1 3 2 3 4
+ta 1 2 3 4
+ifrqs 6 7 7 7 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=1 reorder=0 zmin=2 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+ifrqs 7 7 7 6 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=1 reorder=0 zmin=3 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 7 records 10 wgt 10 max 4 extent 19
+ta 2 0
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 2 3 1 2 3
+ifrqs 6 6 6 6 2
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=-1 reorder=0 zmin=0 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 4
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483634 4
+pta 1 3 -2147483642 4
+pta 2 3 -2147483638 4
+pta 1 3 -2147483636 4
+pta 1 2 -2147483640 4
+ifrqs 10 0 0 0 7
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=-1 reorder=0 zmin=1 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 4
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483634 4
+pta 1 3 -2147483642 4
+pta 2 3 -2147483638 4
+pta 1 3 -2147483636 4
+pta 1 2 -2147483640 4
+ifrqs 10 0 0 0 7
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=2 reorder=0 zmin=2 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+pack 4
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483645 4
+pta 1 3 -2147483635
+pta 1 3 -2147483639 4
+pta 1 2 -2147483647 4
+pta 1 2 -2147483642
+pta 2 3 -2147483634
+ifrqs 10 0 0 0 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=2 reorder=0 zmin=3 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 7 records 10 wgt 10 max 4 extent 19
+ta 2 0
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 2 3 1 2 3
+pack 4
+pta 2 0
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483645 4
+pta 1 3 -2147483635
+pta 1 3 -2147483639 4
+pta 2 3 -2147483634
+ifrqs 8 0 0 0 2
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+pack 16
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483629
+pta 1 3 -2147483635
+pta 1 3 -2147483623
+pta 1 2 -2147483631
+pta 1 2 -2147483642
+pta 2 3 -2147483634
+ifrqs 10 0 0 0 0
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=2 reorder=1 zmin=1 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+pack 16
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483629
+pta 1 3 -2147483635
+pta 1 3 -2147483623
+pta 1 2 -2147483631
+pta 1 2 -2147483642
+pta 2 3 -2147483634
+ifrqs 10 0 0 0 0
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=-2 reorder=0 zmin=2 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 16
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483618
+pta 1 3 -2147483626
+pta 2 3 -2147483622
+pta 1 3 -2147483620
+pta 1 2 -2147483624
+ifrqs 10 0 0 0 0
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=-2 reorder=0 zmin=3 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 7 records 10 wgt 10 max 4 extent 19
+ta 2 0
+ta 1 3 0 1 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+pack 16
+pta 2 0
+pta 1 3 -2147483641
+pta 1 3 -2147483635
+pta 2 4 -2147483618
+pta 1 3 -2147483626
+pta 2 3 -2147483622
+pta 1 3 -2147483620
+ifrqs 8 0 0 0 0
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=-2 reorder=1 zmin=0 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+ifrqs 3 6 7 7 7
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=-2 reorder=1 zmin=1 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+ifrqs 3 6 7 7 7
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=3 reorder=0 zmin=2 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+ifrqs 7 7 7 6 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=3 reorder=0 zmin=3 pack=0
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 7 records 10 wgt 10 max 4 extent 19
+ta 2 0
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 2 3 1 2 3
+ifrqs 6 6 6 6 2
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+pack 4
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483645 4
+pta 1 3 -2147483635
+pta 1 3 -2147483639 4
+pta 1 2 -2147483647 4
+pta 1 2 -2147483642
+pta 2 3 -2147483634
+ifrqs 10 0 0 0 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=3 reorder=1 zmin=1 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 7 22 d
+code 1 3 7 22 c
+code 2 3 7 22 b
+code 3 3 6 20 a
+code 4 3 3 8 e
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 2 4 0 1 2 3
+ta 1 3 0 1 4
+ta 1 3 0 2 3
+ta 1 3 0 3 4
+ta 1 2 0 4
+ta 1 2 1 2
+ta 2 3 1 2 3
+pack 4
+pta 1 3 -2147483641
+pta 2 4 -2147483633
+pta 1 3 -2147483645 4
+pta 1 3 -2147483635
+pta 1 3 -2147483639 4
+pta 1 2 -2147483647 4
+pta 1 2 -2147483642
+pta 2 3 -2147483634
+ifrqs 10 0 0 0 3
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=-3 reorder=0 zmin=2 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 4
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483634 4
+pta 1 3 -2147483642 4
+pta 2 3 -2147483638 4
+pta 1 3 -2147483636 4
+pta 1 2 -2147483640 4
+ifrqs 10 0 0 0 7
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=-3 reorder=0 zmin=3 pack=4
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 7 records 10 wgt 10 max 4 extent 19
+ta 2 0
+ta 1 3 0 1 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+pack 4
+pta 2 0
+pta 1 3 -2147483641
+pta 1 3 -2147483635
+pta 2 4 -2147483634 4
+pta 1 3 -2147483642 4
+pta 2 3 -2147483638 4
+pta 1 3 -2147483636 4
+ifrqs 8 0 0 0 6
+end
+case test1.csv fmt=csv w=0 sel=- smin=1 q=-3 reorder=1 zmin=0 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 16
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483618
+pta 1 3 -2147483626
+pta 2 3 -2147483622
+pta 1 3 -2147483620
+pta 1 2 -2147483624
+ifrqs 10 0 0 0 0
+end
+case test1.csv fmt=csv w=0 sel=- smin=3 q=-3 reorder=1 zmin=1 pack=16
+read items 5 records 10 wgt 10 maxfrq 7 defapp 3
+item 0 3 6 20 a
+item 1 3 7 22 b
+item 2 3 7 22 c
+item 3 3 7 22 d
+item 4 3 3 8 e
+recode 5
+code 0 3 3 8 e
+code 1 3 6 20 a
+code 2 3 7 22 d
+code 3 3 7 22 c
+code 4 3 7 22 b
+bag cnt 8 records 10 wgt 10 max 4 extent 23
+ta 1 3 0 1 2
+ta 1 2 0 2
+ta 1 3 0 2 3
+ta 2 4 1 2 3 4
+ta 1 3 1 2 4
+ta 2 3 1 3 4
+ta 1 3 2 3 4
+ta 1 2 3 4
+pack 16
+pta 1 3 -2147483641
+pta 1 2 -2147483643
+pta 1 3 -2147483635
+pta 2 4 -2147483618
+pta 1 3 -2147483626
+pta 2 3 -2147483622
+pta 1 3 -2147483620
+pta 1 2 -2147483624
+ifrqs 10 0 0 0 0
+end

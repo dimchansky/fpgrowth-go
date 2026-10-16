@@ -1,0 +1,73 @@
+case h03.tab fmt=default w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=1 reorder=0 zmin=1 pack=0
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=-1 reorder=0 zmin=2 pack=0
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=2 reorder=0 zmin=3 pack=0
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=4
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 4
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=0 zmin=1 pack=4
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 4
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=1 zmin=2 pack=4
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 4
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=3 reorder=0 zmin=3 pack=4
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 4
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=16
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 16
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=0 zmin=1 pack=16
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 16
+ifrqs
+end
+case h03.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=1 zmin=2 pack=16
+read items 0 records 0 wgt 0 maxfrq 0 defapp 3
+recode 0
+bag cnt 0 records 0 wgt 0 max 0 extent 0
+pack 16
+ifrqs
+end

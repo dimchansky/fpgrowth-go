@@ -1,0 +1,537 @@
+case r04.tab fmt=default w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 8 8 i5
+code 3 3 13 32 i8
+code 4 3 6 18 i0
+code 5 3 7 14 i3
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 9 1 0
+ta 10 2 0 1
+ta 6 3 0 3 4
+ta 10 1 1
+ta 8 1 2
+ta 7 2 3 5
+ifrqs 25 20 8 13 6 7
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=0 reorder=0 zmin=1 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 9 1 0
+ta 10 2 0 1
+ta 6 2 0 2
+ta 10 1 1
+ta 7 1 2
+ifrqs 25 20 13
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=1 reorder=0 zmin=2 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+code 3 3 8 8 i5
+code 4 3 7 14 i3
+code 5 3 6 18 i0
+bag cnt 4 records 50 wgt 50 max 3 extent 7
+ta 27 0
+ta 10 2 0 1
+ta 6 3 0 2 5
+ta 7 2 2 4
+ifrqs 16 10 13 0 7 6
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=1 reorder=0 zmin=3 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+bag cnt 1 records 50 wgt 50 max 0 extent 0
+ta 50 0
+ifrqs 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=-1 reorder=0 zmin=0 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 6 18 i0
+code 1 3 7 14 i3
+code 2 3 8 8 i5
+code 3 3 13 32 i8
+code 4 3 20 30 i4
+code 5 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 6 3 0 3 5
+ta 7 2 1 3
+ta 8 1 2
+ta 10 1 4
+ta 10 2 4 5
+ta 9 1 5
+pack 4
+pta 6 3 -2147483639 5
+pta 7 2 -2147483638
+pta 8 1 -2147483644
+pta 10 1 4
+pta 10 2 4 5
+pta 9 1 5
+ifrqs 21 0 0 0 20 25
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=-1 reorder=0 zmin=1 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 13 32 i8
+code 1 3 20 30 i4
+code 2 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 7 1 0
+ta 6 2 0 2
+ta 10 1 1
+ta 10 2 1 2
+ta 9 1 2
+pack 4
+pta 8 0
+pta 7 1 -2147483647
+pta 6 2 -2147483643
+pta 10 1 -2147483646
+pta 10 2 -2147483642
+pta 9 1 -2147483644
+ifrqs 42 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=2 reorder=0 zmin=2 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 13 32 i8
+code 2 3 20 30 i4
+code 3 3 6 18 i0
+code 4 3 7 14 i3
+code 5 3 8 8 i5
+bag cnt 4 records 50 wgt 50 max 3 extent 7
+ta 27 0
+ta 6 3 0 1 3
+ta 10 2 0 2
+ta 7 2 1 4
+pack 4
+pta 27 0
+pta 6 3 -2147483637
+pta 10 2 -2147483643
+pta 7 2 -2147483646 4
+ifrqs 23 0 0 0 7 0
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=2 reorder=0 zmin=3 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 13 32 i8
+code 2 3 20 30 i4
+bag cnt 1 records 50 wgt 50 max 0 extent 0
+ta 50 0
+pack 4
+pta 50 0
+ifrqs 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+code 3 3 8 8 i5
+code 4 3 7 14 i3
+code 5 3 6 18 i0
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 9 1 0
+ta 10 2 0 1
+ta 6 3 0 2 5
+ta 10 1 1
+ta 7 2 2 4
+ta 8 1 3
+pack 16
+pta 9 1 -2147483647
+pta 10 2 -2147483645
+pta 6 3 -2147483611
+pta 10 1 -2147483646
+pta 7 2 -2147483628
+pta 8 1 -2147483640
+ifrqs 50 0 0 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=2 reorder=1 zmin=1 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 9 1 0
+ta 10 2 0 1
+ta 6 2 0 2
+ta 10 1 1
+ta 7 1 2
+pack 16
+pta 8 0
+pta 9 1 -2147483647
+pta 10 2 -2147483645
+pta 6 2 -2147483643
+pta 10 1 -2147483646
+pta 7 1 -2147483644
+ifrqs 42 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=0 zmin=2 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 8 8 i5
+code 1 3 7 14 i3
+code 2 3 6 18 i0
+code 3 3 20 30 i4
+code 4 3 13 32 i8
+code 5 3 25 47 i7
+bag cnt 4 records 50 wgt 50 max 3 extent 7
+ta 27 0
+ta 7 2 1 4
+ta 6 3 2 4 5
+ta 10 2 3 5
+pack 16
+pta 27 0
+pta 7 2 -2147483630
+pta 6 3 -2147483596
+pta 10 2 -2147483608
+ifrqs 23 0 0 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=-2 reorder=0 zmin=3 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 20 30 i4
+code 1 3 13 32 i8
+code 2 3 25 47 i7
+bag cnt 1 records 50 wgt 50 max 0 extent 0
+ta 50 0
+pack 16
+pta 50 0
+ifrqs 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=1 zmin=0 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 6 18 i0
+code 1 3 7 14 i3
+code 2 3 8 8 i5
+code 3 3 13 32 i8
+code 4 3 20 30 i4
+code 5 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 6 3 0 3 5
+ta 7 2 1 3
+ta 8 1 2
+ta 10 1 4
+ta 10 2 4 5
+ta 9 1 5
+ifrqs 6 7 8 13 20 25
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=-2 reorder=1 zmin=1 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 13 32 i8
+code 1 3 20 30 i4
+code 2 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 7 1 0
+ta 6 2 0 2
+ta 10 1 1
+ta 10 2 1 2
+ta 9 1 2
+ifrqs 13 20 25
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=3 reorder=0 zmin=2 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 13 32 i8
+code 2 3 20 30 i4
+code 3 3 6 18 i0
+code 4 3 7 14 i3
+code 5 3 8 8 i5
+bag cnt 4 records 50 wgt 50 max 3 extent 7
+ta 27 0
+ta 6 3 0 1 3
+ta 10 2 0 2
+ta 7 2 1 4
+ifrqs 16 13 10 6 7 0
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=3 reorder=0 zmin=3 pack=0
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 13 32 i8
+code 2 3 20 30 i4
+bag cnt 1 records 50 wgt 50 max 0 extent 0
+ta 50 0
+ifrqs 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+code 3 3 8 8 i5
+code 4 3 7 14 i3
+code 5 3 6 18 i0
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 9 1 0
+ta 10 2 0 1
+ta 6 3 0 2 5
+ta 10 1 1
+ta 7 2 2 4
+ta 8 1 3
+pack 4
+pta 9 1 -2147483647
+pta 10 2 -2147483645
+pta 6 3 -2147483643 5
+pta 10 1 -2147483646
+pta 7 2 -2147483644 4
+pta 8 1 -2147483640
+ifrqs 50 0 0 0 7 6
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=3 reorder=1 zmin=1 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 25 47 i7
+code 1 3 20 30 i4
+code 2 3 13 32 i8
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 9 1 0
+ta 10 2 0 1
+ta 6 2 0 2
+ta 10 1 1
+ta 7 1 2
+pack 4
+pta 8 0
+pta 9 1 -2147483647
+pta 10 2 -2147483645
+pta 6 2 -2147483643
+pta 10 1 -2147483646
+pta 7 1 -2147483644
+ifrqs 42 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=0 zmin=2 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 8 8 i5
+code 1 3 7 14 i3
+code 2 3 6 18 i0
+code 3 3 20 30 i4
+code 4 3 13 32 i8
+code 5 3 25 47 i7
+bag cnt 4 records 50 wgt 50 max 3 extent 7
+ta 27 0
+ta 7 2 1 4
+ta 6 3 2 4 5
+ta 10 2 3 5
+pack 4
+pta 27 0
+pta 7 2 -2147483646 4
+pta 6 3 -2147483644 4 5
+pta 10 2 -2147483640 5
+ifrqs 23 0 0 0 13 16
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=-3 reorder=0 zmin=3 pack=4
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 20 30 i4
+code 1 3 13 32 i8
+code 2 3 25 47 i7
+bag cnt 1 records 50 wgt 50 max 0 extent 0
+ta 50 0
+pack 4
+pta 50 0
+ifrqs 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=1 zmin=0 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 6
+code 0 3 6 18 i0
+code 1 3 7 14 i3
+code 2 3 8 8 i5
+code 3 3 13 32 i8
+code 4 3 20 30 i4
+code 5 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 3 extent 10
+ta 6 3 0 3 5
+ta 7 2 1 3
+ta 8 1 2
+ta 10 1 4
+ta 10 2 4 5
+ta 9 1 5
+pack 16
+pta 6 3 -2147483607
+pta 7 2 -2147483638
+pta 8 1 -2147483644
+pta 10 1 -2147483632
+pta 10 2 -2147483600
+pta 9 1 -2147483616
+ifrqs 50 0 0 0 0 0
+end
+case r04.tab fmt=default w=0 sel=- smin=10 q=-3 reorder=1 zmin=1 pack=16
+read items 6 records 50 wgt 50 maxfrq 25 defapp 3
+item 0 3 25 47 i7
+item 1 3 20 30 i4
+item 2 3 8 8 i5
+item 3 3 13 32 i8
+item 4 3 6 18 i0
+item 5 3 7 14 i3
+recode 3
+code 0 3 13 32 i8
+code 1 3 20 30 i4
+code 2 3 25 47 i7
+bag cnt 6 records 50 wgt 50 max 2 extent 7
+ta 8 0
+ta 7 1 0
+ta 6 2 0 2
+ta 10 1 1
+ta 10 2 1 2
+ta 9 1 2
+pack 16
+pta 8 0
+pta 7 1 -2147483647
+pta 6 2 -2147483643
+pta 10 1 -2147483646
+pta 10 2 -2147483642
+pta 9 1 -2147483644
+ifrqs 42 0 0
+end

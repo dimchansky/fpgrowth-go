@@ -1,0 +1,201 @@
+case test6.tab fmt=para w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 b
+code 2 3 1 5 c
+code 3 3 1 5 d
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+ifrqs 1 1 1 1 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=1 reorder=0 zmin=1 pack=0
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+ifrqs 1 1 1 1 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=-1 reorder=0 zmin=2 pack=0
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+ifrqs 1 1 1 1 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=2 reorder=0 zmin=3 pack=0
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+ifrqs 1 1 1 1 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=4
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 4
+pta 1 5 -2147483633 4
+ifrqs 1 0 0 0 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=-2 reorder=0 zmin=1 pack=4
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 4
+pta 1 5 -2147483633 4
+ifrqs 1 0 0 0 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=-2 reorder=1 zmin=2 pack=4
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 4
+pta 1 5 -2147483633 4
+ifrqs 1 0 0 0 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=3 reorder=0 zmin=3 pack=4
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 4
+pta 1 5 -2147483633 4
+ifrqs 1 0 0 0 1
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=16
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 16
+pta 1 5 -2147483617
+ifrqs 1 0 0 0 0
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=-3 reorder=0 zmin=1 pack=16
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 16
+pta 1 5 -2147483617
+ifrqs 1 0 0 0 0
+end
+case test6.tab fmt=para w=0 sel=- smin=1 q=-3 reorder=1 zmin=2 pack=16
+read items 5 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 5 a
+item 1 3 1 5 b
+item 2 3 1 5 c
+item 3 3 1 5 d
+item 4 3 1 5 e
+recode 5
+code 0 3 1 5 a
+code 1 3 1 5 d
+code 2 3 1 5 c
+code 3 3 1 5 b
+code 4 3 1 5 e
+bag cnt 1 records 1 wgt 1 max 5 extent 5
+ta 1 5 0 1 2 3 4
+pack 16
+pta 1 5 -2147483617
+ifrqs 1 0 0 0 0
+end

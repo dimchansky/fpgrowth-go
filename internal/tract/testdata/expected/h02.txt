@@ -1,0 +1,157 @@
+case h02.tab fmt=default w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+ifrqs 1 1 1
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=1 reorder=0 zmin=1 pack=0
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+ifrqs 1 1 1
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=-1 reorder=0 zmin=2 pack=0
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+ifrqs 1 1 1
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=2 reorder=0 zmin=3 pack=0
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+ifrqs 1 1 1
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=4
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 4
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=0 zmin=1 pack=4
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 4
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=1 zmin=2 pack=4
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 4
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=3 reorder=0 zmin=3 pack=4
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 4
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=16
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 16
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=0 zmin=1 pack=16
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 16
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end
+case h02.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=1 zmin=2 pack=16
+read items 3 records 1 wgt 1 maxfrq 1 defapp 3
+item 0 3 1 3 a
+item 1 3 1 3 b
+item 2 3 1 3 c
+recode 3
+code 0 3 1 3 a
+code 1 3 1 3 b
+code 2 3 1 3 c
+bag cnt 1 records 1 wgt 1 max 3 extent 3
+ta 1 3 0 1 2
+pack 16
+pta 1 3 -2147483641
+ifrqs 1 0 0
+end

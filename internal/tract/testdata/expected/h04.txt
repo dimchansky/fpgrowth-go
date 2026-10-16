@@ -1,0 +1,91 @@
+case h04.tab fmt=default w=0 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=1 reorder=0 zmin=1 pack=0
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=-1 reorder=0 zmin=2 pack=0
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=2 reorder=0 zmin=3 pack=0
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=2 reorder=1 zmin=0 pack=4
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 4
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=0 zmin=1 pack=4
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 4
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=-2 reorder=1 zmin=2 pack=4
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 4
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=3 reorder=0 zmin=3 pack=4
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 4
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=3 reorder=1 zmin=0 pack=16
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 16
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=0 zmin=1 pack=16
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 16
+pta 3 0
+ifrqs
+end
+case h04.tab fmt=default w=0 sel=- smin=1 q=-3 reorder=1 zmin=2 pack=16
+read items 0 records 3 wgt 3 maxfrq 0 defapp 3
+recode 0
+bag cnt 1 records 3 wgt 3 max 0 extent 0
+ta 3 0
+pack 16
+pta 3 0
+ifrqs
+end

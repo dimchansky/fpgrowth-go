@@ -1,9 +1,3 @@
-// Package tract manages items and transactions for the FP-growth miner.
-//
-// It is a port of the parts of Christian Borgelt's tract.c (compiled with
-// TA_READ, as used by the fpgrowth program) and of the sorting routines from
-// arrays.c that influence item order. See docs/upstream/tract.md for the
-// upstream behavior this package reproduces.
 package tract
 
 // Item is an item code: the index of an item in the (recoded) item base.

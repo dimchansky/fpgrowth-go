@@ -1,0 +1,1557 @@
+case r12.tab fmt=default w=1 sel=- smin=1 q=0 reorder=0 zmin=0 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 73 201 i1
+code 1 3 63 147 i6
+code 2 3 159 600 i15
+code 3 3 37 127 i7
+code 4 3 108 370 i5
+code 5 3 120 429 i11
+code 6 3 145 638 i14
+code 7 3 131 606 i16
+code 8 3 73 392 i12
+code 9 3 137 545 i3
+code 10 3 112 470 i10
+code 11 3 77 322 i9
+code 12 3 83 316 i17
+code 13 3 80 322 i4
+code 14 3 62 204 i13
+code 15 3 27 27 i2
+code 16 3 67 248 i0
+code 17 3 97 489 i8
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 41 1 0
+ta 14 5 0 5 6 7 11
+ta 18 5 0 6 7 13 17
+ta 21 3 1 2 3
+ta 42 2 1 14
+ta 16 4 2 3 5 11
+ta 35 3 2 4 5
+ta 20 6 2 5 7 9 14 17
+ta 47 4 2 6 11 16
+ta 20 3 2 6 16
+ta 35 2 4 5
+ta 27 6 4 8 10 12 13 17
+ta 11 3 4 9 17
+ta 46 5 6 7 8 9 10
+ta 12 1 7
+ta 21 4 7 9 12 17
+ta 39 2 9 10
+ta 35 2 12 13
+ta 27 1 15
+ifrqs 73 63 159 37 108 120 145 131 73 137 112 77 83 80 62 27 67 97
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=0 reorder=0 zmin=1 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 73 201 i1
+code 1 3 63 147 i6
+code 2 3 159 600 i15
+code 3 3 37 127 i7
+code 4 3 108 370 i5
+code 5 3 120 429 i11
+code 6 3 145 638 i14
+code 7 3 131 606 i16
+code 8 3 73 392 i12
+code 9 3 137 545 i3
+code 10 3 112 470 i10
+code 11 3 77 322 i9
+code 12 3 83 316 i17
+code 13 3 80 322 i4
+code 14 3 62 204 i13
+code 15 3 67 248 i0
+code 16 3 97 489 i8
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 41 1 0
+ta 14 5 0 5 6 7 11
+ta 18 5 0 6 7 13 16
+ta 21 3 1 2 3
+ta 42 2 1 14
+ta 16 4 2 3 5 11
+ta 35 3 2 4 5
+ta 20 6 2 5 7 9 14 16
+ta 47 4 2 6 11 15
+ta 20 3 2 6 15
+ta 35 2 4 5
+ta 27 6 4 8 10 12 13 16
+ta 11 3 4 9 16
+ta 46 5 6 7 8 9 10
+ta 12 1 7
+ta 21 4 7 9 12 16
+ta 39 2 9 10
+ta 35 2 12 13
+ifrqs 73 63 159 37 108 120 145 131 73 137 112 77 83 80 62 67 97
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=1 reorder=0 zmin=2 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+code 17 3 27 27 i2
+bag cnt 17 records 100 wgt 554 max 6 extent 59
+ta 107 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 39 2 2 5
+ta 11 3 2 6 7
+ta 35 2 4 6
+ta 27 6 5 6 7 8 9 11
+ta 35 2 8 9
+ta 42 2 14 15
+ifrqs 159 145 137 119 120 112 108 97 83 80 77 73 32 67 63 62 37 0
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=1 reorder=0 zmin=3 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+bag cnt 13 records 100 wgt 554 max 6 extent 51
+ta 258 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 11 3 2 6 7
+ta 27 6 5 6 7 8 9 11
+ifrqs 159 145 98 119 85 73 73 97 48 45 77 73 32 67 21 20 37
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=-1 reorder=0 zmin=0 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 27 27 i2
+code 1 3 37 127 i7
+code 2 3 62 204 i13
+code 3 3 63 147 i6
+code 4 3 67 248 i0
+code 5 3 73 201 i1
+code 6 3 73 392 i12
+code 7 3 77 322 i9
+code 8 3 80 322 i4
+code 9 3 83 316 i17
+code 10 3 97 489 i8
+code 11 3 108 370 i5
+code 12 3 112 470 i10
+code 13 3 120 429 i11
+code 14 3 131 606 i16
+code 15 3 137 545 i3
+code 16 3 145 638 i14
+code 17 3 159 600 i15
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 27 1 0
+ta 21 3 1 3 17
+ta 16 4 1 7 13 17
+ta 42 2 2 3
+ta 20 6 2 10 13 14 15 17
+ta 47 4 4 7 16 17
+ta 20 3 4 16 17
+ta 41 1 5
+ta 14 5 5 7 13 14 16
+ta 18 5 5 8 10 14 16
+ta 27 6 6 8 9 10 11 12
+ta 46 5 6 12 14 15 16
+ta 35 2 8 9
+ta 21 4 9 10 14 15
+ta 11 3 10 11 15
+ta 35 2 11 13
+ta 35 3 11 13 17
+ta 39 2 12 15
+ta 12 1 14
+pack 4
+pta 27 0
+pta 27 1 -2147483647
+pta 21 3 -2147483638 17
+pta 16 4 -2147483646 7 13 17
+pta 42 2 -2147483636
+pta 20 6 -2147483644 10 13 14 15 17
+pta 47 4 4 7 16 17
+pta 20 3 4 16 17
+pta 41 1 5
+pta 14 5 5 7 13 14 16
+pta 18 5 5 8 10 14 16
+pta 27 6 6 8 9 10 11 12
+pta 46 5 6 12 14 15 16
+pta 35 2 8 9
+pta 21 4 9 10 14 15
+pta 11 3 10 11 15
+pta 35 2 11 13
+pta 35 3 11 13 17
+pta 39 2 12 15
+pta 12 1 14
+ifrqs 126 0 0 0 67 73 73 77 80 83 97 108 112 120 131 137 145 159
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=-1 reorder=0 zmin=1 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 37 127 i7
+code 1 3 62 204 i13
+code 2 3 63 147 i6
+code 3 3 67 248 i0
+code 4 3 73 201 i1
+code 5 3 73 392 i12
+code 6 3 77 322 i9
+code 7 3 80 322 i4
+code 8 3 83 316 i17
+code 9 3 97 489 i8
+code 10 3 108 370 i5
+code 11 3 112 470 i10
+code 12 3 120 429 i11
+code 13 3 131 606 i16
+code 14 3 137 545 i3
+code 15 3 145 638 i14
+code 16 3 159 600 i15
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 21 3 0 2 16
+ta 16 4 0 6 12 16
+ta 42 2 1 2
+ta 20 6 1 9 12 13 14 16
+ta 47 4 3 6 15 16
+ta 20 3 3 15 16
+ta 41 1 4
+ta 14 5 4 6 12 13 15
+ta 18 5 4 7 9 13 15
+ta 27 6 5 7 8 9 10 11
+ta 46 5 5 11 13 14 15
+ta 35 2 7 8
+ta 21 4 8 9 13 14
+ta 11 3 9 10 14
+ta 35 2 10 12
+ta 35 3 10 12 16
+ta 39 2 11 14
+ta 12 1 13
+pack 4
+pta 54 0
+pta 21 3 -2147483643 16
+pta 16 4 -2147483647 6 12 16
+pta 42 2 -2147483642
+pta 20 6 -2147483646 9 12 13 14 16
+pta 47 4 -2147483640 6 15 16
+pta 20 3 -2147483640 15 16
+pta 41 1 4
+pta 14 5 4 6 12 13 15
+pta 18 5 4 7 9 13 15
+pta 27 6 5 7 8 9 10 11
+pta 46 5 5 11 13 14 15
+pta 35 2 7 8
+pta 21 4 8 9 13 14
+pta 11 3 9 10 14
+pta 35 2 10 12
+pta 35 3 10 12 16
+pta 39 2 11 14
+pta 12 1 13
+ifrqs 166 0 0 0 73 73 77 80 83 97 108 112 120 131 137 145 159
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=2 reorder=0 zmin=2 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 145 638 i14
+code 1 3 131 606 i16
+code 2 3 159 600 i15
+code 3 3 137 545 i3
+code 4 3 97 489 i8
+code 5 3 112 470 i10
+code 6 3 120 429 i11
+code 7 3 73 392 i12
+code 8 3 108 370 i5
+code 9 3 77 322 i9
+code 10 3 80 322 i4
+code 11 3 83 316 i17
+code 12 3 67 248 i0
+code 13 3 62 204 i13
+code 14 3 73 201 i1
+code 15 3 63 147 i6
+code 16 3 37 127 i7
+code 17 3 27 27 i2
+bag cnt 17 records 100 wgt 554 max 6 extent 59
+ta 107 0
+ta 46 5 0 1 3 5 7
+ta 18 5 0 1 4 10 14
+ta 14 5 0 1 6 9 14
+ta 47 4 0 2 9 12
+ta 20 3 0 2 12
+ta 20 6 1 2 3 4 6 13
+ta 21 4 1 3 4 11
+ta 35 3 2 6 8
+ta 16 4 2 6 9 16
+ta 21 3 2 15 16
+ta 11 3 3 4 8
+ta 39 2 3 5
+ta 27 6 4 5 7 8 10 11
+ta 35 2 6 8
+ta 35 2 10 11
+ta 42 2 13 15
+pack 4
+pta 107 0
+pta 46 5 -2147483637 5 7
+pta 18 5 -2147483645 4 10 14
+pta 14 5 -2147483645 6 9 14
+pta 47 4 -2147483643 9 12
+pta 20 3 -2147483643 12
+pta 20 6 -2147483634 4 6 13
+pta 21 4 -2147483638 4 11
+pta 35 3 -2147483644 6 8
+pta 16 4 -2147483644 6 9 16
+pta 21 3 -2147483644 15 16
+pta 11 3 -2147483640 4 8
+pta 39 2 -2147483640 5
+pta 27 6 4 5 7 8 10 11
+pta 35 2 6 8
+pta 35 2 10 11
+pta 42 2 13 15
+ifrqs 308 0 0 0 97 112 120 73 108 77 80 83 67 62 32 63 37 0
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=2 reorder=0 zmin=3 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 145 638 i14
+code 1 3 131 606 i16
+code 2 3 159 600 i15
+code 3 3 137 545 i3
+code 4 3 97 489 i8
+code 5 3 112 470 i10
+code 6 3 120 429 i11
+code 7 3 73 392 i12
+code 8 3 108 370 i5
+code 9 3 77 322 i9
+code 10 3 80 322 i4
+code 11 3 83 316 i17
+code 12 3 67 248 i0
+code 13 3 62 204 i13
+code 14 3 73 201 i1
+code 15 3 63 147 i6
+code 16 3 37 127 i7
+bag cnt 13 records 100 wgt 554 max 6 extent 51
+ta 258 0
+ta 46 5 0 1 3 5 7
+ta 18 5 0 1 4 10 14
+ta 14 5 0 1 6 9 14
+ta 47 4 0 2 9 12
+ta 20 3 0 2 12
+ta 20 6 1 2 3 4 6 13
+ta 21 4 1 3 4 11
+ta 35 3 2 6 8
+ta 16 4 2 6 9 16
+ta 21 3 2 15 16
+ta 11 3 3 4 8
+ta 27 6 4 5 7 8 10 11
+pack 4
+pta 258 0
+pta 46 5 -2147483637 5 7
+pta 18 5 -2147483645 4 10 14
+pta 14 5 -2147483645 6 9 14
+pta 47 4 -2147483643 9 12
+pta 20 3 -2147483643 12
+pta 20 6 -2147483634 4 6 13
+pta 21 4 -2147483638 4 11
+pta 35 3 -2147483644 6 8
+pta 16 4 -2147483644 6 9 16
+pta 21 3 -2147483644 15 16
+pta 11 3 -2147483640 4 8
+pta 27 6 4 5 7 8 10 11
+ifrqs 269 0 0 0 97 73 85 73 73 77 45 48 67 20 32 21 37
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=2 reorder=1 zmin=0 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+code 17 3 27 27 i2
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 39 2 2 5
+ta 11 3 2 6 7
+ta 12 1 3
+ta 35 2 4 6
+ta 27 6 5 6 7 8 9 11
+ta 35 2 8 9
+ta 41 1 12
+ta 42 2 14 15
+ta 27 1 17
+pack 16
+pta 27 0
+pta 47 4 -2147474429
+pta 20 3 -2147475453
+pta 20 6 -2147450723
+pta 35 3 -2147483567
+pta 16 4 -2147482607 16
+pta 21 3 -2147467263 16
+pta 46 5 -2147481554
+pta 14 5 -2147478502
+pta 18 5 -2147478902
+pta 21 4 -2147483252
+pta 39 2 -2147483612
+pta 11 3 -2147483452
+pta 12 1 -2147483640
+pta 35 2 -2147483568
+pta 27 6 -2147480608
+pta 35 2 -2147482880
+pta 41 1 -2147479552
+pta 42 2 -2147434496
+pta 27 1 17
+ifrqs 500 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 37 27
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=2 reorder=1 zmin=1 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 39 2 2 5
+ta 11 3 2 6 7
+ta 12 1 3
+ta 35 2 4 6
+ta 27 6 5 6 7 8 9 11
+ta 35 2 8 9
+ta 41 1 12
+ta 42 2 14 15
+pack 16
+pta 54 0
+pta 47 4 -2147474429
+pta 20 3 -2147475453
+pta 20 6 -2147450723
+pta 35 3 -2147483567
+pta 16 4 -2147482607 16
+pta 21 3 -2147467263 16
+pta 46 5 -2147481554
+pta 14 5 -2147478502
+pta 18 5 -2147478902
+pta 21 4 -2147483252
+pta 39 2 -2147483612
+pta 11 3 -2147483452
+pta 12 1 -2147483640
+pta 35 2 -2147483568
+pta 27 6 -2147480608
+pta 35 2 -2147482880
+pta 41 1 -2147479552
+pta 42 2 -2147434496
+ifrqs 500 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 37
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=-2 reorder=0 zmin=2 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 27 27 i2
+code 1 3 37 127 i7
+code 2 3 63 147 i6
+code 3 3 73 201 i1
+code 4 3 62 204 i13
+code 5 3 67 248 i0
+code 6 3 83 316 i17
+code 7 3 77 322 i9
+code 8 3 80 322 i4
+code 9 3 108 370 i5
+code 10 3 73 392 i12
+code 11 3 120 429 i11
+code 12 3 112 470 i10
+code 13 3 97 489 i8
+code 14 3 137 545 i3
+code 15 3 159 600 i15
+code 16 3 131 606 i16
+code 17 3 145 638 i14
+bag cnt 17 records 100 wgt 554 max 6 extent 59
+ta 107 0
+ta 21 3 1 2 15
+ta 16 4 1 7 11 15
+ta 42 2 2 4
+ta 14 5 3 7 11 16 17
+ta 18 5 3 8 13 16 17
+ta 20 6 4 11 13 14 15 16
+ta 47 4 5 7 15 17
+ta 20 3 5 15 17
+ta 35 2 6 8
+ta 27 6 6 8 9 10 12 13
+ta 21 4 6 13 14 16
+ta 35 2 9 11
+ta 35 3 9 11 15
+ta 11 3 9 13 14
+ta 46 5 10 12 14 16 17
+ta 39 2 12 14
+pack 16
+pta 107 0
+pta 21 3 -2147450874
+pta 16 4 -2147448702
+pta 42 2 -2147483628
+pta 14 5 -2147481464 16 17
+pta 18 5 -2147475192 16 17
+pta 20 6 -2147424240 16
+pta 47 4 -2147450720 17
+pta 20 3 -2147450848 17
+pta 35 2 -2147483328
+pta 27 6 -2147469504
+pta 21 4 -2147459008 16
+pta 35 2 -2147481088
+pta 35 3 -2147448320
+pta 11 3 -2147458560
+pta 46 5 -2147462144 16 17
+pta 39 2 -2147463168
+ifrqs 447 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 119 145
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=-2 reorder=0 zmin=3 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 37 127 i7
+code 1 3 63 147 i6
+code 2 3 73 201 i1
+code 3 3 62 204 i13
+code 4 3 67 248 i0
+code 5 3 83 316 i17
+code 6 3 77 322 i9
+code 7 3 80 322 i4
+code 8 3 108 370 i5
+code 9 3 73 392 i12
+code 10 3 120 429 i11
+code 11 3 112 470 i10
+code 12 3 97 489 i8
+code 13 3 137 545 i3
+code 14 3 159 600 i15
+code 15 3 131 606 i16
+code 16 3 145 638 i14
+bag cnt 13 records 100 wgt 554 max 6 extent 51
+ta 258 0
+ta 21 3 0 1 14
+ta 16 4 0 6 10 14
+ta 14 5 2 6 10 15 16
+ta 18 5 2 7 12 15 16
+ta 20 6 3 10 12 13 14 15
+ta 47 4 4 6 14 16
+ta 20 3 4 14 16
+ta 27 6 5 7 8 9 11 12
+ta 21 4 5 12 13 15
+ta 35 3 8 10 14
+ta 11 3 8 12 13
+ta 46 5 9 11 13 15 16
+pack 16
+pta 258 0
+pta 21 3 -2147467261
+pta 16 4 -2147466175
+pta 14 5 -2147449788 16
+pta 18 5 -2147446652 16
+pta 20 6 -2147421176
+pta 47 4 -2147467184 16
+pta 20 3 -2147467248 16
+pta 27 6 -2147476576
+pta 21 4 -2147438560
+pta 35 3 -2147465984
+pta 11 3 -2147471104
+pta 46 5 -2147440128 16
+ifrqs 296 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 145
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=-2 reorder=1 zmin=0 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 27 27 i2
+code 1 3 37 127 i7
+code 2 3 62 204 i13
+code 3 3 63 147 i6
+code 4 3 67 248 i0
+code 5 3 73 201 i1
+code 6 3 73 392 i12
+code 7 3 77 322 i9
+code 8 3 80 322 i4
+code 9 3 83 316 i17
+code 10 3 97 489 i8
+code 11 3 108 370 i5
+code 12 3 112 470 i10
+code 13 3 120 429 i11
+code 14 3 131 606 i16
+code 15 3 137 545 i3
+code 16 3 145 638 i14
+code 17 3 159 600 i15
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 27 1 0
+ta 21 3 1 3 17
+ta 16 4 1 7 13 17
+ta 42 2 2 3
+ta 20 6 2 10 13 14 15 17
+ta 47 4 4 7 16 17
+ta 20 3 4 16 17
+ta 41 1 5
+ta 14 5 5 7 13 14 16
+ta 18 5 5 8 10 14 16
+ta 27 6 6 8 9 10 11 12
+ta 46 5 6 12 14 15 16
+ta 35 2 8 9
+ta 21 4 9 10 14 15
+ta 11 3 10 11 15
+ta 35 2 11 13
+ta 35 3 11 13 17
+ta 39 2 12 15
+ta 12 1 14
+ifrqs 27 37 62 63 67 73 73 77 80 83 97 108 112 120 131 137 145 159
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=-2 reorder=1 zmin=1 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 37 127 i7
+code 1 3 62 204 i13
+code 2 3 63 147 i6
+code 3 3 67 248 i0
+code 4 3 73 201 i1
+code 5 3 73 392 i12
+code 6 3 77 322 i9
+code 7 3 80 322 i4
+code 8 3 83 316 i17
+code 9 3 97 489 i8
+code 10 3 108 370 i5
+code 11 3 112 470 i10
+code 12 3 120 429 i11
+code 13 3 131 606 i16
+code 14 3 137 545 i3
+code 15 3 145 638 i14
+code 16 3 159 600 i15
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 21 3 0 2 16
+ta 16 4 0 6 12 16
+ta 42 2 1 2
+ta 20 6 1 9 12 13 14 16
+ta 47 4 3 6 15 16
+ta 20 3 3 15 16
+ta 41 1 4
+ta 14 5 4 6 12 13 15
+ta 18 5 4 7 9 13 15
+ta 27 6 5 7 8 9 10 11
+ta 46 5 5 11 13 14 15
+ta 35 2 7 8
+ta 21 4 8 9 13 14
+ta 11 3 9 10 14
+ta 35 2 10 12
+ta 35 3 10 12 16
+ta 39 2 11 14
+ta 12 1 13
+ifrqs 37 62 63 67 73 73 77 80 83 97 108 112 120 131 137 145 159
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=3 reorder=0 zmin=2 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 145 638 i14
+code 1 3 131 606 i16
+code 2 3 159 600 i15
+code 3 3 137 545 i3
+code 4 3 97 489 i8
+code 5 3 112 470 i10
+code 6 3 120 429 i11
+code 7 3 73 392 i12
+code 8 3 108 370 i5
+code 9 3 77 322 i9
+code 10 3 80 322 i4
+code 11 3 83 316 i17
+code 12 3 67 248 i0
+code 13 3 62 204 i13
+code 14 3 73 201 i1
+code 15 3 63 147 i6
+code 16 3 37 127 i7
+code 17 3 27 27 i2
+bag cnt 17 records 100 wgt 554 max 6 extent 59
+ta 107 0
+ta 46 5 0 1 3 5 7
+ta 18 5 0 1 4 10 14
+ta 14 5 0 1 6 9 14
+ta 47 4 0 2 9 12
+ta 20 3 0 2 12
+ta 20 6 1 2 3 4 6 13
+ta 21 4 1 3 4 11
+ta 35 3 2 6 8
+ta 16 4 2 6 9 16
+ta 21 3 2 15 16
+ta 11 3 3 4 8
+ta 39 2 3 5
+ta 27 6 4 5 7 8 10 11
+ta 35 2 6 8
+ta 35 2 10 11
+ta 42 2 13 15
+ifrqs 145 119 159 137 97 112 120 73 108 77 80 83 67 62 32 63 37 0
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=3 reorder=0 zmin=3 pack=0
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 145 638 i14
+code 1 3 131 606 i16
+code 2 3 159 600 i15
+code 3 3 137 545 i3
+code 4 3 97 489 i8
+code 5 3 112 470 i10
+code 6 3 120 429 i11
+code 7 3 73 392 i12
+code 8 3 108 370 i5
+code 9 3 77 322 i9
+code 10 3 80 322 i4
+code 11 3 83 316 i17
+code 12 3 67 248 i0
+code 13 3 62 204 i13
+code 14 3 73 201 i1
+code 15 3 63 147 i6
+code 16 3 37 127 i7
+bag cnt 13 records 100 wgt 554 max 6 extent 51
+ta 258 0
+ta 46 5 0 1 3 5 7
+ta 18 5 0 1 4 10 14
+ta 14 5 0 1 6 9 14
+ta 47 4 0 2 9 12
+ta 20 3 0 2 12
+ta 20 6 1 2 3 4 6 13
+ta 21 4 1 3 4 11
+ta 35 3 2 6 8
+ta 16 4 2 6 9 16
+ta 21 3 2 15 16
+ta 11 3 3 4 8
+ta 27 6 4 5 7 8 10 11
+ifrqs 145 119 159 98 97 73 85 73 73 77 45 48 67 20 32 21 37
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=3 reorder=1 zmin=0 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+code 17 3 27 27 i2
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 39 2 2 5
+ta 11 3 2 6 7
+ta 12 1 3
+ta 35 2 4 6
+ta 27 6 5 6 7 8 9 11
+ta 35 2 8 9
+ta 41 1 12
+ta 42 2 14 15
+ta 27 1 17
+pack 4
+pta 27 0
+pta 47 4 -2147483645 10 13
+pta 20 3 -2147483645 13
+pta 20 6 -2147483635 4 7 15
+pta 35 3 -2147483647 4 6
+pta 16 4 -2147483647 4 10 16
+pta 21 3 -2147483647 14 16
+pta 46 5 -2147483634 5 11
+pta 14 5 -2147483638 4 10 12
+pta 18 5 -2147483638 7 9 12
+pta 21 4 -2147483636 7 8
+pta 39 2 -2147483644 5
+pta 11 3 -2147483644 6 7
+pta 12 1 -2147483640
+pta 35 2 4 6
+pta 27 6 5 6 7 8 9 11
+pta 35 2 8 9
+pta 41 1 12
+pta 42 2 14 15
+pta 27 1 17
+ifrqs 320 0 0 0 120 112 108 97 83 80 77 73 73 67 63 62 37 27
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=3 reorder=1 zmin=1 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 159 600 i15
+code 1 3 145 638 i14
+code 2 3 137 545 i3
+code 3 3 131 606 i16
+code 4 3 120 429 i11
+code 5 3 112 470 i10
+code 6 3 108 370 i5
+code 7 3 97 489 i8
+code 8 3 83 316 i17
+code 9 3 80 322 i4
+code 10 3 77 322 i9
+code 11 3 73 392 i12
+code 12 3 73 201 i1
+code 13 3 67 248 i0
+code 14 3 63 147 i6
+code 15 3 62 204 i13
+code 16 3 37 127 i7
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 47 4 0 1 10 13
+ta 20 3 0 1 13
+ta 20 6 0 2 3 4 7 15
+ta 35 3 0 4 6
+ta 16 4 0 4 10 16
+ta 21 3 0 14 16
+ta 46 5 1 2 3 5 11
+ta 14 5 1 3 4 10 12
+ta 18 5 1 3 7 9 12
+ta 21 4 2 3 7 8
+ta 39 2 2 5
+ta 11 3 2 6 7
+ta 12 1 3
+ta 35 2 4 6
+ta 27 6 5 6 7 8 9 11
+ta 35 2 8 9
+ta 41 1 12
+ta 42 2 14 15
+pack 4
+pta 54 0
+pta 47 4 -2147483645 10 13
+pta 20 3 -2147483645 13
+pta 20 6 -2147483635 4 7 15
+pta 35 3 -2147483647 4 6
+pta 16 4 -2147483647 4 10 16
+pta 21 3 -2147483647 14 16
+pta 46 5 -2147483634 5 11
+pta 14 5 -2147483638 4 10 12
+pta 18 5 -2147483638 7 9 12
+pta 21 4 -2147483636 7 8
+pta 39 2 -2147483644 5
+pta 11 3 -2147483644 6 7
+pta 12 1 -2147483640
+pta 35 2 4 6
+pta 27 6 5 6 7 8 9 11
+pta 35 2 8 9
+pta 41 1 12
+pta 42 2 14 15
+ifrqs 320 0 0 0 120 112 108 97 83 80 77 73 73 67 63 62 37
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=-3 reorder=0 zmin=2 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 27 27 i2
+code 1 3 37 127 i7
+code 2 3 63 147 i6
+code 3 3 73 201 i1
+code 4 3 62 204 i13
+code 5 3 67 248 i0
+code 6 3 83 316 i17
+code 7 3 77 322 i9
+code 8 3 80 322 i4
+code 9 3 108 370 i5
+code 10 3 73 392 i12
+code 11 3 120 429 i11
+code 12 3 112 470 i10
+code 13 3 97 489 i8
+code 14 3 137 545 i3
+code 15 3 159 600 i15
+code 16 3 131 606 i16
+code 17 3 145 638 i14
+bag cnt 17 records 100 wgt 554 max 6 extent 59
+ta 107 0
+ta 21 3 1 2 15
+ta 16 4 1 7 11 15
+ta 42 2 2 4
+ta 14 5 3 7 11 16 17
+ta 18 5 3 8 13 16 17
+ta 20 6 4 11 13 14 15 16
+ta 47 4 5 7 15 17
+ta 20 3 5 15 17
+ta 35 2 6 8
+ta 27 6 6 8 9 10 12 13
+ta 21 4 6 13 14 16
+ta 35 2 9 11
+ta 35 3 9 11 15
+ta 11 3 9 13 14
+ta 46 5 10 12 14 16 17
+ta 39 2 12 14
+pack 4
+pta 107 0
+pta 21 3 -2147483642 15
+pta 16 4 -2147483646 7 11 15
+pta 42 2 -2147483644 4
+pta 14 5 -2147483640 7 11 16 17
+pta 18 5 -2147483640 8 13 16 17
+pta 20 6 4 11 13 14 15 16
+pta 47 4 5 7 15 17
+pta 20 3 5 15 17
+pta 35 2 6 8
+pta 27 6 6 8 9 10 12 13
+pta 21 4 6 13 14 16
+pta 35 2 9 11
+pta 35 3 9 11 15
+pta 11 3 9 13 14
+pta 46 5 10 12 14 16 17
+pta 39 2 12 14
+ifrqs 111 0 0 0 62 67 83 77 80 108 73 120 112 97 137 159 119 145
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=-3 reorder=0 zmin=3 pack=4
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 37 127 i7
+code 1 3 63 147 i6
+code 2 3 73 201 i1
+code 3 3 62 204 i13
+code 4 3 67 248 i0
+code 5 3 83 316 i17
+code 6 3 77 322 i9
+code 7 3 80 322 i4
+code 8 3 108 370 i5
+code 9 3 73 392 i12
+code 10 3 120 429 i11
+code 11 3 112 470 i10
+code 12 3 97 489 i8
+code 13 3 137 545 i3
+code 14 3 159 600 i15
+code 15 3 131 606 i16
+code 16 3 145 638 i14
+bag cnt 13 records 100 wgt 554 max 6 extent 51
+ta 258 0
+ta 21 3 0 1 14
+ta 16 4 0 6 10 14
+ta 14 5 2 6 10 15 16
+ta 18 5 2 7 12 15 16
+ta 20 6 3 10 12 13 14 15
+ta 47 4 4 6 14 16
+ta 20 3 4 14 16
+ta 27 6 5 7 8 9 11 12
+ta 21 4 5 12 13 15
+ta 35 3 8 10 14
+ta 11 3 8 12 13
+ta 46 5 9 11 13 15 16
+pack 4
+pta 258 0
+pta 21 3 -2147483645 14
+pta 16 4 -2147483647 6 10 14
+pta 14 5 -2147483644 6 10 15 16
+pta 18 5 -2147483644 7 12 15 16
+pta 20 6 -2147483640 10 12 13 14 15
+pta 47 4 4 6 14 16
+pta 20 3 4 14 16
+pta 27 6 5 7 8 9 11 12
+pta 21 4 5 12 13 15
+pta 35 3 8 10 14
+pta 11 3 8 12 13
+pta 46 5 9 11 13 15 16
+ifrqs 89 0 0 0 67 48 77 45 73 73 85 73 97 98 159 119 145
+end
+case r12.tab fmt=default w=1 sel=- smin=1 q=-3 reorder=1 zmin=0 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 18
+code 0 3 27 27 i2
+code 1 3 37 127 i7
+code 2 3 62 204 i13
+code 3 3 63 147 i6
+code 4 3 67 248 i0
+code 5 3 73 201 i1
+code 6 3 73 392 i12
+code 7 3 77 322 i9
+code 8 3 80 322 i4
+code 9 3 83 316 i17
+code 10 3 97 489 i8
+code 11 3 108 370 i5
+code 12 3 112 470 i10
+code 13 3 120 429 i11
+code 14 3 131 606 i16
+code 15 3 137 545 i3
+code 16 3 145 638 i14
+code 17 3 159 600 i15
+bag cnt 20 records 100 wgt 554 max 6 extent 62
+ta 27 0
+ta 27 1 0
+ta 21 3 1 3 17
+ta 16 4 1 7 13 17
+ta 42 2 2 3
+ta 20 6 2 10 13 14 15 17
+ta 47 4 4 7 16 17
+ta 20 3 4 16 17
+ta 41 1 5
+ta 14 5 5 7 13 14 16
+ta 18 5 5 8 10 14 16
+ta 27 6 6 8 9 10 11 12
+ta 46 5 6 12 14 15 16
+ta 35 2 8 9
+ta 21 4 9 10 14 15
+ta 11 3 10 11 15
+ta 35 2 11 13
+ta 35 3 11 13 17
+ta 39 2 12 15
+ta 12 1 14
+pack 16
+pta 27 0
+pta 27 1 -2147483647
+pta 21 3 -2147483638 17
+pta 16 4 -2147475326 17
+pta 42 2 -2147483636
+pta 20 6 -2147425276 17
+pta 47 4 -2147483504 16 17
+pta 20 3 -2147483632 16 17
+pta 41 1 -2147483616
+pta 14 5 -2147458912 16
+pta 18 5 -2147465952 16
+pta 27 6 -2147475648
+pta 46 5 -2147430336 16
+pta 35 2 -2147482880
+pta 21 4 -2147432960
+pta 11 3 -2147447808
+pta 35 2 -2147473408
+pta 35 3 -2147473408 17
+pta 39 2 -2147446784
+pta 12 1 -2147467264
+ifrqs 527 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 145 159
+end
+case r12.tab fmt=default w=1 sel=- smin=30 q=-3 reorder=1 zmin=1 pack=16
+read items 18 records 100 wgt 554 maxfrq 159 defapp 3
+item 0 3 73 201 i1
+item 1 3 63 147 i6
+item 2 3 159 600 i15
+item 3 3 37 127 i7
+item 4 3 108 370 i5
+item 5 3 120 429 i11
+item 6 3 145 638 i14
+item 7 3 131 606 i16
+item 8 3 73 392 i12
+item 9 3 137 545 i3
+item 10 3 112 470 i10
+item 11 3 77 322 i9
+item 12 3 83 316 i17
+item 13 3 80 322 i4
+item 14 3 62 204 i13
+item 15 3 27 27 i2
+item 16 3 67 248 i0
+item 17 3 97 489 i8
+recode 17
+code 0 3 37 127 i7
+code 1 3 62 204 i13
+code 2 3 63 147 i6
+code 3 3 67 248 i0
+code 4 3 73 201 i1
+code 5 3 73 392 i12
+code 6 3 77 322 i9
+code 7 3 80 322 i4
+code 8 3 83 316 i17
+code 9 3 97 489 i8
+code 10 3 108 370 i5
+code 11 3 112 470 i10
+code 12 3 120 429 i11
+code 13 3 131 606 i16
+code 14 3 137 545 i3
+code 15 3 145 638 i14
+code 16 3 159 600 i15
+bag cnt 19 records 100 wgt 554 max 6 extent 61
+ta 54 0
+ta 21 3 0 2 16
+ta 16 4 0 6 12 16
+ta 42 2 1 2
+ta 20 6 1 9 12 13 14 16
+ta 47 4 3 6 15 16
+ta 20 3 3 15 16
+ta 41 1 4
+ta 14 5 4 6 12 13 15
+ta 18 5 4 7 9 13 15
+ta 27 6 5 7 8 9 10 11
+ta 46 5 5 11 13 14 15
+ta 35 2 7 8
+ta 21 4 8 9 13 14
+ta 11 3 9 10 14
+ta 35 2 10 12
+ta 35 3 10 12 16
+ta 39 2 11 14
+ta 12 1 13
+pack 16
+pta 54 0
+pta 21 3 -2147483643 16
+pta 16 4 -2147479487 16
+pta 42 2 -2147483642
+pta 20 6 -2147454462 16
+pta 47 4 -2147450808 16
+pta 20 3 -2147450872 16
+pta 41 1 -2147483632
+pta 14 5 -2147438512
+pta 18 5 -2147442032
+pta 27 6 -2147479648
+pta 46 5 -2147424224
+pta 35 2 -2147483264
+pta 21 4 -2147458304
+pta 11 3 -2147465728
+pta 35 2 -2147478528
+pta 35 3 -2147478528 16
+pta 39 2 -2147465216
+pta 12 1 -2147475456
+ifrqs 500 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 159
+end
