@@ -1,0 +1,77 @@
+# Count-only mode with 63 top-level perfect extensions: upstream computes
+# C(n,k) as c*(n-k+1)/k in size_t, which overflows for n >= 63 (report.md
+# B5). Go counts every C(n,k) exactly (63 items: 2^63 sets including the
+# empty set) and saturates at 2^64-1 (64 items: 2^64 sets in total; 70
+# items: C(70,28..42) and the total).
+# deviation: report-B5
+items 63
+total 2
+supp 1 max
+size 0 max
+psp
+output count
+setup
+addpex 0
+addpex 1
+addpex 2
+addpex 3
+addpex 4
+addpex 5
+addpex 6
+addpex 7
+addpex 8
+addpex 9
+addpex 10
+addpex 11
+addpex 12
+addpex 13
+addpex 14
+addpex 15
+addpex 16
+addpex 17
+addpex 18
+addpex 19
+addpex 20
+addpex 21
+addpex 22
+addpex 23
+addpex 24
+addpex 25
+addpex 26
+addpex 27
+addpex 28
+addpex 29
+addpex 30
+addpex 31
+addpex 32
+addpex 33
+addpex 34
+addpex 35
+addpex 36
+addpex 37
+addpex 38
+addpex 39
+addpex 40
+addpex 41
+addpex 42
+addpex 43
+addpex 44
+addpex 45
+addpex 46
+addpex 47
+addpex 48
+addpex 49
+addpex 50
+addpex 51
+addpex 52
+addpex 53
+addpex 54
+addpex 55
+addpex 56
+addpex 57
+addpex 58
+addpex 59
+addpex 60
+addpex 61
+addpex 62
+report

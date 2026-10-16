@@ -1,0 +1,21 @@
+# Eight perfect extensions on two levels, reported within sizes 3..5,
+# with the pattern spectrum.
+items 10
+total 50
+supp 1 max
+size 3 5
+psp
+output emit
+setup
+addpex 9
+addpex 8
+add 0 30
+addpex 1
+addpex 2
+addpex 3
+addpex 4
+addpex 5
+addpex 6
+report
+remove 1
+report

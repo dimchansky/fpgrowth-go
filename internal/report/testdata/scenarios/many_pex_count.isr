@@ -1,0 +1,37 @@
+# Count-only mode (no sink, no border, no evaluation): the hypercube of 20
+# perfect extensions is counted with binomial coefficients, within sizes
+# 3..17, including the pattern spectrum.
+items 24
+total 100
+supp 1 max
+size 3 17
+psp
+output count
+setup
+add 23 40
+addpex 0
+addpex 1
+addpex 2
+addpex 3
+addpex 4
+addpex 5
+addpex 6
+addpex 7
+addpex 8
+addpex 9
+add 22 30
+addpex 10
+addpex 11
+addpex 12
+addpex 13
+addpex 14
+addpex 15
+addpex 16
+addpex 17
+addpex 18
+addpex 19
+report
+remove 1
+report
+remove 1
+report

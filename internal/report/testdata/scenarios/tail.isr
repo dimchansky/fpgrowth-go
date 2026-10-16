@@ -1,0 +1,41 @@
+# Head union tail pruning (isr_tail) with maximal sets: an empty tail
+# always prunes, an empty prefix never; otherwise the projection on the
+# tail items decides. The two tails at one level (for prefix {3}) are a
+# misuse that the port reproduces literally: the first projection prunes
+# item 3 from the parent tree, so the repository no longer sees {4,3,2,1}.
+items 5
+total 10
+target maximal
+supp 1 max
+size 1 max
+output emit
+setup
+tail 4 3 2 1 0
+add 4 6
+tail 3 2 1
+add 3 5
+add 2 4
+add 1 3
+report
+remove 1
+report
+remove 1
+report
+remove 1
+add 2 5
+tail
+tail 1
+report
+remove 1
+report
+remove 1
+add 3 6
+tail 2 1
+tail 1
+add 2 5
+tail 1
+report
+remove 1
+report
+remove 1
+report

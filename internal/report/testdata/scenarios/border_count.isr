@@ -1,0 +1,24 @@
+# A border disables count-only mode: without a sink the sets are expanded
+# and filtered one by one but only counted.
+items 6
+total 10
+supp 2 max
+size 1 max
+border 1 6
+border 3 4
+psp
+output count
+setup
+add 0 7
+addpex 1
+add 2 5
+report
+remove 1
+add 3 3
+addpex 4
+addpex 5
+report
+remove 1
+report
+remove 1
+report

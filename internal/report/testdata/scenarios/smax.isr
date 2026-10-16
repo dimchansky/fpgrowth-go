@@ -1,0 +1,22 @@
+# Support range [3, 6] and size range [1, 2]: the support gate applies to
+# the whole hypercube of a set (all members share the support).
+items 5
+total 10
+supp 3 6
+size 1 2
+output emit
+setup
+add 0 8
+add 1 6
+addpex 2
+report
+remove 1
+add 3 2
+report
+remove 1
+report
+remove 1
+add 4 5
+report
+remove 1
+report

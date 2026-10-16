@@ -1,0 +1,15 @@
+# Rules written to an output file (" <- " implication, info " (%a)").
+items 4
+total 10
+target rules nofilter
+supp 1 max
+size 1 max
+output file
+setup
+add 2 7
+reprule 2 10 7 0
+add 0 5
+reprule 0 7 6 0
+reprule 2 6 7 0
+remove 1
+remove 1

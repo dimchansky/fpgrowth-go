@@ -1,0 +1,26 @@
+# isr_xable: xmax = zmax for all/generators, zmax+1 for closed/maximal
+# with a finite zmax, unlimited with zmax = ITEM_MAX.
+items 4
+total 5
+target closed
+size 1 2
+output emit
+setup
+xable 3
+xable 4
+add 3 4
+xable 2
+xable 3
+add 2 3
+xable 1
+xable 2
+add 1 2
+xable 0
+xable 1
+report
+remove 1
+report
+remove 1
+report
+remove 1
+report

@@ -1,0 +1,28 @@
+# Association rules (isr_reprule): support and size gates only (size counts
+# the head), body printed in items[] order without the head, a rule with an
+# empty body, counts per size and the pattern spectrum.
+items 5
+total 10
+target rules nofilter
+supp 3 max
+size 1 3
+psp
+output emit
+setup
+add 3 7
+reprule 3 10 7 0.25
+add 1 5
+reprule 1 7 6 1.5
+reprule 3 6 7 -0.5
+add 0 4
+reprule 0 5 6 2
+reprule 1 4 6 0
+add 4 3
+reprule 4 4 3 0
+remove 1
+remove 1
+add 2 2
+reprule 2 5 2 0
+remove 1
+remove 1
+remove 1

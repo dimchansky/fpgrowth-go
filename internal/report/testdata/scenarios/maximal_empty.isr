@@ -1,0 +1,10 @@
+# Maximal sets: the empty set is never maximal, even if it is the only
+# frequent set (the repository root support starts at 0 >= sto = 0).
+items 3
+total 4
+target maximal
+supp 5 max
+size 0 max
+output emit
+setup
+report

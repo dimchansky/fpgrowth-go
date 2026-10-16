@@ -1,0 +1,14 @@
+# Packed perfect extensions are ignored for generators.
+items 4
+total 10
+target generators
+supp 1 max
+output emit
+setup
+add 3 5
+addpexpk 7
+pexcnt
+uses 0
+report
+remove 1
+report

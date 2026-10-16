@@ -1,0 +1,41 @@
+# Query functions: isr_cnt, isr_supp, isr_pexcnt, isr_uses, isr_xable.
+items 6
+total 9
+supp 1 max
+size 1 3
+output count
+setup
+cnt
+getsupp
+pexcnt
+xable 3
+xable 4
+addpex 5
+pexcnt
+uses 5
+uses 0
+add 0 6
+cnt
+getsupp
+uses 0
+addpex 0
+addpex 5
+addpex 1
+pexcnt
+xable 2
+xable 3
+add 2 4
+getsupp
+xable 1
+report
+remove 1
+pexcnt
+uses 2
+uses 1
+remove 1
+pexcnt
+uses 1
+uses 5
+cnt
+getsupp
+report

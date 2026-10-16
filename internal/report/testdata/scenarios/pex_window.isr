@@ -1,0 +1,23 @@
+# Expansion with a size window: only the members of the hypercube with
+# 2..3 items remain, in the same relative order; recursion is cut when the
+# minimum size cannot be reached or the maximum is exceeded.
+items 9
+total 20
+supp 1 max
+size 2 3
+psp
+output emit
+setup
+addpex 8
+add 0 10
+add 1 7
+addpex 2
+addpex 3
+addpex 4
+report
+remove 1
+addpex 5
+addpex 6
+report
+remove 1
+report

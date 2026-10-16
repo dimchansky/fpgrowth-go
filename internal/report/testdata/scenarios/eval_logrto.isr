@@ -1,0 +1,31 @@
+# Evaluation with the binary logarithm of the support quotient (-eb): 0 for
+# fewer than two items, so with threshold 0.1 single items are filtered
+# out. Evaluated per expanded set, after the border.
+items 5
+total 10
+freqs 7 7 7 6 3
+eval logrto 1 0.1
+supp 2 max
+size 1 max
+output emit
+setup
+add 1 7
+add 2 6
+report
+remove 1
+add 3 4
+addpex 4
+report
+remove 1
+report
+remove 1
+add 0 7
+add 1 5
+add 2 4
+report
+remove 1
+report
+remove 1
+report
+remove 1
+report

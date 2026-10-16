@@ -1,0 +1,24 @@
+# istree path: closed sets already filtered by the item set tree, reported
+# with isr_reportv (ModeNoFilter; closed forces ModeNoExpand). The
+# evaluation persists until the next isr_reportv.
+items 4
+total 10
+target closed nofilter
+supp 2 max
+size 0 max
+output emit
+setup
+reportv 0.5
+add 0 8
+reportv -1.25
+add 1 6
+reportv 0.125
+report
+remove 1
+add 2 3
+reportv 3
+remove 1
+remove 1
+add 3 2
+report
+remove 1

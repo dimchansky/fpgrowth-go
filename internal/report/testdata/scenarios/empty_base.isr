@@ -1,0 +1,9 @@
+# A reporter without items: only the empty set exists.
+items 0
+total 0
+supp 0 max
+size 0 max
+psp
+output emit
+setup
+report

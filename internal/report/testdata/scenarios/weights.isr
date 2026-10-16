@@ -1,0 +1,18 @@
+# Item set weights (%w): wgts[0] is the total weight; reporting the empty
+# prefix copies it into wgts[1..n] for the hypercube, and isr_add never
+# resets weights, so later sets of those sizes inherit it.
+items 5
+total 12
+supp 1 max
+size 0 max
+output emit
+setup
+addpex 4
+addpex 3
+report
+add 0 7
+report
+add 1 5
+report
+remove 1
+remove 1

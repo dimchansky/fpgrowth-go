@@ -1,0 +1,10 @@
+# Closed sets, empty set: reported (zmin 0) if no stored superset has the
+# same support; with no frequent items the empty set is closed.
+items 3
+total 4
+target closed
+supp 5 max
+size 0 max
+output emit
+setup
+report

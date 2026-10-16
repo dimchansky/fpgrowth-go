@@ -1,0 +1,22 @@
+# Packed perfect extensions (isr_addpexpk, lowest bit first), skipping
+# items already in use, including bit 30 (upstream computes 1 << 31 in
+# the loop test, which is undefined behavior but harmless on arm64).
+items 32
+total 10
+supp 1 max
+size 1 3
+output emit
+setup
+add 31 8
+addpexpk 1073741835
+pexcnt
+uses 30
+uses 2
+report
+remove 1
+add 20 6
+addpex 3
+addpexpk 15
+pexcnt
+report
+remove 1

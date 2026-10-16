@@ -1,0 +1,22 @@
+# Perfect extension expansion order (report.md 4.7): depth first, supersets
+# before the set, the oldest remaining extension first, items printed in
+# items[] order (prefix in insertion order, then the extensions in the
+# order they were appended). Top-level extensions are older than all others.
+items 6
+total 9
+supp 1 max
+size 0 max
+output emit
+setup
+addpex 5          # top-level perfect extension (support 9)
+add 0 6
+addpex 1
+addpex 2
+addpex 3
+report            # P = {0}, pexs 5 1 2 3 (n = 4, 16 sets)
+remove 1
+add 4 3
+addpex 1
+report
+remove 1
+report            # empty prefix: {5} and {}

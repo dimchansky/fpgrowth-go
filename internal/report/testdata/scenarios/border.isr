@@ -1,0 +1,27 @@
+# Border (-F): sizes below the border length need the given support, unset
+# sizes have border 0, sizes beyond the border are not filtered. Applied to
+# every expanded set after the support and size gates.
+items 6
+total 10
+supp 2 max
+size 1 max
+border 1 6
+border 3 4
+output emit
+setup
+add 0 7
+addpex 1
+add 2 5
+report
+remove 1
+add 3 3
+addpex 4
+addpex 5
+report
+remove 1
+report
+remove 1
+add 2 5
+report
+remove 1
+report
