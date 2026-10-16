@@ -1,0 +1,64 @@
+# Golden cases for internal/istree, produced by reference/harness/istree/gen.sh.
+# Format: name build data options...
+#   build: c = pristine C reference (reference/build.sh release),
+#          p = C with reference/patches/istree/fpgrowth-p-order.patch (B2 fixed)
+#   data:  file under testdata/data (-R paths are relative to it, too)
+# Rules are printed with -v ' %17a %17b %17h %17e', item sets with
+# -v ' %17a %17e'. Not used here because the port deliberately differs:
+# -S with rules (B8), head-only appearances (B3), -eb (B1), -p with the
+# pristine build (B2), and the measures with fixed ruleval bugs (v z y t i
+# g f h m s, rules-eval.md B4-B10).
+
+# association rules
+t1-r-s20-c50        c t1.tab -tr -s20 -c50
+t1-r-s30-c50-o      c t1.tab -tr -s30 -c50 -o
+t1-r-m2-n3          c t1.tab -tr -s10 -c40 -m2 -n3
+t1-r-el-d110        c t1.tab -tr -s20 -c30 -el -d110
+t1-r-app            c t1.tab -tr -s20 -c50 -R t1.app
+t1-r-q-1            c t1.tab -tr -s20 -c50 -q-1
+t1-r-q0             c t1.tab -tr -s20 -c50 -q0
+t3-r-w              c t3.tab -tr -w -s20 -c50 -el -d0
+r1-r-default        c r1.tab -tr -s10 -c60
+r1-r-ec-ed          c r1.tab -tr -s10 -c30 -ed -d10
+r1-r-en-i           c r1.tab -tr -s10 -c30 -en -d2 -i
+r1-r-ep             c r1.tab -tr -s10 -c30 -ep -d20
+r2-r-ek             c r2.tab -tr -s15 -c50 -ek -d60
+r2-r-ew-q2          c r2.tab -tr -s15 -c50 -ew -d20 -q-2
+r2-r-ej-o           c r2.tab -tr -s20 -c40 -ej -d10 -o
+r2-r-app            c r2.tab -tr -s15 -c50 -R r2.app -eq -d10
+r3-r-w-el           c r3.tab -tr -w -s10 -c50 -el -d120
+r3-r-w-ea-i         c r3.tab -tr -w -s15 -c60 -ea -d20 -i
+r4-r-eu             c r4.tab -tr -s8 -c50 -eu -d150
+r4-r-ec-o-n3        c r4.tab -tr -s10 -c70 -ec -d0 -o -n3
+
+# item sets evaluated with a rule measure
+t1-s-el-m0          c t1.tab -ts -s20 -el -d0 -m0
+t1-s-el-aa          c t1.tab -ts -s10 -el -d110 -aa
+t1-c-el             c t1.tab -tc -s10 -el -d110
+t1-m-el             c t1.tab -tm -s10 -el -d100
+t1-g-el             c t1.tab -tg -s10 -el -d80 -m0
+t3-s-w-en           c t3.tab -ts -w -s10 -en -d1 -an
+r1-s-el-am          c r1.tab -ts -s10 -el -d90 -am
+r1-s-ep-i           c r1.tab -ts -s10 -ep -d50 -i
+r1-c-en-an          c r1.tab -tc -s10 -en -d2 -an -q1
+r2-s-ec-aa          c r2.tab -ts -s15 -ec -d60 -aa
+r2-m-el-n3          c r2.tab -tm -s10 -el -d90 -n3
+r2-g-ed-m0          c r2.tab -tg -s15 -ed -d5 -m0
+r3-s-w-ej-aa        c r3.tab -ts -w -s10 -ej -d10 -aa
+r3-c-w-ek           c r3.tab -tc -w -s10 -ek -d55 -S80
+r4-s-eq-am          c r4.tab -ts -s8 -eq -d10 -am -q-2
+r4-c-el-ax          c r4.tab -tc -s8 -el -d120
+r4-g-ea-an          c r4.tab -tg -s8 -ea -d10 -an
+
+# evaluation pruning (-p) with the corrected call order (B2)
+t1-s-el-p0          p t1.tab -ts -s10 -el -d110 -p0
+t1-m-el-p0          p t1.tab -tm -s10 -el -d110 -p0
+t1-c-en-p1          p t1.tab -tc -s10 -en -d10 -p1
+t1-g-el-p0          p t1.tab -tg -s10 -el -d110 -p0
+r1-c-el-p0          p r1.tab -tc -s10 -el -d110 -p0
+r1-m-el-p-1         p r1.tab -tm -s10 -el -d105 -p-1
+r2-s-el-p2          p r2.tab -ts -s15 -el -d105 -p2 -aa
+r2-c-ec-p-2         p r2.tab -tc -s15 -ec -d60 -p-2 -am
+r3-g-w-el-p2        p r3.tab -tg -w -s10 -el -d110 -p2
+r4-m-ek-p0          p r4.tab -tm -s8 -ek -d55 -p0 -an
+r4-s-en-p-3         p r4.tab -ts -s8 -en -d1 -p-3

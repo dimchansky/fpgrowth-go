@@ -30,14 +30,16 @@ Status: **decided** (policy fixed, implementation pending) or
 
 | # | Upstream behavior (evidence) | Go behavior | Status / test |
 | --- | --- | --- | --- |
-| R1 | `-eb` always selects the log support quotient; the rule measure "imbalance ratio" is unreachable, and `-tr -eb` evaluates to 0 (rules B1) | decision pending | decided later |
-| R2 | `-p` has no effect: `ist_filter` runs before `ist_seteval` (rules B2) | decision pending | decided later |
-| R3 | Head-only items (`-R`) appear in rule bodies (rules B3) | Appearance constraints honoured | decided |
+| R1 | `-eb` always selects the log support quotient; the rule measure "imbalance ratio" is unreachable, and `-tr -eb` evaluates to 0 (rules B1) | For `-tr`, `-eb` selects the imbalance ratio as documented by `-!`; for item sets it stays the log support quotient | implemented in `internal/istree` (`TestReport_ImbalanceB1`); CLI mapping pending |
+| R2 | `-p` has no effect: `ist_filter` runs before `ist_seteval` (rules B2) | Evaluation set before filtering, so `-p` prunes item sets as documented (rules unaffected, matching patched C `reference/patches/istree/fpgrowth-p-order.patch`) | implemented in `internal/istree` (`TestFilter_CallOrderB2`) |
+| R3 | Head-only items (`-R`) appear in rule bodies (rules B3) | Appearance constraints honoured | implemented in `internal/istree` (`TestReport_HeadOnlyB3`) |
 | R4 | Conviction is 0 when confidence is 1 (rules B4) | +Inf (passes every (+) threshold) | implemented in `internal/ruleval` |
 | R5 | Certainty factor is NaN when the head occurs in every transaction (rules B5) | Finite value; no measure returns NaN | implemented in `internal/ruleval` (regression tests, exact big.Rat oracle for Fisher) |
 | R6 | Fisher table-probability/information variants wrong for tied tables (rules B6) | Correct computation | implemented in `internal/ruleval` (regression tests, exact big.Rat oracle for Fisher) |
 | R7 | Information measure can be slightly negative; G-test asserts in debug builds (rules B7) | Clamped at 0 | implemented in `internal/ruleval` (regression tests, exact big.Rat oracle for Fisher) |
-| R8 | `-S` applies to body ∪ head support even without `-o` (rules B8) | `-S` applies to the same support as `-s` | decided |
+| R8 | `-S` applies to body ∪ head support even without `-o` (rules B8) | `-S` applies to the same support as `-s` | implemented in `internal/istree` (`TestReport_MaxSuppB8`) |
+| R10 | After fixing R2, the generator filter compares against the total weight with the skip flag set, so `-tg -p` reports nothing (patched C) | Flag masked | implemented in `internal/istree` (`TestCloMax_GeneratorsTotalWeight`) |
+| R11 | `ist_init` reads past its array when `-m` exceeds the number of items; recursive report results ignored | Guarded; sink errors abort and are returned | implemented in `internal/istree` |
 | R9 | Two Fisher variants can return negative p-values (rules B9); Yates correction not clamped (B10); `logGamma(170.5)` returns 0 (B11) | Values clamped/corrected | implemented in `internal/ruleval` (regression tests, exact big.Rat oracle for Fisher) |
 
 ## Output (CLI)

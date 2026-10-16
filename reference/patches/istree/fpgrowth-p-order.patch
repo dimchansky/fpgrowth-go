@@ -1,0 +1,49 @@
+Fix rules-eval.md bug B2 (-p has no effect) for the istree golden harness.
+
+NOT a reference-build patch: it lives in a subdirectory so that
+reference/build.sh (which applies reference/patches/*.patch) never picks
+it up. reference/harness/istree/gen.sh applies it to an out-of-tree copy.
+
+1. fpg_mine: call ist_seteval before ist_filter (upstream filters with the
+   ist_create defaults, eval = RE_NONE, so nothing but infrequent sets is
+   marked), and call ist_filter for every prune > ITEM_MIN (a positive
+   value selects the strong forward filter branch, which upstream only
+   reaches from apriori).
+2. ist_clomax (generators): compare the single items with the total
+   weight without the skip flag; with (1), ist_filter marks the empty set
+   and the flagged (negative) weight made every item a non-generator.
+
+--- a/fpgrowth/src/fpgrowth.c	2026-10-16 15:44:37.862921822 +0300
++++ b/fpgrowth/src/fpgrowth.c	2026-10-16 15:44:37.899013753 +0300
+@@ -2048,8 +2048,9 @@
+     r = fpg_tree(fpg);          /* search for frequent item sets */
+     if (r < 0) return cleanup(fpg);
+     XMSG(stderr, "done [%.2fs].\n", SEC_SINCE(t));
+-    if ((prune >  ITEM_MIN)     /* if to filter with evaluation */
+-    &&  (prune <= 0)) {         /* (backward and weak forward) */
++    if (e != FPG_LDRATIO)       /* set additional evaluation measure */
++      ist_seteval(fpg->istree, fpg->eval, fpg->agg, fpg->thresh, prune);
++    if (prune >  ITEM_MIN) {    /* if to filter with evaluation */
+       CLOCK(t);                 /* start the timer for filtering */
+       XMSG(stderr, "filtering with evaluation ... ");
+       ist_filter(fpg->istree, prune);
+@@ -2066,8 +2067,6 @@
+     }
+     CLOCK(t);                   /* start timer, print log message */
+     XMSG(stderr, "writing %s ... ", isr_name(fpg->report));
+-    if (e != FPG_LDRATIO)       /* set additional evaluation measure */
+-      ist_seteval(fpg->istree, fpg->eval, fpg->agg, fpg->thresh, prune);
+     ist_init(fpg->istree, order);  /* initialize the extraction */
+     r = ist_report(fpg->istree, fpg->report, fpg->target);
+     cleanup(fpg);               /* report item sets/rules, */
+--- a/apriori/src/istree.c	2026-10-16 15:44:37.866135285 +0300
++++ b/apriori/src/istree.c	2026-10-16 15:44:37.899309629 +0300
+@@ -1530,7 +1530,7 @@
+     node = ist->lvls[0];        /* traverse the root node elements */
+     for (i = node->size; --i >= 0; ) {
+       if ((node->cnts[i] <  ist->smin)
+-      ||  (node->cnts[i] >= ist->wgt))
++      ||  (node->cnts[i] >= COUNT(ist->wgt)))
+         SETSKIP(node->cnts[i]); /* mark all infrequent items */
+     }                           /* and single item generators */
+     for (h = 0; ++h < ist->height; ) {  /* traverse the tree levels */
