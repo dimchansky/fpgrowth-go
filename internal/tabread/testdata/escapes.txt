@@ -1,0 +1,55 @@
+# Escape-decoding corpus for internal/tabread (DecodeEscapes).
+# Every line starting with '>' is one option string, taken literally.
+>
+>abc
+>\n
+>\t\r\a\b\f\v
+>\0
+>\00
+>\000
+>\0000
+>\1
+>\12
+>\123
+>\1234
+>\377
+>\400
+>\777
+>\7a
+>\8
+>\9x
+>\x
+>\xg
+>\x4
+>\x41
+>\x414
+>\xAf
+>\xfF
+>\x0
+>\X41
+>\\
+>\\n
+>\,
+>\,;
+>a\,b
+>\q
+>\N
+>\%
+>\ 
+>\"
+>\'
+>\?
+>\
+>a\
+>\\\
+>\t\
+>Ã©
+>\Ã©
+>\xc3\xa9
+>ÿ
+>€,
+>a b
+>, ;
+> \t,
+>\054\x2e\073:
+>%

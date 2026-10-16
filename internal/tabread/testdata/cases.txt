@@ -1,0 +1,100 @@
+# Golden test cases for internal/tabread, run through upstream's reader by
+# reference/harness/tabread/gen.sh (results in golden.txt).
+#
+# Format: NAME MODE FILE [OPTION...]
+#   MODE    trans (ib_read loop), sel (ib_readsel), app (ib_readapp);
+#           every case is also dumped in mode "fields" (trd_read).
+#   FILE    relative to this directory.
+#   OPTION  -r/-f/-b/-C followed by a value in upstream escape notation
+#           ('' is the empty string), or -w. Tokens never contain spaces
+#           (write \x20).
+# Lines starting with '#' and empty lines are ignored.
+
+# upstream examples (fpgrowth/ex)
+ex-test1                    trans ex/test1.tab
+ex-test2                    trans ex/test2.tab -f ,.;:
+ex-test2-default            trans ex/test2.tab
+ex-test2-escaped-seps       trans ex/test2.tab -f \054\x2e\073:
+ex-test3                    trans ex/test3.tab
+ex-test3-weighted           trans ex/test3.tab -w
+ex-test4                    trans ex/test4.tab
+ex-test5                    trans ex/test5.tab
+ex-test6                    trans ex/test6.tab
+ex-test6pct                 trans input/test6pct.tab -r % -f \n -b \n
+ex-test1csv                 trans ex/test1.csv
+ex-test1csv-blank-comma     trans ex/test1.csv -b ,
+ex-test1csv-blank-space-comma trans ex/test1.csv -b \x20,
+
+# tokenizer rules
+blanks                      trans input/blanks.txt
+comments                    trans input/comments.txt
+comments-disabled           trans input/comments.txt -C ''
+crlf                        trans input/crlf.txt
+crlf-cr-not-blank           trans input/crlf.txt -b \x20\t
+cr-only                     trans input/cr-only.txt
+empty                       trans input/empty.txt
+newlines                    trans input/newlines.txt
+no-final-newline            trans input/no-final-newline.txt
+trailing-sep-eof            trans input/trailing-sep-eof.txt
+trailing-sep-newline        trans input/trailing-sep-newline.txt
+trailing-sep-blank-eof      trans input/trailing-sep-blank-eof.txt
+trailing-blank-eof          trans input/trailing-blank-eof.txt
+empty-field                 trans input/empty-field.txt
+space-comma-space           trans input/space-comma-space.txt
+nul                         trans input/nul.txt
+nul-last-field              trans input/nul-last-field.txt
+nul-first-field             trans input/nul-first-field.txt
+high-bytes                  trans input/high-bytes.txt
+long-field                  trans input/long-field.txt
+duplicates                  trans input/duplicates.txt
+sep-overlap                 trans input/sep-overlap.txt -r \n; -f \x20;
+tab-in-item                 trans input/tab-in-item.txt -f \x20
+nul-sep                     trans input/nul-sep.txt -f \0
+hash-data                   trans input/hash-data.txt -C ''
+percent-comment             trans input/percent-comment.txt -C %;
+semicolon-records           trans input/semicolon-records.txt -r ;
+
+# transaction weights (-w)
+weights                     trans input/weights.txt -w
+weights-paren-blank         trans input/weights-paren-blank.txt -w -f ,
+weights-nul                 trans input/weights-nul.txt -w
+weights-big                 trans input/weights-big.txt -w
+weights-neg                 trans input/weights-neg.txt -w
+weights-overflow            trans input/weights-overflow.txt -w
+weights-float               trans input/weights-float.txt -w
+weights-letter              trans input/weights-letter.txt -w
+weights-open                trans input/weights-open.txt -w
+weights-mismatch            trans input/weights-mismatch.txt -w
+weights-close               trans input/weights-close.txt -w
+weights-hex-empty           trans input/weights-hex-empty.txt -w
+weights-empty-line          trans input/weights-empty-line.txt -w
+weights-trailing-sep        trans input/weights-trailing-sep.txt -w
+weights-only-sign           trans input/weights-only-sign.txt -w
+weights-empty-bracket       trans input/weights-empty-bracket.txt -w
+weights-trailing-blank-eof  trans input/trailing-blank-eof.txt -w
+weights-trailing-blank-after-field-eof trans input/trailing-blank-after-field-eof.txt -w
+
+# item selection files (-R, item set targets)
+sel                         sel input/sel.txt
+sel-comment                 sel input/sel-comment.txt
+sel-dup                     sel input/sel-dup.txt
+sel-empty                   sel input/empty.txt
+sel-trailing-sep-eof        sel input/sel-trailing-sep-eof.txt
+sel-trailing-sep-newline    sel input/sel-trailing-sep-newline.txt
+sel-nul                     sel input/sel-nul.txt
+
+# item appearance files (-R, rule target)
+app                         app input/app.txt
+app-indicators              app input/app-indicators.txt
+app-empty-first             app input/app-empty-first.txt
+app-empty                   app input/app-empty.txt
+app-two-first               app input/app-two-first.txt
+app-no-indicator            app input/app-no-indicator.txt
+app-three                   app input/app-three.txt
+app-dup                     app input/app-dup.txt
+app-dup-no-indicator        app input/app-dup-no-indicator.txt
+app-unknown                 app input/app-unknown.txt
+app-unknown-first           app input/app-unknown-first.txt
+app-empty-record            app input/app-empty-record.txt
+app-trailing-sep-eof        app input/app-trailing-sep-eof.txt
+app-comment                 app input/app-comment.txt

@@ -57,9 +57,11 @@ Status: **decided** (policy fixed, implementation pending) or
 
 | # | Upstream behavior (evidence) | Go behavior | Status / test |
 | --- | --- | --- | --- |
-| I1 | Escape decoding of `-r/-f/-b/-C` is broken for unknown escapes and a trailing backslash (cli) | Correct decoding | decided |
-| I2 | Non-ASCII separator bytes write out of bounds (cli) | Bytes ≥ 0x80 handled like any other byte | decided |
-| I3 | A final record ending in a field separator without newline is lost (tract) | The record is kept | decided |
-| I4 | Fields are silently truncated at 1024 bytes (cli) | No length limit | decided |
-| I5 | "read error" message prints the current field instead of the file name; record numbers off by one in one message (cli) | Correct file name and record number | decided |
+| I1 | Escape decoding of `-r/-f/-b/-C` is broken for unknown escapes and a trailing backslash (cli) | Correct decoding | implemented (`internal/tabread`, golden deviation list) |
+| I2 | Non-ASCII separator bytes write out of bounds (cli) | Bytes ≥ 0x80 handled like any other byte | implemented (`internal/tabread`, golden deviation list) |
+| I3 | A final record ending in a field separator without newline is lost (tract) | The record is kept | implemented (`internal/tabread`, golden deviation list) |
+| I4 | Fields are silently truncated at 1024 bytes (cli) | No length limit | implemented (`internal/tabread`, golden deviation list) |
+| I5 | "read error" message prints the current field instead of the file name; record numbers off by one in one message (cli) | Correct file name and record number | implemented (`internal/tabread`, golden deviation list) |
+| I7 | Weights are truncated from `long` to `int` (tract T6) | 64-bit weights; values beyond int64 are an invalid-weight error | implemented (`internal/tabread`) |
+| I8 | `nan(...)` payload syntax follows Apple libc (any bytes) | ISO C syntax (letters, digits, `_`) for option values | implemented (`internal/cconv`) |
 | I6 | Weight-sum overflow segfaults (cli) | Error (see M7) | decided |
