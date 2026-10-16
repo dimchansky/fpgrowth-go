@@ -15,8 +15,8 @@ type csNode struct {
 
 // csHead is a header table entry (upstream CSHEAD).
 type csHead struct {
-	item tract.Item
 	supp tract.Supp
+	item tract.Item
 	list int32
 }
 
@@ -36,28 +36,6 @@ func (a *csArena) alloc(n csNode) int32 {
 	return int32(len(a.nodes) - 1)
 }
 
-// csLink addresses a node link: the children field of node (sibling
-// false) or its sibling field (upstream CSNODE **).
-type csLink struct {
-	node    int32
-	sibling bool
-}
-
-func (a *csArena) get(l csLink) int32 {
-	if l.sibling {
-		return a.nodes[l.node].sibling
-	}
-	return a.nodes[l.node].children
-}
-
-func (a *csArena) set(l csLink, v int32) {
-	if l.sibling {
-		a.nodes[l.node].sibling = v
-	} else {
-		a.nodes[l.node].children = v
-	}
-}
-
 // csHeadBuf returns the reusable header buffer of recursion depth depth.
 func (m *miner) csHeadBuf(depth, n int) []csHead {
 	for len(m.csHeads) <= depth {
@@ -72,78 +50,130 @@ func (m *miner) csHeadBuf(depth, n int) []csHead {
 // addCmplx is a port of add_cmplx: it adds the transaction ids (ascending
 // head indices) with weight supp to the trie.
 func (m *miner) addCmplx(t *csTree, ids []int32, supp tract.Supp) {
-	a := &m.cs
+	nodes := m.cs.nodes
 	node := t.root
 	k := 0
 	var i int32
-	var p csLink
+	var p *int32 // the link to the insertion point (upstream CSNODE **)
 	for {
-		a.nodes[node].supp += supp
+		nodes[node].supp += supp
 		if k >= len(ids) {
 			return
 		}
 		i = ids[k]
 		k++
-		p = csLink{node: node}
-		for c := a.get(p); c >= 0 && int32(a.nodes[c].id) < i; c = a.get(p) {
-			p = csLink{node: c, sibling: true}
+		p = &nodes[node].children
+		c := *p
+		for c >= 0 && int32(nodes[c].id) < i {
+			p = &nodes[c].sibling
+			c = *p
 		}
-		c := a.get(p)
-		if c < 0 || int32(a.nodes[c].id) != i {
+		if c < 0 || int32(nodes[c].id) != i {
 			break
 		}
 		node = c
 	}
-	c := a.alloc(csNode{
-		id: tract.Item(i), supp: supp, parent: node, children: nilIdx,
-		sibling: a.get(p), succ: t.heads[i].list,
-	})
-	t.heads[i].list = c
-	a.set(p, c)
-	node = c
+	m.csInsert(t, p, node, tract.Item(i), supp)
+	node = int32(len(m.cs.nodes) - 1)
 	for k < len(ids) {
 		i = ids[k]
 		k++
-		c := a.alloc(csNode{
+		c := m.cs.alloc(csNode{
 			id: tract.Item(i), supp: supp, parent: node, children: nilIdx,
 			sibling: nilIdx, succ: t.heads[i].list,
 		})
-		a.nodes[node].children = c
+		m.cs.nodes[node].children = c
 		t.heads[i].list = c
 		node = c
 	}
 }
 
+// csInsert allocates a node for item i below parent with weight supp and
+// links it at *p, a children or sibling field of the arena, in front of
+// the node *p pointed to. *p is written before the allocation: the
+// append in alloc may move the arena, and p points into the old one.
+func (m *miner) csInsert(t *csTree, p *int32, parent int32, i tract.Item, supp tract.Supp) {
+	c := int32(len(m.cs.nodes))
+	sib := *p
+	*p = c
+	m.cs.alloc(csNode{
+		id: i, supp: supp, parent: parent, children: nilIdx,
+		sibling: sib, succ: t.heads[i].list,
+	})
+	t.heads[i].list = c
+}
+
+// projPaths are the paths of the nodes of one header list, recorded by
+// csCondSupp (fpCondSupp in the simple variant): node k has weight w[k]
+// and the ancestor ids (from its parent upwards, so descending)
+// ids[end[k-1]:end[k]] (from 0 for k = 0). The second pass of a
+// projection (mine16, projCmplx, projReord; projSimple, projSmp16) reads
+// them instead of walking the scattered tree nodes again.
+type projPaths struct {
+	ids []int32
+	end []int32
+	w   []tract.Supp
+}
+
 // condSupp computes the conditional supports of the items below head id
-// (the first step of every proj_* function) into m.cis[:id].
+// (the first step of every proj_* function) into m.cis[:id] and records
+// the paths of the head's nodes in m.paths.
+//
+// This walk is the hottest loop of the complex variant. It loads every
+// node once through a pointer (one bounds check per node instead of one
+// per field access) and keeps the transaction weight in a register.
 func (m *miner) csCondSupp(src *csTree, id int) []tract.Supp {
 	nodes := m.cs.nodes
 	s := m.cis[:id]
 	clear(s)
-	for node := src.heads[id].list; node >= 0; node = nodes[node].succ {
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			s[nodes[anc].id] += nodes[node].supp
+	p := &m.paths
+	ids, end, ws := p.ids[:0], p.end[:0], p.w[:0]
+	for node := src.heads[id].list; node >= 0; {
+		n := &nodes[node]
+		w := n.supp
+		for anc := n.parent; ; {
+			a := &nodes[anc]
+			if a.id < 0 {
+				break
+			}
+			s[a.id] += w
+			ids = append(ids, int32(a.id))
+			anc = a.parent
 		}
+		end = append(end, int32(len(ids)))
+		ws = append(ws, w)
+		node = n.succ
 	}
+	p.ids, p.end, p.w = ids, end, ws
 	return s
 }
 
 // mine16 mines the conditional database of head id of src with the
 // 16-items machine, bits given by imap (the 16-items paths of proj_cmplx
-// and proj_reord). The heads of dst define the machine's item map.
-func (m *miner) mine16(dst, src *csTree, id, n int, imap []int32) error {
+// and proj_reord), from the paths recorded by csCondSupp. The heads of
+// dst define the machine's item map.
+func (m *miner) mine16(dst *csTree, id, n int, imap []int32) error {
 	for i := range n {
 		m.fim.setMap(i, dst.heads[i].item)
 	}
-	nodes := m.cs.nodes
-	for node := src.heads[id].list; node >= 0; node = nodes[node].succ {
-		var b uint16
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			if i := imap[nodes[anc].id]; i >= 0 {
-				b |= 1 << i
-			}
+	// Translate imap into bit masks (0 for dropped items), so that the
+	// path loop below ORs without a data-dependent branch.
+	bits := m.bit16[:id]
+	for i, k := range imap[:id] {
+		bits[i] = 0
+		if k >= 0 {
+			bits[i] = 1 << (k & 15)
 		}
-		m.fim.add(b, nodes[node].supp)
+	}
+	p := &m.paths
+	start := int32(0)
+	for k, end := range p.end {
+		var b uint16
+		for _, i := range p.ids[start:end] {
+			b |= bits[i]
+		}
+		m.fim.add(b, p.w[k])
+		start = end
 	}
 	_, err := m.fim.mine()
 	return err
@@ -175,21 +205,24 @@ func (m *miner) projCmplx(dst, src *csTree, id int) (bool, error) {
 	}
 	dst.cnt = n
 	if n <= 16 && m.fim != nil { // at most 16 items left
-		return false, m.mine16(dst, src, id, n, imap)
+		return false, m.mine16(dst, id, n, imap)
 	}
 	a := &m.cs
 	a.nodes[dst.root].supp = 0
 	a.nodes[dst.root].children = nilIdx
-	for node := src.heads[id].list; node >= 0; node = a.nodes[node].succ {
-		nodes := a.nodes
-		d := len(m.path)
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			if i := imap[nodes[anc].id]; i >= 0 {
+	path := m.path
+	p := &m.paths
+	start := int32(0)
+	for k, end := range p.end {
+		d := len(path)
+		for _, x := range p.ids[start:end] { // ids descending
+			if i := imap[x]; i >= 0 {
 				d--
-				m.path[d] = i
+				path[d] = i
 			}
 		}
-		m.addCmplx(dst, m.path[d:], nodes[node].supp)
+		m.addCmplx(dst, path[d:], p.w[k])
+		start = end
 	}
 	return true, nil
 }
@@ -198,40 +231,36 @@ func (m *miner) projCmplx(dst, src *csTree, id int) (bool, error) {
 // (in ascending index order), clearing the flags, with weight supp; n is
 // the number of set flags.
 func (m *miner) addReord(t *csTree, flags []int32, n int, supp tract.Supp) {
-	a := &m.cs
+	nodes := m.cs.nodes
 	node := t.root
-	a.nodes[node].supp += supp
+	nodes[node].supp += supp
 	if n <= 0 {
 		return
 	}
-	var p csLink
+	var p *int32 // the link to the insertion point (upstream CSNODE **)
 	i := 0
 	for ; ; i++ {
 		if flags[i] == 0 {
 			continue
 		}
 		flags[i] = 0
-		p = csLink{node: node}
-		for c := a.get(p); c >= 0 && int(a.nodes[c].id) < i; c = a.get(p) {
-			p = csLink{node: c, sibling: true}
+		p = &nodes[node].children
+		c := *p
+		for c >= 0 && int(nodes[c].id) < i {
+			p = &nodes[c].sibling
+			c = *p
 		}
-		c := a.get(p)
-		if c < 0 || int(a.nodes[c].id) != i {
+		if c < 0 || int(nodes[c].id) != i {
 			break
 		}
 		node = c
-		a.nodes[node].supp += supp
+		nodes[node].supp += supp
 		if n--; n <= 0 {
 			return
 		}
 	}
-	c := a.alloc(csNode{
-		id: tract.Item(i), supp: supp, parent: node, children: nilIdx,
-		sibling: a.get(p), succ: t.heads[i].list,
-	})
-	t.heads[i].list = c
-	a.set(p, c)
-	node = c
+	m.csInsert(t, p, node, tract.Item(i), supp)
+	node = int32(len(m.cs.nodes) - 1)
 	if n--; n <= 0 {
 		return
 	}
@@ -241,11 +270,11 @@ func (m *miner) addReord(t *csTree, flags []int32, n int, supp tract.Supp) {
 			continue
 		}
 		flags[i] = 0
-		c := a.alloc(csNode{
+		c := m.cs.alloc(csNode{
 			id: tract.Item(i), supp: supp, parent: node, children: nilIdx,
 			sibling: nilIdx, succ: t.heads[i].list,
 		})
-		a.nodes[node].children = c
+		m.cs.nodes[node].children = c
 		t.heads[i].list = c
 		node = c
 		if n--; n <= 0 {
@@ -287,22 +316,24 @@ func (m *miner) projReord(dst, src *csTree, id int) (bool, error) {
 		imap[k] = int32(i)
 	}
 	if n <= 16 && m.fim != nil { // at most 16 items left
-		return false, m.mine16(dst, src, id, n, imap)
+		return false, m.mine16(dst, id, n, imap)
 	}
 	a := &m.cs
 	a.nodes[dst.root].supp = 0
 	a.nodes[dst.root].children = nilIdx
 	clear(d)
-	for node := src.heads[id].list; node >= 0; node = a.nodes[node].succ {
-		nodes := a.nodes
-		k := 0
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			if i := imap[nodes[anc].id]; i >= 0 {
+	p := &m.paths
+	start := int32(0)
+	for k, end := range p.end {
+		n := 0
+		for _, x := range p.ids[start:end] {
+			if i := imap[x]; i >= 0 {
 				d[i] = 1
-				k++
+				n++
 			}
 		}
-		m.addReord(dst, d, k, nodes[node].supp)
+		m.addReord(dst, d, n, p.w[k])
+		start = end
 	}
 	return true, nil
 }
@@ -379,7 +410,7 @@ func (m *miner) mineComplex() error {
 	}
 	k := len(s)
 	t := &csTree{cnt: k, heads: make([]csHead, k)}
-	m.cs.nodes = make([]csNode, 0, presize(2*m.bag.Extent()+16))
+	m.cs.nodes = make([]csNode, 0, treePresize(m.bag, true))
 	t.root = m.cs.alloc(csNode{
 		id: tract.End, parent: nilIdx, succ: nilIdx,
 		sibling: nilIdx, children: nilIdx,

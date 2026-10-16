@@ -53,8 +53,18 @@ type extChecker struct {
 	nzOff  []int    // non-zero words of item i: nzIdx[nzOff[i]:nzOff[i+1]]
 	nzIdx  []int32
 	planes []uint64 // weight bit b: planes[b*words:]; nil: all weights 1
-	cover  []uint64 // scratch: cover of the checked set
-	nz     []int32  // scratch: indices of the non-zero cover words
+	// The cover of the checked set: its non-zero words cover[i], at word
+	// index nz[i]. They alias a level of path or the scratch below.
+	nz    []int32
+	cover []uint64
+
+	// path[k] is the cover of the first k+1 items of the reporter's
+	// current prefix (checkPath).
+	path  []coverLevel
+	depth int // number of valid levels of path
+
+	nzBuf    []int32  // scratch: the cover computed by bitCover
+	coverBuf []uint64 // (nz and cover)
 
 	// transaction lists (words == 0)
 	tidOff []int // transactions of item i: tids[tidOff[i]:tidOff[i+1]]
@@ -68,6 +78,16 @@ type extChecker struct {
 	coverTxs []int32      // the cover transactions
 
 	setStamp, txStamp uint32
+}
+
+// coverLevel is a cover in compact form: the non-zero words cover[i] of
+// the transaction bit set, at word index nz[i], and the number n of
+// transactions in it.
+type coverLevel struct {
+	item  tract.Item // the item that this level adds to the prefix
+	nz    []int32
+	cover []uint64
+	n     int
 }
 
 // Size rule for the bit sets (see extChecker).
@@ -165,7 +185,6 @@ func (c *extChecker) makeBits(words int) {
 	k := len(c.freq)
 	c.words = words
 	c.bits = make([]uint64, k*words)
-	c.cover = make([]uint64, words)
 	for t := range c.txW {
 		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
 			c.bits[int(it)*words+t/64] |= 1 << (t % 64)
@@ -214,7 +233,67 @@ func (c *extChecker) check(set []tract.Item, supp tract.Supp) bool {
 		c.listCover(set)
 		return c.scanCover()
 	}
-	n := c.bitCover(set)
+	return c.decide(c.bitCover(set), supp)
+}
+
+// checkPath is check for a set whose items are prefix, the items the
+// reporter has added on the current search path, and their perfect
+// extensions. A perfect extension is in every transaction of the
+// prefix's cover (transactions of weight 0 are left out), so the cover
+// of the set is the cover of prefix, which is computed incrementally:
+// the covers of the prefix's leading items are kept from the previous
+// call (a depth-first search changes only the end of the prefix), and
+// each new item costs one AND over the non-zero words of the level
+// before it.
+func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
+	if len(prefix) == 0 || c.words == 0 {
+		return c.check(set, supp)
+	}
+	k := 0 // levels that remain valid
+	for k < min(c.depth, len(prefix)) && c.path[k].item == prefix[k] {
+		k++
+	}
+	for len(c.path) < len(prefix) {
+		c.path = append(c.path, coverLevel{})
+	}
+	for ; k < len(prefix); k++ {
+		c.extend(k, prefix[k])
+	}
+	c.depth = len(prefix)
+	lv := &c.path[len(prefix)-1]
+	c.nz, c.cover = lv.nz, lv.cover
+	c.markSet(set)
+	return c.decide(lv.n, supp)
+}
+
+// extend computes level k of the path cache: the cover of level k-1 (all
+// transactions for k = 0) restricted to the transactions of item.
+func (c *extChecker) extend(k int, item tract.Item) {
+	lv := &c.path[k]
+	lv.item = item
+	nz, cover, n := lv.nz[:0], lv.cover[:0], 0
+	b := c.itemBits(item)
+	if k == 0 {
+		for _, w := range c.nzIdx[c.nzOff[item]:c.nzOff[item+1]] {
+			x := b[w]
+			nz, cover = append(nz, w), append(cover, x)
+			n += bits.OnesCount64(x)
+		}
+	} else {
+		prev := &c.path[k-1]
+		for i, w := range prev.nz {
+			if x := prev.cover[i] & b[w]; x != 0 {
+				nz, cover = append(nz, w), append(cover, x)
+				n += bits.OnesCount64(x)
+			}
+		}
+	}
+	lv.nz, lv.cover, lv.n = nz, cover, n
+}
+
+// decide decides the marked set from its cover in c.nz and c.cover with
+// n transactions.
+func (c *extChecker) decide(n int, supp tract.Supp) bool {
 	// Estimated costs: scanning the cover transactions versus testing
 	// every item against the non-zero cover words.
 	h := n * (len(c.txItems)/max(len(c.txW), 1) + 1)
@@ -224,8 +303,8 @@ func (c *extChecker) check(set []tract.Item, supp tract.Supp) bool {
 	}
 	if h <= v {
 		c.coverTxs = c.coverTxs[:0]
-		for _, w := range c.nz {
-			for x := c.cover[w]; x != 0; x &= x - 1 {
+		for i, w := range c.nz {
+			for x := c.cover[i]; x != 0; x &= x - 1 {
 				c.coverTxs = append(c.coverTxs, w*64+int32(bits.TrailingZeros64(x)))
 			}
 		}
@@ -254,10 +333,9 @@ func (c *extChecker) itemBits(i tract.Item) []uint64 {
 	return c.bits[int(i)*c.words : (int(i)+1)*c.words]
 }
 
-// bitCover computes the cover of set into c.cover (only the words listed
-// in c.nz are valid) and c.nz and returns the number of cover
-// transactions. Only the non-zero words of the set's sparsest item are
-// visited.
+// bitCover computes the cover of set into c.nz and c.cover and returns
+// the number of cover transactions. Only the non-zero words of the set's
+// sparsest item are visited.
 func (c *extChecker) bitCover(set []tract.Item) int {
 	r := set[0]
 	for _, it := range set[1:] {
@@ -265,7 +343,7 @@ func (c *extChecker) bitCover(set []tract.Item) int {
 			r = it
 		}
 	}
-	c.nz = c.nz[:0]
+	nz, cover := c.nzBuf[:0], c.coverBuf[:0]
 	n := 0
 	rb := c.itemBits(r)
 	for _, w := range c.nzIdx[c.nzOff[r]:c.nzOff[r+1]] {
@@ -274,11 +352,12 @@ func (c *extChecker) bitCover(set []tract.Item) int {
 			x &= c.bits[int(it)*c.words+int(w)]
 		}
 		if x != 0 {
-			c.cover[w] = x
-			c.nz = append(c.nz, w)
+			nz, cover = append(nz, w), append(cover, x)
 			n += bits.OnesCount64(x)
 		}
 	}
+	c.nzBuf, c.coverBuf = nz, cover
+	c.nz, c.cover = nz, cover
 	return n
 }
 
@@ -387,8 +466,8 @@ func (c *extChecker) vertClosed(supp tract.Supp) bool {
 		}
 		b := c.itemBits(j)
 		sub := true
-		for _, w := range c.nz {
-			if c.cover[w]&^b[w] != 0 {
+		for i, w := range c.nz {
+			if c.cover[i]&^b[w] != 0 {
 				sub = false
 				break
 			}
@@ -414,16 +493,16 @@ func (c *extChecker) vertMaximal() bool {
 		var s tract.Supp
 		if c.planes == nil {
 			n := 0
-			for _, w := range c.nz {
-				n += bits.OnesCount64(c.cover[w] & b[w])
+			for i, w := range c.nz {
+				n += bits.OnesCount64(c.cover[i] & b[w])
 			}
 			s = tract.Supp(n)
 		} else {
 			for p := range len(c.planes) / c.words {
 				pl := c.planes[p*c.words : (p+1)*c.words]
 				n := 0
-				for _, w := range c.nz {
-					n += bits.OnesCount64(c.cover[w] & b[w] & pl[w])
+				for i, w := range c.nz {
+					n += bits.OnesCount64(c.cover[i] & b[w] & pl[w])
 				}
 				s += tract.Supp(n) << p
 			}

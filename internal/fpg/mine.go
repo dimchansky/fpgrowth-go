@@ -34,13 +34,15 @@ type miner struct {
 	zmax    int
 
 	// Scratch buffers (upstream fpg->set, fpg->map, fpg->cis).
-	set  []int32      // reorder map and flags (2k)
-	imap []int32      // old -> new item map of a projection (k)
-	cis  []tract.Supp // conditional item supports (k)
-	path []int32      // projected transaction, filled backwards (k)
-	tail []tract.Item // head union tail items, filled backwards (k+16)
+	set   []int32      // reorder map and flags (2k)
+	imap  []int32      // old -> new item map of a projection (k)
+	cis   []tract.Supp // conditional item supports (k)
+	path  []int32      // projected transaction, filled backwards (k)
+	bit16 []uint16     // 16-items machine bit of each item of a projection (k)
+	tail  []tract.Item // head union tail items, filled backwards (k+16)
 
-	fim *machine // 16-items machine (complex variant)
+	fim   *machine  // 16-items machine (complex variant)
+	paths projPaths // paths of the current projection
 
 	fp fpArena // nodes of the simple and single variants
 	cs csArena // nodes of the complex variant
@@ -85,7 +87,9 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 			return err
 		}
 		m.limited, m.zmax = true, c.ZMax
-		fn := chk.check
+		fn := func(set []tract.Item, supp tract.Supp) bool {
+			return chk.checkPath(rep.Items(), set, supp)
+		}
 		if h.cloMaxCheck != nil {
 			fn = h.cloMaxCheck(chk, rep)
 		}
@@ -133,6 +137,7 @@ func (m *miner) alloc(k int) {
 	m.imap = make([]int32, k)
 	m.cis = make([]tract.Supp, k)
 	m.path = make([]int32, k)
+	m.bit16 = make([]uint16, k)
 	m.tail = make([]tract.Item, k+16)
 }
 

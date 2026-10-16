@@ -236,16 +236,19 @@ func (c *extChecker) bruteSupp(set []tract.Item) tract.Supp {
 
 // bruteCheck decides closedness/maximality from bruteSupp over all items
 // (a test of extChecker.check itself).
-func bruteCheck(c *extChecker, _ *report.Reporter) report.CloMaxCheck {
+func bruteCheck(c *extChecker, rep *report.Reporter) report.CloMaxCheck {
 	return func(set []tract.Item, supp tract.Supp) bool {
 		got := c.check(set, supp)
+		if p := c.checkPath(rep.Items(), set, supp); p != got {
+			panic(fmt.Sprintf("checkPath(%v, %v, %d) = %v, check %v", rep.Items(), set, supp, p, got))
+		}
 		if len(set) > 0 && c.words > 0 { // both bit set paths
 			c.markSet(set)
 			c.bitCover(set)
 			c.coverTxs = c.coverTxs[:0]
-			for _, w := range c.nz {
+			for i, w := range c.nz {
 				for b := range int32(64) {
-					if c.cover[w]&(1<<b) != 0 {
+					if c.cover[i]&(1<<b) != 0 {
 						c.coverTxs = append(c.coverTxs, w*64+b)
 					}
 				}

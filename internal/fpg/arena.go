@@ -31,6 +31,24 @@ func presize(estimate int64) int {
 	return int(max(0, min(estimate, maxPresize, int64(maxNodes))))
 }
 
+// treePresize returns the initial arena capacity for the FP-tree of bag
+// and, if projections is set, the conditional trees built below it. The
+// initial tree has about as many nodes as the bag's prefix tree (fewer
+// after removing infrequent items); the projections alive at any time
+// add less than half of that on the benchmark data (dense closed: peak
+// 1.43 times the initial tree), while twice the extent (the number of
+// item instances) reserves 2 to 3.3 times the peak. Whatever a run needs
+// beyond the estimate, append still provides. The top-down
+// variant builds its tree from the last item of every transaction, which
+// gives it a different shape; it keeps the extent-based estimate.
+func treePresize(bag *tract.Bag, projections bool) int {
+	n := int64(bag.NodeCount()) + 16
+	if projections {
+		n += n / 2
+	}
+	return presize(min(n, 2*bag.Extent()+16))
+}
+
 // arenaOverflow is the panic value of an arena allocation beyond maxNodes.
 // The allocation sites sit deep in the recursions of all variants, so
 // instead of threading an error through every add/project call the

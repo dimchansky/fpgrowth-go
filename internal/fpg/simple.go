@@ -18,9 +18,9 @@ type fpNode struct {
 
 // fpHead is a header table entry (upstream FPHEAD).
 type fpHead struct {
-	item tract.Item // reporter item code (or packed head marker)
 	supp tract.Supp
-	list int32 // most recently created node of the item
+	item tract.Item // reporter item code (or packed head marker)
+	list int32      // most recently created node of the item
 }
 
 // fpTree is a simple frequent pattern tree (upstream FPTREE). Its nodes
@@ -90,17 +90,43 @@ func (m *miner) addSimple(t *fpTree, ids []int32, supp tract.Supp) {
 	}
 }
 
-// projSimple is a port of proj_simple: it builds in dst the conditional
-// tree of head id of src and returns false if it is empty.
-func (m *miner) projSimple(dst, src *fpTree, id int) bool {
+// fpCondSupp computes the conditional supports of the items below head
+// id of src into m.cis[:id] and records the paths of the head's nodes in
+// m.paths (see projPaths), including a packed entry at the root end of a
+// path (simple trees with the 16-items machine), which has no support.
+func (m *miner) fpCondSupp(src *fpTree, id int) []tract.Supp {
 	nodes := m.fp.nodes
 	s := m.cis[:id]
 	clear(s)
-	for node := src.heads[id].list; node >= 0; node = nodes[node].succ {
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			s[nodes[anc].id] += nodes[node].supp // conditional support
+	p := &m.paths
+	ids, end, ws := p.ids[:0], p.end[:0], p.w[:0]
+	for node := src.heads[id].list; node >= 0; {
+		n := &nodes[node]
+		w := n.supp
+		for anc := n.parent; ; {
+			a := &nodes[anc]
+			if a.id < 0 {
+				if a.id != tract.End { // packed entry
+					ids = append(ids, int32(a.id))
+				}
+				break
+			}
+			s[a.id] += w
+			ids = append(ids, int32(a.id))
+			anc = a.parent
 		}
+		end = append(end, int32(len(ids)))
+		ws = append(ws, w)
+		node = n.succ
 	}
+	p.ids, p.end, p.w = ids, end, ws
+	return s
+}
+
+// projSimple is a port of proj_simple: it builds in dst the conditional
+// tree of head id of src and returns false if it is empty.
+func (m *miner) projSimple(dst, src *fpTree, id int) bool {
+	s := m.fpCondSupp(src, id)
 	pex := m.perfectThreshold(src.heads[id].supp)
 	imap := m.imap
 	n := 0
@@ -123,16 +149,19 @@ func (m *miner) projSimple(dst, src *fpTree, id int) bool {
 	}
 	dst.cnt = n
 	m.fp.nodes[dst.root].supp = 0
-	for node := src.heads[id].list; node >= 0; node = m.fp.nodes[node].succ {
-		nodes := m.fp.nodes
-		d := len(m.path)
-		for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
-			if i := imap[nodes[anc].id]; i >= 0 {
+	path := m.path
+	p := &m.paths
+	start := int32(0)
+	for k, end := range p.end {
+		d := len(path)
+		for _, x := range p.ids[start:end] { // ids descending
+			if i := imap[x]; i >= 0 {
 				d--
-				m.path[d] = i
+				path[d] = i
 			}
 		}
-		m.addSimple(dst, m.path[d:], nodes[node].supp)
+		m.addSimple(dst, path[d:], p.w[k])
+		start = end
 	}
 	return true
 }
@@ -249,14 +278,7 @@ func (m *miner) addSmp16(t *fpTree, ids []int32, supp tract.Supp) {
 // projSmp16 is a port of proj_smp16. Head 0 of dst is always the packed
 // head; packed ancestors are restricted to mask.
 func (m *miner) projSmp16(dst, src *fpTree, id int, mask int32) {
-	nodes := m.fp.nodes
-	s := m.cis[:id]
-	clear(s)
-	for node := src.heads[id].list; node >= 0; node = nodes[node].succ {
-		for anc := nodes[node].parent; nodes[anc].id >= 0; anc = nodes[anc].parent {
-			s[nodes[anc].id] += nodes[node].supp
-		}
-	}
+	s := m.fpCondSupp(src, id)
 	pex := m.perfectThreshold(src.heads[id].supp)
 	imap := m.imap
 	dst.heads[0] = fpHead{item: tract.End, supp: 0, list: nilIdx}
@@ -278,22 +300,24 @@ func (m *miner) projSmp16(dst, src *fpTree, id int, mask int32) {
 	// n >= 1, so upstream's "projection is empty" test is dead code.
 	dst.cnt = n
 	m.fp.nodes[dst.root].supp = 0
-	for node := src.heads[id].list; node >= 0; node = m.fp.nodes[node].succ {
-		nodes := m.fp.nodes
-		d := len(m.path)
-		for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
-			i := int32(nodes[anc].id)
-			if i < 0 {
+	path := m.path
+	p := &m.paths
+	start := int32(0)
+	for k, end := range p.end {
+		d := len(path)
+		for _, i := range p.ids[start:end] {
+			if i < 0 { // packed entry
 				if i &= mask; i != 0 {
 					d--
-					m.path[d] = i | int32(tract.End)
+					path[d] = i | int32(tract.End)
 				}
 			} else if i = imap[i]; i >= 0 {
 				d--
-				m.path[d] = i
+				path[d] = i
 			}
 		}
-		m.addSmp16(dst, m.path[d:], nodes[node].supp)
+		m.addSmp16(dst, path[d:], p.w[k])
+		start = end
 	}
 }
 
@@ -389,7 +413,7 @@ func (m *miner) mineSimple() error {
 	}
 	k := len(s)
 	t := &fpTree{cnt: k, dir: m.dir, heads: make([]fpHead, k)}
-	m.fp.nodes = make([]fpNode, 0, presize(2*m.bag.Extent()+16))
+	m.fp.nodes = make([]fpNode, 0, treePresize(m.bag, true))
 	t.root = m.fp.alloc(fpNode{id: tract.End, parent: nilIdx, succ: nilIdx})
 	for i := range t.heads {
 		t.heads[i] = fpHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}

@@ -188,7 +188,7 @@ func (m *miner) fillTree(ist *istree.Tree) error {
 		return nil
 	}
 	t := &fpTree{cnt: len(s), dir: m.dir, heads: make([]fpHead, len(s))}
-	m.fp.nodes = make([]fpNode, 0, presize(m.bag.Extent()+1))
+	m.fp.nodes = make([]fpNode, 0, treePresize(m.bag, false))
 	t.root = m.fp.alloc(fpNode{id: tract.End, parent: nilIdx, succ: nilIdx})
 	for i, item := range s {
 		t.heads[i] = fpHead{item: tract.Item(item), supp: f[item], list: nilIdx}
