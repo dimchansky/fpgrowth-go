@@ -70,23 +70,61 @@ type outcome struct {
 	tolerated  int      // float values equal only within the tolerances
 	boundary   int      // sets/rules on one side only, at the threshold
 	cAgrees    bool     // deviation case: C agreed with Go anyway
-	bfChecked  bool     // Go was checked against the brute force
-	bfSubset   bool     // ... only as a subset (evaluation measure)
-	maxRel     float64  // largest relative difference of equal 17-digit values (relTol)
-	maxRelLog  float64  // ... of the logarithmic measures (measureTol)
-	maxAbsLog  float64  // largest absolute difference of the logarithmic measures
-	firstDiff  string   // first differing output line (not byte-equal cases)
-	r2Log      bool     // the R2 log line was removed before comparing
+	cFull      bool     // deviation case: C passed the brute force and was compared in full
+	cExempt    bool     // ... and differed only in channels the deviations excuse
+	rerun      rerunFunc
+	reruns     int     // count-only differences classified by a rerun with output
+	bfChecked  bool    // Go was checked against the brute force
+	bfSubset   bool    // ... only as a subset (evaluation measure)
+	maxRel     float64 // largest relative difference of equal 17-digit values (relTol)
+	maxRelLog  float64 // ... of the logarithmic measures (measureTol)
+	maxAbsLog  float64 // largest absolute difference of the logarithmic measures
+	firstDiff  string  // first differing output line (not byte-equal cases)
+	r2Log      bool    // the R2 log line was removed before comparing
 	failures   []string
+}
+
+// rerunFunc runs both programs on a variant of the case (in the same
+// directory) and returns the C and Go results.
+type rerunFunc func(c *tcase) (cr, gr *runResult)
+
+// diffKind classifies a difference between the C and the Go output.
+type diffKind uint8
+
+const (
+	diffRecords  diffKind = iota // a set or rule on one side only
+	diffValue                    // a support or measure value
+	diffOrder                    // the order of the common records
+	diffStdout                   // stdout (-Z statistics)
+	diffStderr                   // the log (without timings)
+	diffSpectrum                 // the pattern spectrum (-P)
+	diffCount                    // count-only stdout or stderr
+	diffParse                    // C output cannot be parsed
+)
+
+// cdiff is one difference between the C and the Go output.
+type cdiff struct {
+	kind diffKind
+	msg  string
+}
+
+func diffMessages(diffs []cdiff) []string {
+	m := make([]string, len(diffs))
+	for i, d := range diffs {
+		m[i] = d.msg
+	}
+	return m
 }
 
 func (o *outcome) fail(format string, args ...any) {
 	o.failures = append(o.failures, fmt.Sprintf(format, args...))
 }
 
-// evaluate compares the C and Go runs of a case.
-func evaluate(c *tcase, cr, gr *runResult) *outcome {
-	o := &outcome{}
+// evaluate compares the C and Go runs of a case. rerun, if not nil, lets
+// count-only cases with an evaluation measure be rerun with an output
+// file to classify differing counts (see countByRerun).
+func evaluate(c *tcase, cr, gr *runResult, rerun rerunFunc) *outcome {
+	o := &outcome{rerun: rerun}
 	if cr.runErrMsg != "" || gr.runErrMsg != "" {
 		o.fail("cannot run: C %q, Go %q", cr.runErrMsg, gr.runErrMsg)
 		return o
@@ -149,24 +187,49 @@ func evaluate(c *tcase, cr, gr *runResult) *outcome {
 	if len(o.deviations) > 0 {
 		o.cAgrees = len(diffs) == 0
 		o.verifyGo(c, db, gr)
-		o.finishDeviation()
-		return o
+		if bad, _ := checkBF(c, db, o.deviations, cr); len(bad) > 0 {
+			// C's result is wrong: the documented deviation decides
+			o.finishDeviation()
+			return o
+		}
+		// C's records pass the brute force, so C must agree with Go in
+		// full, except in the channels the deviations excuse.
+		o.cFull = true
+		var rest []cdiff
+		for _, d := range diffs {
+			if exempted(c, o.deviations, d.kind) {
+				o.cExempt = true
+			} else {
+				rest = append(rest, d)
+			}
+		}
+		if len(rest) > 0 {
+			o.fail("deviations %v flagged, but C passes the brute force check and differs from Go:", o.deviations)
+			o.failures = append(o.failures, diffMessages(rest)...)
+			return o
+		}
+		if o.cExempt {
+			o.finishDeviation()
+			return o
+		}
 	}
-	o.failures = append(o.failures, diffs...)
+	o.failures = append(o.failures, diffMessages(diffs)...)
 	if !o.byteEqual {
 		o.firstDiff = firstDiff(cr, gr)
 		if o.firstDiff == "" && o.r2Log {
 			o.firstDiff = `stderr: "filtering with evaluation" logged for -p > 0 (R2)`
 		}
 	}
-	o.verifyGo(c, db, gr) // the brute force must agree as well
+	if !o.bfChecked {
+		o.verifyGo(c, db, gr) // the brute force must agree as well
+	}
 	if len(o.failures) > 0 {
 		return o
 	}
 	switch {
 	case o.byteEqual:
 		o.verdict = verdictByteEqual
-	case o.tolerated > 0 || o.boundary > 0 || o.recordDevs > 0:
+	case o.tolerated > 0 || o.boundary > 0 || o.recordDevs > 0 || o.reruns > 0:
 		o.verdict = verdictTolerated
 	default:
 		o.verdict = verdictSemantic
@@ -190,16 +253,30 @@ func (o *outcome) finishDeviation() {
 // compareC compares the C output with the Go output semantically and
 // returns the differences that no tolerance or value-level deviation
 // explains. Malformed Go output is recorded as a failure directly.
-func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
-	var diffs []string
-	failf := func(format string, args ...any) { diffs = append(diffs, fmt.Sprintf(format, args...)) }
+func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []cdiff {
+	var diffs []cdiff
+	var kind diffKind
+	failf := func(format string, args ...any) {
+		diffs = append(diffs, cdiff{kind: kind, msg: fmt.Sprintf(format, args...)})
+	}
 
 	if c.countOnly {
-		if !bytes.Equal(cr.stdout, gr.stdout) || !bytes.Equal(cr.stderr, gr.stderr) {
+		if (!bytes.Equal(cr.stdout, gr.stdout) || !bytes.Equal(cr.stderr, gr.stderr)) && !o.countByRerun(c, db, cr, gr) {
+			switch {
+			case reportedCount(cr.stderr) != reportedCount(gr.stderr) && c.eval != 'x':
+				// different sets or rules passed the measure, which the
+				// brute force (a subset check) cannot decide
+				kind = diffRecords
+			case reportedCount(cr.stderr) != reportedCount(gr.stderr) || !bytes.Equal(cr.stdout, gr.stdout):
+				kind = diffCount
+			default:
+				kind = stderrKind(c, cr.stderr, gr.stderr)
+			}
 			failf("count-only output differs:\nC:  %q %q\nGo: %q %q", cr.stdout, cr.stderr, gr.stdout, gr.stderr)
 		}
 		return diffs
 	}
+	kind = diffParse
 	crecs, err := parseOutput(cr.out, c.info, c.isRules(), c.sep, c.imp)
 	if err != nil {
 		failf("C output: %v", err)
@@ -210,15 +287,21 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
 		o.fail("Go output: %v", err)
 		return diffs
 	}
-	dropFastEmpty := slices.Contains(o.deviations, "O3") && c.zmin >= 1
-	if dropFastEmpty {
+	droppedEmpty := false // O3's spurious empty set was removed from C's records
+	if slices.Contains(o.deviations, "O3") && c.zmin >= 1 {
+		n := len(crecs)
 		crecs = slices.DeleteFunc(crecs, func(r record) bool { return len(r.items) == 0 })
+		droppedEmpty = len(crecs) < n
 	}
 	cm, err1 := indexRecords(crecs)
 	gm, err2 := indexRecords(grecs)
 	if err1 != nil {
 		failf("C output: %v", err1)
 		return diffs
+	}
+	maxSize := maxBruteItems
+	for _, r := range crecs {
+		maxSize = max(maxSize, r.size())
 	}
 	if err2 != nil {
 		o.fail("Go output: %v", err2)
@@ -238,12 +321,14 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
 			case dev != nil && dev.allowsMissing(c, db, cr, false):
 				o.recordDevs++
 			default:
+				kind = diffRecords
 				failf("only in C: %s", cr.line)
 			}
 			continue
 		}
 		for k, f := range c.info.fields {
 			cv, gv := cr.values[k], gr.values[k]
+			kind = diffValue
 			if isInt(f.code) {
 				if cv != gv {
 					failf("%%%c differs:\nC:  %s\nGo: %s", f.code, cr.line, gr.line)
@@ -259,7 +344,7 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
 				case c.eval == 'b' || c.eval == 'j':
 					// differences of binary logarithms of supports: the
 					// terms are up to log2(N) each, about |S|+1 of them
-					at = 64 * dblEpsilon * float64(maxBruteItems+1) * math.Log2(float64(db.total)+2)
+					at = 64 * dblEpsilon * float64(maxSize+1) * math.Log2(float64(db.total)+2)
 				}
 				if f.code == 'E' {
 					at *= 100
@@ -298,6 +383,7 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
 		case dev != nil && dev.allowsMissing(c, db, gr, true):
 			o.recordDevs++
 		default:
+			kind = diffRecords
 			failf("only in Go: %s", gr.line)
 		}
 	}
@@ -314,20 +400,36 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []string {
 		}
 	}
 	if !slices.Equal(co, gorder) {
+		kind = diffOrder
 		failf("same records in a different order")
 	}
-	if !membership && !dropFastEmpty {
+	if !membership && !droppedEmpty {
 		if !bytes.Equal(cr.stdout, gr.stdout) {
+			kind = diffStdout
 			failf("stdout differs:\nC:  %q\nGo: %q", cr.stdout, gr.stdout)
 		}
 		if !bytes.Equal(cr.stderr, gr.stderr) {
+			kind = stderrKind(c, cr.stderr, gr.stderr)
 			failf("stderr differs:\nC:  %q\nGo: %q", cr.stderr, gr.stderr)
 		}
-		if !bytes.Equal(cr.psp, gr.psp) {
+		if !bytes.Equal(cr.psp, gr.psp) || cr.hasPsp != gr.hasPsp {
+			kind = diffSpectrum
 			failf("pattern spectrum differs:\nC:  %q\nGo: %q", cr.psp, gr.psp)
 		}
 	}
 	return diffs
+}
+
+// pspLogRE matches the log line of writing the pattern spectrum.
+var pspLogRE = regexp.MustCompile(`(?m)^writing ` + regexp.QuoteMeta(pspFile) + ` \.\.\. \[[0-9]+ signature\(s\)\] done \[T\]\.\n`)
+
+// stderrKind classifies differing logs: a difference only in the number
+// of pattern spectrum signatures belongs to the spectrum.
+func stderrKind(c *tcase, a, b []byte) diffKind {
+	if c.spectrum && bytes.Equal(pspLogRE.ReplaceAll(a, nil), pspLogRE.ReplaceAll(b, nil)) {
+		return diffSpectrum
+	}
+	return diffStderr
 }
 
 // indexRecords maps records by key; duplicates are an error.
@@ -434,4 +536,44 @@ func firstDiff(cr, gr *runResult) string {
 func lastLine(b []byte) string {
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	return lines[len(lines)-1]
+}
+
+// countByRerun classifies differing count-only outputs of a case with an
+// evaluation measure. Count-only mode writes no records, so the reason
+// for different counts (a set or rule whose measure lies at the
+// threshold, where last-bit differences of libm and Go's math package
+// decide, or a value-level deviation R4-R9) cannot be seen; both programs
+// are rerun with an output file and a format with the measure. The
+// difference is explained if the records of the rerun differ only by
+// such records and each program's count-only count equals the number of
+// records it wrote in the rerun.
+func (o *outcome) countByRerun(c *tcase, db *bfDB, cr, gr *runResult) bool {
+	if c.eval == 'x' || o.rerun == nil {
+		return false
+	}
+	rc := c.withOutput()
+	rcr, rgr := o.rerun(rc)
+	if rcr.runErrMsg != "" || rgr.runErrMsg != "" || rcr.exit != 0 || rgr.exit != 0 {
+		return false
+	}
+	sub := &outcome{deviations: o.deviations}
+	for _, d := range sub.compareC(rc, db, rcr, rgr) {
+		if d.kind == diffRecords || d.kind == diffValue || d.kind == diffParse {
+			return false
+		}
+	}
+	if sub.boundary+sub.recordDevs == 0 {
+		return false // same records: the counts must agree
+	}
+	for _, p := range [][2]*runResult{{cr, rcr}, {gr, rgr}} {
+		recs, err := parseOutput(p[1].out, rc.info, rc.isRules(), rc.sep, rc.imp)
+		if err != nil || reportedCount(p[0].stderr) != int64(len(recs)) {
+			return false
+		}
+	}
+	o.boundary += sub.boundary
+	o.recordDevs += sub.recordDevs
+	o.tolerated += sub.tolerated
+	o.reruns++
+	return true
 }

@@ -38,10 +38,22 @@ func (c *tcase) ruleParams(total int64) bfRuleParams {
 	}
 }
 
-// verifyGo checks the Go result against the brute force: exactly without
-// an evaluation measure, as a subset (with exact supports) with one.
+// verifyGo checks the Go result against the brute force (checkBF).
 func (o *outcome) verifyGo(c *tcase, db *bfDB, gr *runResult) {
-	subset := c.eval != 'x'
+	bad, subset := checkBF(c, db, o.deviations, gr)
+	o.bfChecked, o.bfSubset = true, subset
+	if len(bad) > 0 {
+		o.fail("brute force (%d differences): %s", len(bad), strings.Join(bad[:min(len(bad), maxListed)], "; "))
+	}
+}
+
+// checkBF checks the result of a successful run (of either program)
+// against the brute force: exactly without an evaluation measure, as a
+// subset (with exact supports) with one. In count-only mode only the
+// logged count is checked. It returns the differences (nil: the result
+// passes) and whether the check was a subset check.
+func checkBF(c *tcase, db *bfDB, devs []string, r *runResult) (bad []string, subset bool) {
+	subset = c.eval != 'x'
 	want := map[string][3]int64{} // key -> supp, body supp, head supp
 	if c.isRules() {
 		for _, r := range db.rules(c.ruleParams(db.total)) {
@@ -49,7 +61,7 @@ func (o *outcome) verifyGo(c *tcase, db *bfDB, gr *runResult) {
 		}
 	} else {
 		p := c.setParams(db.total)
-		if slices.Contains(o.deviations, "R2") {
+		if slices.Contains(devs, "R2") {
 			// -p prunes sets with the measure before the closed, maximal
 			// or generator filter runs on the remaining sets, so these
 			// properties hold only relative to the pruned tree: check
@@ -60,48 +72,43 @@ func (o *outcome) verifyGo(c *tcase, db *bfDB, gr *runResult) {
 			want[setKey(s.items)] = [3]int64{s.supp}
 		}
 	}
-	o.bfChecked, o.bfSubset = true, subset
 	if c.countOnly {
-		n := reportedCount(gr.stderr)
+		n := reportedCount(r.stderr)
 		if n < 0 || (!subset && n != int64(len(want))) || n > int64(len(want)) {
-			o.fail("brute force: Go counted %d, brute force %d (subset %v)", n, len(want), subset)
+			bad = append(bad, fmt.Sprintf("counted %d, brute force %d (subset %v)", n, len(want), subset))
 		}
-		return
+		return bad, subset
 	}
-	recs, err := parseOutput(gr.out, c.info, c.isRules(), c.sep, c.imp)
+	recs, err := parseOutput(r.out, c.info, c.isRules(), c.sep, c.imp)
 	if err != nil {
-		o.fail("Go output: %v", err)
-		return
+		return []string{fmt.Sprintf("output: %v", err)}, subset
 	}
 	fields := "a"
 	if c.isRules() {
 		fields = "abh"
 	}
-	var bad []string
 	seen := map[string]bool{}
-	for _, r := range recs {
-		w, ok := want[r.key]
-		if !ok {
-			bad = append(bad, "not in brute force: "+r.line)
+	for _, rec := range recs {
+		w, ok := want[rec.key]
+		if !ok || seen[rec.key] {
+			bad = append(bad, "not in brute force (or repeated): "+rec.line)
 			continue
 		}
-		seen[r.key] = true
+		seen[rec.key] = true
 		for k := range fields {
-			if i := c.info.fieldIndex(fields[k : k+1]); i >= 0 && int64(r.values[i]) != w[k] {
-				bad = append(bad, fmt.Sprintf("%%%c: Go %s, brute force %d", fields[k], r.line, w[k]))
+			if i := c.info.fieldIndex(fields[k : k+1]); i >= 0 && int64(rec.values[i]) != w[k] {
+				bad = append(bad, fmt.Sprintf("%%%c: %s, brute force %d", fields[k], rec.line, w[k]))
 			}
 		}
 	}
 	if !subset {
 		for _, k := range sortedKeys(want) {
 			if !seen[k] {
-				bad = append(bad, fmt.Sprintf("missing in Go: %q %v", strings.ReplaceAll(k, "\x00", " "), want[k]))
+				bad = append(bad, fmt.Sprintf("missing: %q %v", strings.ReplaceAll(k, "\x00", " "), want[k]))
 			}
 		}
 	}
-	if len(bad) > 0 {
-		o.fail("brute force (%d differences): %s", len(bad), strings.Join(bad[:min(len(bad), maxListed)], "; "))
-	}
+	return bad, subset
 }
 
 // selfCheck checks the consistency of the Go outputs: the logged count,

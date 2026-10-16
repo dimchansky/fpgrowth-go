@@ -236,17 +236,20 @@ reference and the Go CLI side by side on random cases and compares them.
 
 ```bash
 cd reference
-go test ./difftest/                       # 10,000 cases, about 35 s on 10 cores
-DIFFTEST_CASES=50000 go test ./difftest/ -timeout 30m
-./difftest.sh 50000 [seed]                # same, writes difftest-summary.txt
+go test ./difftest/                       # 10,000 small + 300 large cases, about 45 s on 10 cores
+DIFFTEST_CASES=50000 go test ./difftest/ -run TestDifferential -timeout 30m
+DIFFTEST_LARGE=10000 go test ./difftest/ -run TestLarge -timeout 30m
+./difftest.sh 50000 [seed] [large]        # writes difftest-summary.txt (and difftest-large-summary.txt)
 DIFFTEST_SEED=1 DIFFTEST_ONLY=429 go test ./difftest/ -run TestDifferential -v -artifacts
+DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -artifacts
 ```
 
 - **Binaries.** The C oracle is `build/release/fpgrowth/src/fpgrowth`; the
   test runs `./build.sh release` if it is missing (or `DIFFTEST_REBUILD` is
   set) and is skipped without a C compiler. `DIFFTEST_C` points to another
-  C binary. The Go CLI is built from `../cmd/fpgrowth` into a temporary
-  directory. Both run in the case directory with `argv[0]` `fpgrowth`.
+  C binary, `DIFFTEST_GO` to a prebuilt Go program under test. The Go CLI
+  is otherwise built from `../cmd/fpgrowth` into a temporary directory.
+  Both run in the case directory with `argv[0]` `fpgrowth`.
 - **Cases.** Case `i` of base seed `DIFFTEST_SEED` (default 1) is fully
   determined by the pair: a random dataset (generator copied from
   `internal/oracle`, because a nested module cannot import the root
@@ -255,7 +258,12 @@ DIFFTEST_SEED=1 DIFFTEST_ONLY=429 go test ./difftest/ -run TestDifferential -v -
   `s c m g r` and variants `-As -Ac -Ad -At` (cycled evenly), `-x -j -u
   -l -q`, relative, absolute and zero `-s`, `-S -m -n -F -c -o`, every
   `-e` measure with `-a -d -i -p`, `-R` selection and appearance files,
-  `-Z -P -k -I`, file output and count-only mode.
+  `-Z -P -k -I`, file output and count-only mode. About 15 % of the cases
+  use a structured dataset (`structgen.go`): products of independent item
+  groups, where the measures of items of different groups are exactly at
+  their independence values (and often exactly at the threshold, e.g.
+  `-eb -d0`, lift `-el -d100`), or frequency ties (equal item
+  frequencies, cyclic windows, few repeated transactions).
 - **Comparison.** Every case prints absolute supports (`%a`, `%b`, `%h`)
   and the measure with 17 digits (`%17e`), so both outputs are parsed into
   canonical records (sorted set, or head and sorted body). Supports must
@@ -265,19 +273,49 @@ DIFFTEST_SEED=1 DIFFTEST_ONLY=429 go test ./difftest/ -run TestDifferential -v -
   at the evaluation threshold; common records must come in the same
   order; stdout, stderr (without timings) and the pattern spectrum must
   be identical. Byte equality of all outputs is reported separately.
-- **Deviations.** Cases that trigger a documented deviation
+  In count-only mode, differing counts of a case with a measure are
+  classified by rerunning both programs with an output file: they are
+  tolerated only if the records differ at the threshold (or by a
+  value-level deviation) and each count equals that program's records.
+  This covers sets exactly at a log-measure threshold, where Go's
+  `math.Log` and Apple's libm can round differently (F-1 in
+  `docs/differences.md`; `TestF1Reproducer`).
+- **Deviations.** Cases that can trigger a documented deviation
   (`docs/differences.md`: M1-M5, M9, R1-R3, R8, R11, O3, O4; predicates
-  in `caseDeviations`) are not compared with C; the Go result must equal
-  an independent brute-force evaluation (`brute.go`: frequent, closed,
-  maximal, generator sets and single-head rules with all support, size,
-  border, selection and appearance constraints), or be a subset of it
-  with exact supports when an evaluation measure filters. Value-level
-  measure deviations (R4-R7, R9) excuse single records in the direction
-  of the fix. Every successful Go run is also checked against the brute
-  force and for consistency of its log count, `-Z` statistics and pattern
-  spectrum.
+  in `caseDeviations`, derived from the data: e.g. M1 only for `-At` with
+  an item eliminated at the top level, M5/O4 only if a frequent set
+  larger than `-n` exists, O3 only where upstream's fast output path is
+  active and has an effect) are checked against an independent
+  brute-force evaluation (`brute.go`: frequent, closed, maximal,
+  generator sets and single-head rules with all support, size, border,
+  selection and appearance constraints; a subset with exact supports
+  when an evaluation measure filters). The C output is checked the same
+  way: if it passes, C and Go are compared in full (records, order,
+  stdout, stderr, `-Z`, `-P`), and only the channels the deviation
+  explains are excused (`devExempt`: the log for M2/M3, the rule order
+  for M2, the spectrum for O3, values for R1, membership for R1/R2 and,
+  with a measure, for record-level deviations). Only cases in which C
+  fails the brute force, crashes or differs in an excused channel are
+  *deviation-verified*. Value-level measure deviations (R4-R7, R9)
+  excuse single records in the direction of the fix. Every successful Go
+  run is also checked against the brute force and for consistency of its
+  log count, `-Z` statistics and pattern spectrum.
+- **Large-data mode.** `TestLarge` (`large.go`) compares C and Go
+  without the brute force on 40-1000 items and 500-8000 transactions from
+  three generators (Zipf-like popularity with planted patterns, equal
+  item frequencies, co-occurring item blocks), cycling all targets and
+  variants with `-x -j -u -l -q -m -n -F -S -c -o`, measures, `-Z`, `-P`,
+  `-k` and count-only mode. The minimum support follows the item
+  frequencies to keep the output moderate, and options that would
+  trigger a documented deviation on the data are changed
+  (`avoidDeviations`), so every case must be byte-equal or semantically
+  equal. `DIFFTEST_LARGE` sets the number of cases (default 300, about
+  5 s; `-short` 6; 0 skips), e.g. `DIFFTEST_LARGE=10000` for a larger
+  run (about 3 minutes on 10 cores).
 - **Report.** The summary lists cases per verdict (byte-equal,
   semantic-equal, tolerated, error-equal, deviation-verified, FAIL),
-  brute-force checks, tolerated values, deviations, and each failure with
-  its seed, case index and a reproducing command; `-artifacts` keeps the
-  inputs and both outputs of failing cases.
+  brute-force checks, tolerated values, count-only reruns, the cases with
+  a flagged deviation that were compared with C in full, flagged and
+  verified cases per deviation, and each failure with its seed, case
+  index and a reproducing command; `-artifacts` keeps the inputs and both
+  outputs of failing cases.

@@ -43,9 +43,10 @@ type tcase struct {
 	index int
 	seed  uint64
 
-	gen      genConfig
-	weighted bool
-	txs      []transaction
+	gen       genConfig
+	structure structKind // structured dataset instead of gen's (structgen.go)
+	weighted  bool
+	txs       []transaction
 
 	target    byte // s c m g r
 	algo      byte // s c d t, 0 = default (c)
@@ -159,6 +160,14 @@ func newCase(base uint64, index int) (*tcase, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Structured datasets (exact independence, ties) come from a separate
+	// random stream, so the options of every case stay those of the
+	// plain generator.
+	rs := newRNG(seed ^ 0xd1b54a32d192ed03)
+	if chance(rs, 0.15) {
+		c.structure = pick(rs, structIndependent, structTies)
+		txs = structured(rs, c.structure, g, c.weighted)
+	}
 	c.txs = txs
 	total := c.total()
 
@@ -248,6 +257,13 @@ func newCase(base uint64, index int) (*tcase, error) {
 		c.invBxs = chance(r, 0.2)
 		if chance(r, 0.3) {
 			c.hasPrune, c.prune = true, pick(r, -1, 0, 1, 2, 3)
+		}
+	}
+
+	// put the measure of independent items exactly at the threshold
+	if c.structure == structIndependent && c.eval != 'x' && chance(rs, 0.6) {
+		if v, ok := independenceThreshold(c); ok {
+			c.hasThresh, c.thresh = true, v
 		}
 	}
 
@@ -364,6 +380,19 @@ func appearanceOf(ind string) appearance {
 	default: // none, -, ignore
 		return appNone
 	}
+}
+
+// withOutput returns a copy of a count-only case that writes the records
+// to the output file, with a format that shows the absolute supports and
+// the evaluation measure (17 digits), and without -Z and -P.
+func (c *tcase) withOutput() *tcase {
+	rc := *c
+	rc.countOnly, rc.stats, rc.spectrum = false, false, false
+	rc.info = infoFormat{open: c.info.open, close: c.info.close, fields: slices.Clone(c.info.fields)}
+	if rc.info.fieldIndex("e") < 0 {
+		rc.info.fields = append(rc.info.fields, infoField{code: 'e', digits: 17})
+	}
+	return &rc
 }
 
 // fmtNum formats an option value.
@@ -506,8 +535,8 @@ func (c *tcase) selectionSet() map[string]bool {
 
 // describe returns a one-line summary of the case for reports.
 func (c *tcase) describe() string {
-	return fmt.Sprintf("case %d (seed %#x, %d transactions, %d items, weights %d): %s",
-		c.index, c.seed, len(c.txs), c.gen.numItems, c.gen.weights, c.command())
+	return fmt.Sprintf("case %d (seed %#x, %d transactions, %d items, weights %d, structure %d): %s",
+		c.index, c.seed, len(c.txs), c.gen.numItems, c.gen.weights, c.structure, c.command())
 }
 
 // sortedKeys returns the keys of m in order.

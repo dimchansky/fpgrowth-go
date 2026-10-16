@@ -67,3 +67,21 @@ the checks listed in the iteration notes below.
 
 Recorded by the orchestrator after the fixes landed; see the commits
 following this report.
+
+- F1: `TestLogRatioIndependenceBoundary` (internal/fpg) pins Go's value on
+  the reproducer; difftest count-only comparison reruns both programs with
+  an output file to classify threshold-boundary differences; structured
+  independence/tie datasets added (15 % of cases).
+- F2: deviation predicates narrowed (M1 only with top-level elimination,
+  M5/O4 only with frequent sets above `-n`, O3 only when the fast path
+  takes effect); C output that passes the brute-force check is compared
+  in full (order, stderr, `-Z`, `-P`). Seed 777, 20 000 cases:
+  deviation-verified 8 066 → 1 338, byte-equal 8 783 → 14 957,
+  0 failures.
+- F3: `TestLarge` (40–1000 items, 500–8000 transactions; zipf,
+  equal-frequency, block): 10 000 cases, 0 failures (9 828 byte-equal).
+- F9: `FuzzParseArgs` (9.9 M execs) and `FuzzMine` vs oracle (368 k
+  execs): no failures.
+- F4, F6, F7, F8, F10: documentation fixed (commit "Record Stage 1
+  review ..."); M2/O3 log side effects added to `docs/differences.md`.
+- Result: all review findings addressed; no new Critical/High issue.

@@ -2,7 +2,9 @@ package main
 
 import (
 	"math"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
@@ -317,4 +319,97 @@ func TestFormatG(t *testing.T) {
 			t.Errorf("formatG(%v) = %q, want %q", tc.x, got, tc.want)
 		}
 	}
+}
+
+// nanFree returns o with its NaN values replaced by 0 and a mask of
+// where they were, for reflect.DeepEqual (NaN != NaN).
+func nanFree(o options) any {
+	var mask []byte
+	fix := func(x *float64) {
+		if math.IsNaN(*x) {
+			*x, mask = 0, append(mask, 'n')
+		} else {
+			mask = append(mask, '.')
+		}
+	}
+	fix(&o.smin)
+	fix(&o.smax)
+	fix(&o.conf)
+	fix(&o.thresh)
+	o.border = slices.Clone(o.border)
+	for i := range o.border {
+		fix(&o.border[i])
+	}
+	return struct {
+		o    options
+		mask string
+	}{o, string(mask)}
+}
+
+// FuzzParseArgs feeds arbitrary command lines (arguments separated by
+// NUL bytes) to parseArgs, validate and minerConfig. None may panic, and
+// the results must be consistent: parsing is deterministic, errors carry
+// the exit codes and messages of their stage, a valid command line names
+// an input file, and every option set that passes validate gives a miner
+// configuration that fpg.New accepts (run treats a failure as excluded
+// by validate).
+//
+//	go test ./cmd/fpgrowth/ -run '^$' -fuzz FuzzParseArgs -fuzztime 60s
+func FuzzParseArgs(f *testing.F) {
+	for _, s := range []string{
+		"",
+		"in",
+		"-ts\x00-s-1\x00-eb\x00-d0\x00-v %a %20e\x00in\x00-",
+		"-tr\x00-c0\x00-s0\x00-ox\x00-ec\x00-a\x00-d-1e308\x00in\x00out",
+		"-s10\x00-!\x00-tq",
+		"-z\x00-!",
+		"-F60:\x00-F:5\x00-F\x00-Fnan\x00x",
+		"-snan\x00-Snan\x00-cnan\x00-dnan\x00x",
+		"-m-1\x00-n0x10\x00-p0x7fffffffffff\x00-q-2\x00-l99\x00x",
+		"-Az\x00x", "-t\x00x", "-e\x00-a\x00-A\x00x",
+		"-R\x00-\x00-\x00", "-Rsel\x00-Ppsp\x00-k,\x00-I =>\x00-h#\x00-r\n\x00-f\t\x00-b \x00-C#\x00in\x00out",
+		"-v", "-tg -xjuZgwN in", "a\x00b\x00c",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		var args []string
+		if s != "" {
+			args = strings.Split(s, "\x00")
+		}
+		o, act, err := parseArgs(args)
+		o2, act2, err2 := parseArgs(args)
+		if !reflect.DeepEqual(nanFree(o), nanFree(o2)) || act != act2 || !reflect.DeepEqual(err, err2) {
+			t.Fatalf("%q: parseArgs is not deterministic", args)
+		}
+		if (act == actUsage) != (len(args) == 0) {
+			t.Fatalf("%q: action %d", args, act)
+		}
+		if err != nil {
+			if act != actRun || err.msg == "" || !slices.Contains([]int{exitOption, exitOptArg, exitArgCount}, err.code) {
+				t.Fatalf("%q: parse error %d %q (action %d)", args, err.code, err.msg, act)
+			}
+			return
+		}
+		if act != actRun {
+			return
+		}
+		if o.inFile == nil {
+			t.Fatalf("%q: no input file", args)
+		}
+		if verr := o.validate(); verr != nil {
+			if verr.msg == "" || !slices.Contains([]int{exitStdin, exitTarget, exitSize, exitSupport, exitConf,
+				exitMeasure, exitAggMode, exitVariant}, verr.code) {
+				t.Fatalf("%q: validation error %d %q", args, verr.code, verr.msg)
+			}
+			return
+		}
+		cfg := o.minerConfig()
+		if cfg.Pack < 0 || cfg.Pack > 16 {
+			t.Fatalf("%q: pack %d", args, cfg.Pack)
+		}
+		if _, err := fpg.New[string](cfg); err != nil {
+			t.Fatalf("%q: valid options rejected by fpg.New: %v", args, err)
+		}
+	})
 }

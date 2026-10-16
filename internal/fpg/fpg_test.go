@@ -6,12 +6,14 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -565,4 +567,266 @@ func TestLogRatio(t *testing.T) {
 	if !isSubsequence(ev.sink.lines, all.sink.lines) {
 		t.Errorf("evaluated sets are not a subsequence of all sets")
 	}
+}
+
+// evalSink records the evaluation of every reported item set by its
+// collectSink line ("names [supp]").
+type evalSink struct {
+	collectSink
+	evals map[string]float64
+}
+
+func (s *evalSink) ItemSet(is report.ItemSet) error {
+	if err := s.collectSink.ItemSet(is); err != nil {
+		return err
+	}
+	s.evals[s.lines[len(s.lines)-1]] = is.Eval
+	return nil
+}
+
+// TestLogRatioIndependenceBoundary pins the -eb value of an item set
+// whose items are exactly independent (docs/differences.md F-1, stage 1
+// review finding F1). In "a b / a / b / b / x / x" the set {a, b} has
+// supp(ab)*N = 1*6 = supp(a)*supp(b) = 2*3, so its binary log support
+// quotient is exactly 0 and -d0 (threshold 0, "must meet or exceed")
+// keeps it. The port computes it as log2(1/6) - (log2(2)-log2(6)) -
+// (log2(3)-log2(6)) with Go's math.Log, which gives exactly +0 here.
+//
+// Upstream's result depends on the C library: Apple's libm rounds
+// log(3) correctly to 0x1.193ea7aad030bp+0, Go's math.Log returns the
+// value one ulp below (0x1.193ea7aad030ap+0, within its documented
+// error), and with Apple's value the same expression is -2^-52, so the C
+// reference (macOS/arm64) omits {a, b} (fpgrowth -ts -s-1 -eb -d0). The
+// port keeps the standard math package; this test fixes its behavior so
+// that a change of the computation or of math.Log shows up here.
+func TestLogRatioIndependenceBoundary(t *testing.T) {
+	t.Parallel()
+	if got := math.Float64bits(math.Log(3)); got != 0x3ff193ea7aad030a {
+		t.Errorf("math.Log(3) = %#x, the test assumes 0x3ff193ea7aad030a", got)
+	}
+	txs := txsOf(t, "a b\na\nb\nb\nx\nx\n", false)
+	mine := func(thresh float64) *evalSink {
+		t.Helper()
+		cfg := DefaultConfig()
+		cfg.SMin, cfg.Eval, cfg.Thresh = -1, EvalLogRatio, thresh
+		ib := tract.NewItemBase[string]()
+		m, err := New[string](cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		scan := scanOf(txs)
+		if err := ib.Count(scan); err != nil {
+			t.Fatal(err)
+		}
+		sink := &evalSink{collectSink: collectSink{ib: ib}, evals: map[string]float64{}}
+		if err := m.Data(ib, scan); err != nil {
+			t.Fatal(err)
+		}
+		rep, err := m.Reporter()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rep.SetSink(sink)
+		if err := m.Mine(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return sink
+	}
+
+	tests := []struct {
+		name   string
+		thresh float64 // -d, percent
+		want   []string
+	}{
+		{name: "threshold 0 keeps the independent pair", thresh: 0, want: []string{"b [3]", "a b [1]", "a [2]", "x [2]"}},
+		// single items have the value 0 as well: every set is at the boundary
+		{name: "smallest positive threshold drops every set", thresh: 5e-322, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sink := mine(tt.thresh)
+			if !slices.Equal(sink.lines, tt.want) {
+				t.Errorf("-d%g: sets %q, want %q", tt.thresh, sink.lines, tt.want)
+			}
+			if v, ok := sink.evals["a b [1]"]; ok && math.Float64bits(v) != 0 {
+				t.Errorf("-eb value of {a, b} = %v (%#x), want exactly +0", v, math.Float64bits(v))
+			}
+		})
+	}
+}
+
+// fuzzBytes reads a fuzz input byte by byte; past the end it yields 0.
+type fuzzBytes struct {
+	b []byte
+	i int
+}
+
+func (r *fuzzBytes) next() int {
+	if r.i >= len(r.b) {
+		return 0
+	}
+	v := r.b[r.i]
+	r.i++
+	return int(v)
+}
+
+// decodeFuzzCase decodes a small dataset (at most 10 items, 24
+// transactions, weights 0-3) and the item set options of propCase from
+// fuzz input.
+func decodeFuzzCase(r *fuzzBytes) propCase {
+	numItems := 1 + r.next()%10
+	numTx := r.next() % 25
+	weighted := r.next()%2 == 1
+	names := make([]string, numItems)
+	for i := range names {
+		names[i] = string(rune('a' + i))
+	}
+	c := propCase{zmax: MaxSize, smax: 100, zmin: 1}
+	for range numTx {
+		mask := r.next() | r.next()<<8
+		var items []string
+		for i, n := range names {
+			if mask&(1<<i) != 0 {
+				items = append(items, n)
+			}
+		}
+		if items == nil {
+			items = []string{}
+		}
+		w := tract.Supp(1)
+		if weighted {
+			w = tract.Supp(r.next() % 4)
+		}
+		c.txs = append(c.txs, oracle.Transaction{Items: items, Weight: w})
+	}
+	switch r.next() % 4 {
+	case 0:
+		c.smin = float64(-(1 + r.next()%5))
+	case 1:
+		c.smin = float64(r.next() % 101) // percentage, includes 0 (B2)
+	default:
+		c.smin = -1
+	}
+	if k := r.next(); k%4 == 0 {
+		c.zmin = k / 4 % 4
+	}
+	if k := r.next(); k%3 == 0 {
+		c.zmax = c.zmin + k/3%4
+	}
+	if k := r.next(); k%5 == 0 {
+		c.smax = float64(-(2 + k/5%10))
+	}
+	flags := r.next()
+	c.noPerf = flags&1 != 0
+	c.noTail = flags&2 != 0
+	c.sort = []int{2, 2, 1, 0, -1, -2}[r.next()%6]
+	if flags&4 != 0 {
+		c.border = []float64{float64(-(1 + r.next()%3)), float64(-(1 + r.next()%4))}
+	}
+	return c
+}
+
+// checkFuzzRules mines association rules of c's data with options read
+// from r on every item set tree variant and compares them with the
+// oracle.
+func checkFuzzRules(t *testing.T, c propCase, r *fuzzBytes) {
+	t.Helper()
+	cfg := DefaultConfig()
+	cfg.Target = report.TargetRules
+	cfg.SMin = c.smin
+	cfg.SMax = []float64{100, 100, 60, -3, -1, 0}[r.next()%6]
+	cfg.Conf = []float64{0, 30, 50, 80, 100}[r.next()%5]
+	cfg.ZMin = r.next() % 3
+	cfg.ZMax = []int{MaxSize, 1, 2, 3}[r.next()%4]
+	cfg.Sort = c.sort
+	flags := r.next()
+	if flags&1 != 0 {
+		cfg.Mode |= ModeOrigSupp
+	}
+	cfg.InvalidateBelowExpected = flags&2 != 0
+	switch k := r.next(); k % 6 {
+	case 0:
+		cfg.Eval = EvalNone
+	case 1:
+		cfg.Eval = EvalLogRatio // the imbalance ratio for rules (R1)
+	default:
+		cfg.Eval = 1 + k/6%(int(ruleval.NumMeasures)-1)
+	}
+	cfg.Thresh = treeThresholds[r.next()%len(treeThresholds)]
+	db, err := oracle.New(c.txs, oracle.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(cfg.SMin, db.Total())), cfg.Conf/100)
+	var app *appSpec
+	if flags&4 != 0 {
+		app = &appSpec{def: tract.Appearance(r.next() % 4)}
+		p.DefaultAppear = oracleAppear(app.def)
+		p.Appear = map[string]oracle.Appearance{}
+		for _, it := range db.Items() {
+			if k := r.next(); k%2 == 0 {
+				a := tract.Appearance(k / 2 % 4)
+				app.items = append(app.items, it)
+				app.apps = append(app.apps, a)
+				p.Appear[it] = oracleAppear(a)
+			}
+		}
+	}
+	p.OrigSupp = cfg.Mode&ModeOrigSupp != 0
+	p.MaxSupp = oracle.AbsMaxSupp(cfg.SMax, db.Total())
+	p.MinSize = cfg.ZMin
+	if cfg.ZMax < MaxSize {
+		p.MaxSize = cfg.ZMax
+	}
+	p.Eval = oracleMeasure(cfg)
+	want, err := db.Rules(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range treeVariants {
+		vc := cfg
+		vc.Algo, vc.Pack = v.algo, v.pack
+		vc.Mode &^= v.clear
+		sink, _, err := runTree(t, c.txs, vc, app)
+		switch {
+		case errors.Is(err, ErrNoItems):
+			if len(want) > 0 {
+				t.Fatalf("rules %s: ErrNoItems, oracle has %d rules", v.name, len(want))
+			}
+		case err != nil:
+			t.Fatalf("rules %s: %v", v.name, err)
+		default:
+			if d := oracle.DiffRules(want, sink.rules, oracle.DiffOptions{}); d != "" {
+				t.Fatalf("rules %s config %+v app %+v:\n%s", v.name, vc, app, d)
+			}
+		}
+	}
+}
+
+// FuzzMine mines a small dataset decoded from the fuzz input with every
+// target (frequent, closed, maximal, generators: all variants of
+// checkCase; rules: all item set tree variants) and compares the results
+// with the brute-force oracle.
+//
+//	go test ./internal/fpg/ -run '^$' -fuzz FuzzMine -fuzztime 60s
+func FuzzMine(f *testing.F) {
+	f.Add([]byte{})
+	f.Add([]byte("\x04\x06\x00\x03\x00\x01\x00\x05\x00\x07\x00\x0f\x00\x02\x00\x00\x00\x00\x00\x00\x00"))
+	f.Add([]byte("\x09\x18\x01\xff\x01\x02\x13\x02\x01\x37\x00\x03\x01\x00\x00\x01\x02\x03\x04\x05\x06\x07"))
+	f.Add([]byte("independence and ties: a b / a / b / b / x / x"))
+	for seed := range uint64(8) {
+		r := rand.New(rand.NewPCG(seed, 99))
+		b := make([]byte, 64)
+		for i := range b {
+			b[i] = byte(r.IntN(256))
+		}
+		f.Add(b)
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		r := &fuzzBytes{b: data}
+		c := decodeFuzzCase(r)
+		checkCase(t, c)
+		checkFuzzRules(t, c, r)
+	})
 }

@@ -4,9 +4,10 @@
 //
 // # Running
 //
-//	cd reference && go test ./difftest/                # 10,000 cases
-//	DIFFTEST_CASES=50000 go test ./difftest/ -timeout 30m -v
-//	./difftest.sh 50000                                 # same, with a summary file
+//	cd reference && go test ./difftest/                # 10,000 small + 300 large cases
+//	DIFFTEST_CASES=50000 go test ./difftest/ -run TestDifferential -timeout 30m -v
+//	DIFFTEST_LARGE=10000 go test ./difftest/ -run TestLarge -timeout 30m -v
+//	./difftest.sh 50000 1 10000                         # both, with summary files
 //
 // The C reference is reference/build/release/fpgrowth/src/fpgrowth; if it
 // is missing (or DIFFTEST_REBUILD is set) the test runs ../build.sh
@@ -19,9 +20,11 @@
 // Environment: DIFFTEST_CASES (number of cases, default 10000; -short:
 // at most 300), DIFFTEST_SEED (base seed, default 1), DIFFTEST_ONLY
 // (comma-separated case indices to rerun), DIFFTEST_SUMMARY (file for
-// the summary and all failures). With -artifacts, the inputs, the command
-// and both outputs of every failing case are kept under the test's
-// artifact directory.
+// the summary and all failures); for the large-data mode DIFFTEST_LARGE
+// (number of cases, default 300; -short: at most 6; 0 skips it),
+// DIFFTEST_LARGE_ONLY and DIFFTEST_LARGE_SUMMARY. With -artifacts, the
+// inputs, the command and both outputs of every failing case are kept
+// under the test's artifact directory.
 //
 // # Cases
 //
@@ -38,6 +41,13 @@
 // The dataset generator is a copy of internal/oracle's (gen.go), because
 // a nested module cannot import the root module's internal packages;
 // TestGenerate_matchesOracle pins the copy to the oracle's golden hashes.
+// About 15% of the cases use a structured dataset instead (structgen.go,
+// drawn from a separate random stream so that the options stay the
+// same): products of independent item groups, where measures of items of
+// different groups are exactly at their independence values (and, for
+// 60% of those cases with a measure, exactly at the threshold, e.g. -eb
+// -d0 or a lift of -d100), or ties (every item in the same number of
+// transactions, cyclic windows, a few repeated transactions).
 //
 // # Comparison
 //
@@ -58,12 +68,25 @@
 //     membership differs; or
 //   - error-equal: both fail with the same message; or
 //   - deviation-verified: the case triggers a documented deviation
-//     (docs/differences.md; caseDeviations lists the predicates), so the
-//     C output is not authoritative; instead the Go output must equal an
-//     independent brute-force evaluation (brute.go: frequent, closed,
-//     maximal and generator sets and single-head rules with all support,
-//     size, border, selection and appearance constraints), or be a subset
-//     of it with exact supports when an evaluation measure filters.
+//     (docs/differences.md; caseDeviations lists the predicates, derived
+//     from the data where possible) and the C output is wrong: it fails
+//     the same independent brute-force check as the Go output (brute.go:
+//     frequent, closed, maximal and generator sets and single-head rules
+//     with all support, size, border, selection and appearance
+//     constraints; with an evaluation measure only a subset with exact
+//     supports), or C crashes, or it differs from Go only in an output
+//     channel the deviation explains (devExempt, e.g. the log for M2/M3,
+//     the pattern spectrum for O3). The Go output must pass the brute
+//     force. If C's output passes the brute force, the case is compared
+//     with C in full (records, order, stdout, stderr, spectrum) like any
+//     other case, so a flagged deviation does not hide differences.
+//
+// In count-only mode (no output file) only the counts can be compared.
+// If they differ and the case has an evaluation measure, both programs
+// are rerun with an output file and the measure in the format
+// (countByRerun); the difference is tolerated if the records differ only
+// at the threshold or by a value-level deviation, and each count matches
+// that program's records.
 //
 // Value-level deviations of measures (R4 conviction, R5 certainty factor,
 // R6/R9 Fisher, R7 information, R9 Yates) excuse individual records in
@@ -71,4 +94,17 @@
 // run is also checked against the brute force and for internal
 // consistency (logged count, -Z statistics and pattern spectrum versus
 // the records written).
+//
+// # Large-data mode
+//
+// TestLarge (large.go) compares C and Go only, without the brute force,
+// on datasets with 40-1000 items and 500-8000 transactions from three
+// generators (Zipf-like item popularity with planted patterns, every item
+// in the same number of transactions, co-occurring item blocks), cycling
+// all targets and variants, with -x, -j, -u, -l, -q, -m, -n, -F, -S, -c,
+// -o, measures, -Z, -P, both item separators and count-only mode. The
+// minimum support follows the item frequencies to keep the output
+// moderate. Options that would trigger a documented deviation on the
+// data are changed (avoidDeviations), so every case must be byte-equal or
+// semantically equal (compareC) and pass the Go self-check.
 package difftest

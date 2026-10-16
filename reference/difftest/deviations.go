@@ -8,10 +8,17 @@ import (
 )
 
 // caseDeviations returns the documented deviations (docs/differences.md)
-// that a case can trigger. For these cases the Go output is checked
-// against the brute force instead of the C output. The predicates may
-// over-approximate (a listed deviation need not change the output) but
+// that a case can trigger. The predicates are necessary conditions of the
+// upstream behavior, derived from the data where possible; they may still
+// over-approximate (a listed deviation need not change the output), but
 // must not miss a case where upstream behaves differently by design.
+//
+// A flagged deviation does not by itself skip the comparison with C:
+// evaluate checks C's result against the brute force as well, and if C
+// passes, C and Go are compared in full (records, order, stdout, stderr,
+// spectrum); only the output channels in devExempt are excused. The case
+// is deviation-verified only when C fails the brute-force check (or
+// crashes) or differs in an excused channel only.
 func caseDeviations(c *tcase, db *bfDB) []string {
 	var devs []string
 	add := func(id string, cond bool) {
@@ -25,9 +32,13 @@ func caseDeviations(c *tcase, db *bfDB) []string {
 	closedMax := c.target == 'c' || c.target == 'm'
 	direct := !c.treePath()
 
-	// M1: -At item map; triggered by any item dropped at the top level
-	// (perfect extension, zmin filter). -tg uses -Ad instead.
-	add("M1", direct && c.algo == 't' && c.target != 'g')
+	// M1: -At copies the old->new item map instead of new->old, which
+	// matters only if fpg_topdn eliminates an item at the top level
+	// (infrequent after the zmin filter, or a perfect extension) while
+	// another item is kept. Whether the eliminated item's code lies below
+	// the last kept code depends on the (unstable) frequency sort, so that
+	// part is not modeled. -tg uses -Ad instead.
+	add("M1", direct && c.algo == 't' && c.target != 'g' && topLevelElimination(c, db, smin))
 	// M2: -s0 (absolute minimum support 0). For rules the item filter
 	// uses the support of body and head, ceil(smin*conf), which is 0 for
 	// -c0: upstream then keeps items of frequency 0 (absent items of the
@@ -39,8 +50,9 @@ func caseDeviations(c *tcase, db *bfDB) []string {
 	// M4: maximal sets when every frequent item is a top-level perfect
 	// extension (of the transactions kept by the zmin filter).
 	add("M4", c.target == 'm' && allItemsPerfect(c, db, smin))
-	// M5: closed/maximal sets with -n.
-	add("M5", closedMax && c.zmax >= 0)
+	// M5: closed/maximal sets with -n: the search stops at depth zmax+1,
+	// which matters only if a frequent set of that size exists.
+	add("M5", closedMax && c.zmax >= 0 && db.hasFrequentOfSize(smin, c.zmax+1))
 	// M9: maximal sets with -x and the 16-items machine (-As/-Ad).
 	add("M9", direct && c.target == 'm' && c.noPerfect && (c.algo == 's' || c.algo == 'd') && c.pack != 0)
 	// R1: -tr -eb is the imbalance ratio.
@@ -53,20 +65,98 @@ func caseDeviations(c *tcase, db *bfDB) []string {
 	add("R8", c.isRules() && c.hasSMax && !c.orig)
 	// R11: -m beyond the number of items on the item set tree path.
 	add("R11", c.treePath() && c.zmin > db.numFrequent(smin))
-	// O3: upstream's fast output path (format " (%a)", zmin <= 1, no zmax,
-	// no border, no -eb, no repository) prints a spurious empty set and a
-	// wrong spectrum when there are top-level perfect extensions.
-	add("O3", setTarget && !c.countOnly && c.info.String() == " (%a)" && c.sep == " " &&
+	// O3: upstream's fast output path is active (fastchk, report.c:135-151:
+	// an output file, format " (%a)", zmin <= 1, no zmax, no border, no
+	// -eb, default -k; isr_setrepo is never called by fpgrowth) and it
+	// makes a difference: it prints a spurious empty set when there are
+	// top-level perfect extensions (an item in every transaction; -x does
+	// not prevent them where the 16-items machine runs at the top level),
+	// and it writes a wrong pattern spectrum.
+	fast := setTarget && !c.countOnly && c.info.String() == " (%a)" && c.sep == " " &&
 		c.zmin <= 1 && c.zmax < 0 && len(c.border) == 0 && c.eval != 'b' &&
-		(!closedMax || c.treePath()))
-	// O4: count-only mode ignores -n for closed/maximal counts.
-	add("O4", c.countOnly && closedMax && c.zmax >= 0)
-	// Value-level measure deviations are excused per record; without an
-	// output file only the counts can be compared.
-	if d := measureDeviation(c); d != nil && c.countOnly {
-		add(d.id, true)
-	}
+		(!closedMax || c.treePath())
+	add("O3", fast && (c.spectrum || db.hasUniversalItem()))
+	// O4: count-only mode ignores -n for closed/maximal counts, which
+	// matters only if a frequent set larger than zmax exists.
+	add("O4", c.countOnly && closedMax && c.zmax >= 0 && db.hasFrequentOfSize(smin, c.zmax+1))
+	// Value-level measure deviations (R4-R9) are excused per record, also
+	// in count-only mode, where evaluate reruns both programs with an
+	// output file to see the records (countByRerun).
 	return devs
+}
+
+// devExempt lists, per deviation, the kinds of differences between C and
+// Go that the deviation explains even when C's records pass the
+// brute-force check: M2 changes the log (item count) and, through the
+// codes of the zero-frequency items it keeps, the order of the rules; M3
+// changes the logged transaction count, O3 the pattern spectrum (and its
+// logged signature count), R1 the rule values, R2 the pruned sets and O4
+// the count-only counts.
+var devExempt = map[string][]diffKind{
+	"M2": {diffStderr, diffOrder},
+	"M3": {diffStderr},
+	"O3": {diffSpectrum},
+	"R1": {diffValue, diffRecords},
+	"R2": {diffRecords},
+	"O4": {diffCount, diffRecords},
+}
+
+// exempted reports whether a difference of kind k is explained by one of
+// the deviations. With an evaluation measure the brute force checks only
+// that the records are a subset with exact supports, which a C result
+// missing records also passes; then a record-level deviation (all but
+// O3, whose spurious empty set fails the check) excuses membership.
+func exempted(c *tcase, devs []string, k diffKind) bool {
+	for _, d := range devs {
+		if slices.Contains(devExempt[d], k) {
+			return true
+		}
+		if k == diffRecords && c.eval != 'x' && d != "O3" {
+			return true
+		}
+	}
+	return false
+}
+
+// topLevelElimination reports whether fpg_topdn's top-level item map
+// eliminates an item that has a code (frequency at least smin before the
+// zmin filter) while it keeps another one: the item is infrequent after
+// the zmin filter (tbg_filter empties transactions with fewer than zmin
+// coded items) or a perfect extension (frequency equal to the total
+// weight, unless -x).
+func topLevelElimination(c *tcase, db *bfDB, smin int64) bool {
+	smin = max(smin, 1)
+	coded := map[string]bool{}
+	for i, it := range db.items { // db.items honour the -R selection
+		if db.supp[1<<i] >= smin {
+			coded[it] = true
+		}
+	}
+	freq := map[string]int64{}
+	for _, tx := range c.txs {
+		seen := map[string]bool{}
+		for _, it := range tx.items {
+			if coded[it] {
+				seen[it] = true
+			}
+		}
+		if len(seen) < c.zmin {
+			continue
+		}
+		for it := range seen {
+			freq[it] += tx.weight
+		}
+	}
+	kept, elim := 0, 0
+	for it := range coded {
+		switch f := freq[it]; {
+		case f < smin, !c.noPerfect && f >= db.total:
+			elim++
+		default:
+			kept++
+		}
+	}
+	return kept > 0 && elim > 0
 }
 
 // noUsableItems reports whether no item has a positive support (and, for

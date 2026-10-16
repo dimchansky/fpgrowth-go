@@ -151,6 +151,33 @@ func (db *bfDB) numFrequent(smin int64) int {
 	return n
 }
 
+// hasFrequentOfSize reports whether a set of exactly size items has a
+// support of at least max(smin, 1).
+func (db *bfDB) hasFrequentOfSize(smin int64, size int) bool {
+	smin = max(smin, 1)
+	for m, s := range db.supp {
+		if s >= smin && bits.OnesCount64(uint64(m)) == size {
+			return true
+		}
+	}
+	return false
+}
+
+// hasUniversalItem reports whether an item occurs in every transaction
+// (its support is the positive total weight): a perfect extension of the
+// empty set.
+func (db *bfDB) hasUniversalItem() bool {
+	if db.total <= 0 {
+		return false
+	}
+	for i := range db.items {
+		if db.supp[1<<i] == db.total {
+			return true
+		}
+	}
+	return false
+}
+
 // bfSetParams selects item sets (oracle.SetParams without evaluation).
 type bfSetParams struct {
 	target     byte  // 's', 'c', 'm' or 'g'

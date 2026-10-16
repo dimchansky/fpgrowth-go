@@ -163,29 +163,50 @@ func run(bin, dir string, args []string) *runResult {
 	return r
 }
 
+// rerunIn returns a rerunFunc that runs both programs in dir.
+func (b binaries) rerunIn(dir string) rerunFunc {
+	return func(c *tcase) (cr, gr *runResult) {
+		args := c.args()
+		return run(b.c, dir, args), run(b.goBin, dir, args)
+	}
+}
+
 // summary aggregates the outcomes of a sweep.
 type summary struct {
-	mu          sync.Mutex
-	cases       int
-	verdicts    [len(verdictNames)]int
-	byteEqual   int            // byte-identical among cases without deviations
-	withOutput  int            // passed cases whose Go output has records
-	devByID     map[string]int // deviation-verified cases per deviation
-	devCAgrees  int            // ... in which C agreed with Go anyway
-	bfExact     int            // cases whose Go result equals the brute force
-	bfSubset    int            // ... is a subset of the brute force (measures)
-	recordDevs  int
-	tolerated   int
-	boundary    int
-	maxRel      float64
-	maxRelLog   float64
-	maxAbsLog   float64
-	targets     map[string]int
-	errors      map[string]int // messages of the error-equal cases
-	examples    []string       // differences of semantic-equal and tolerated cases
-	exampleCnt  [len(verdictNames)]int
-	devCDiffers map[string]int // deviation sets of the cases in which C differed
-	failures    []string
+	mu           sync.Mutex
+	name         string // sweep name and seed in the header
+	reproduce    string // reproducing command, with %d for the case index
+	cases        int
+	verdicts     [len(verdictNames)]int
+	byteEqual    int            // byte-identical among cases without deviations
+	withOutput   int            // passed cases whose Go output has records
+	devByID      map[string]int // deviation-verified cases per deviation
+	devCAgrees   int            // ... in which C agreed with Go anyway
+	devCAgreesBy map[string]int // ... by deviation set
+	devFlagged   map[string]int // cases per flagged deviation (any verdict)
+	devFull      int            // flagged cases compared with C in full (C passed the brute force)
+	devExempt    int            // ... deviation-verified: C differed only in excused channels
+	reruns       int            // count-only cases classified by a rerun with output
+	bfExact      int            // cases whose Go result equals the brute force
+	bfSubset     int            // ... is a subset of the brute force (measures)
+	recordDevs   int
+	tolerated    int
+	boundary     int
+	maxRel       float64
+	maxRelLog    float64
+	maxAbsLog    float64
+	targets      map[string]int
+	errors       map[string]int // messages of the error-equal cases
+	examples     []string       // differences of semantic-equal and tolerated cases
+	exampleCnt   [len(verdictNames)]int
+	devCDiffers  map[string]int // deviation sets of the cases in which C differed
+	failures     []string
+}
+
+// newSummary returns an empty summary for a sweep.
+func newSummary(name, reproduce string) *summary {
+	return &summary{name: name, reproduce: reproduce, devByID: map[string]int{}, devFlagged: map[string]int{}, devCAgreesBy: map[string]int{},
+		targets: map[string]int{}, errors: map[string]int{}, devCDiffers: map[string]int{}}
 }
 
 func (s *summary) add(c *tcase, o *outcome, gr *runResult, artifact string) {
@@ -199,14 +220,25 @@ func (s *summary) add(c *tcase, o *outcome, gr *runResult, artifact string) {
 	if o.verdict != verdictFail && len(bytes.TrimSpace(gr.out)) > 0 {
 		s.withOutput++
 	}
+	for _, d := range o.deviations {
+		s.devFlagged[d]++
+	}
 	if o.verdict == verdictDeviation {
 		for _, d := range o.deviations {
 			s.devByID[d]++
 		}
 		if o.cAgrees {
 			s.devCAgrees++
+			s.devCAgreesBy[strings.Join(o.deviations, "+")]++
 		}
 	}
+	if o.cFull && o.verdict != verdictFail {
+		s.devFull++
+		if o.cExempt {
+			s.devExempt++
+		}
+	}
+	s.reruns += o.reruns
 	if o.bfChecked && o.verdict != verdictFail {
 		if o.bfSubset {
 			s.bfSubset++
@@ -239,15 +271,15 @@ func (s *summary) add(c *tcase, o *outcome, gr *runResult, artifact string) {
 	}
 	s.targets[fmt.Sprintf("-t%c -A%c", c.target, algo)]++
 	if o.verdict == verdictFail {
-		msg := fmt.Sprintf("%s\n  deviations %v\n  reproduce: DIFFTEST_SEED=%d DIFFTEST_ONLY=%d go test ./difftest/ -run TestDifferential -v -artifacts\n  files: %s\n  %s",
-			c.describe(), o.deviations, baseSeed(), c.index, artifact, strings.Join(o.failures, "\n  "))
+		msg := fmt.Sprintf("%s\n  deviations %v\n  reproduce: %s\n  files: %s\n  %s",
+			c.describe(), o.deviations, fmt.Sprintf(s.reproduce, c.index), artifact, strings.Join(o.failures, "\n  "))
 		s.failures = append(s.failures, msg)
 	}
 }
 
 func (s *summary) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "difftest: %d cases (base seed %d)\n", s.cases, baseSeed())
+	fmt.Fprintf(&b, "%s: %d cases\n", s.name, s.cases)
 	for v, n := range s.verdicts {
 		fmt.Fprintf(&b, "  %-20s %6d\n", verdict(v).String()+":", n)
 	}
@@ -258,14 +290,16 @@ func (s *summary) String() string {
 		s.tolerated, s.boundary, s.recordDevs)
 	fmt.Fprintf(&b, "  largest difference of 17-digit values accepted as equal: %.3g relative;\n", s.maxRel)
 	fmt.Fprintf(&b, "    logarithmic measures (%s, b, j): %.3g relative, %.3g absolute\n", logMeasures, s.maxRelLog, s.maxAbsLog)
-	fmt.Fprintf(&b, "  deviation-verified cases in which C agreed anyway: %d\n", s.devCAgrees)
-	ids := make([]string, 0, len(s.devByID))
-	for id := range s.devByID {
-		ids = append(ids, id)
+	fmt.Fprintf(&b, "  count-only cases whose differing counts a rerun with output explained: %d\n", s.reruns)
+	fmt.Fprintf(&b, "  cases with a flagged deviation in which C passed the brute force and was compared in full: %d\n", s.devFull)
+	fmt.Fprintf(&b, "    of which C differed only in channels the deviations excuse (deviation-verified): %d\n", s.devExempt)
+	fmt.Fprintf(&b, "  deviation-verified cases whose C output the comparison accepted (C failed the brute force, e.g. O3's dropped empty set): %d\n", s.devCAgrees)
+	for _, k := range sortedKeys(s.devCAgreesBy) {
+		fmt.Fprintf(&b, "    %6d  %s\n", s.devCAgreesBy[k], k)
 	}
-	slices.Sort(ids)
-	for _, id := range ids {
-		fmt.Fprintf(&b, "    %-6s %6d\n", id, s.devByID[id])
+	fmt.Fprintf(&b, "  deviations: flagged / deviation-verified\n")
+	for _, id := range sortedKeys(s.devFlagged) {
+		fmt.Fprintf(&b, "    %-6s %6d %6d\n", id, s.devFlagged[id], s.devByID[id])
 	}
 	fmt.Fprintf(&b, "  deviation-verified cases in which C differed, by deviation set:\n")
 	for _, k := range sortedKeys(s.devCDiffers) {
@@ -345,8 +379,8 @@ func caseIndices() []int {
 func TestDifferential(t *testing.T) {
 	b := getBinaries(t)
 	indices := caseIndices()
-	sum := &summary{devByID: map[string]int{}, targets: map[string]int{}, errors: map[string]int{},
-		devCDiffers: map[string]int{}}
+	sum := newSummary(fmt.Sprintf("difftest (base seed %d)", baseSeed()),
+		fmt.Sprintf("DIFFTEST_SEED=%d DIFFTEST_ONLY=%%d go test ./difftest/ -run TestDifferential -v -artifacts", baseSeed()))
 	work := make(chan int)
 	var wg sync.WaitGroup
 	root := t.TempDir()
@@ -372,7 +406,7 @@ func TestDifferential(t *testing.T) {
 				args := c.args()
 				cr := run(b.c, dir, args)
 				gr := run(b.goBin, dir, args)
-				o := evaluate(c, cr, gr)
+				o := evaluate(c, cr, gr, b.rerunIn(dir))
 				where := ""
 				if o.verdict == verdictFail {
 					artifactOnce.Do(func() { artifacts = t.ArtifactDir() })
