@@ -69,3 +69,21 @@ Status: **decided** (policy fixed, implementation pending) or
 | I7 | Weights are truncated from `long` to `int` (tract T6) | 64-bit weights; values beyond int64 are an invalid-weight error | implemented (`internal/tabread`) |
 | I8 | `nan(...)` payload syntax follows Apple libc (any bytes) | ISO C syntax (letters, digits, `_`) for option values | implemented (`internal/cconv`) |
 | I6 | Weight-sum overflow segfaults (cli) | Error (see M7) | decided |
+
+## CLI validation, messages and limits
+
+| # | Upstream behavior | Go behavior | Status / test |
+| --- | --- | --- | --- |
+| C1 | `-S`, `-d`, `-F` accept NaN (undefined conversions; reference-build) | Rejected: "invalid maximum support nan" (exit 11), "invalid support border nan" (exit 11), "invalid evaluation threshold nan" (exit 13); `-s`/`-c` keep upstream messages (exits 11/12) | implemented in `cmd/fpgrowth` (golden `deviations.txt`) |
+| C2 | `-F` with an empty value uses an uninitialized border entry (cli B16) | Only parsed values count | implemented in `cmd/fpgrowth` |
+| C3 | Write errors on `-Z` output to stdout are ignored | Reported, exit 4 | implemented in `cmd/fpgrowth` |
+| C4 | Weight-sum overflow segfaults | "<name>: total transaction weight too large" (exit 21) | implemented in `cmd/fpgrowth` |
+| C5 | Trees beyond the C address space crash | "database too large" (exit 1) | implemented in `internal/fpg` (`fpg.ErrTooLarge`) |
+| C6 | Write error: mining completes, error reported at close (exit 4) | Same message and exit 4, but mining stops at the first failed write, so the logged set count is the number written | implemented in `cmd/fpgrowth` |
+| C7 | Log times are CPU time (`clock()`) | Wall-clock time; same format | implemented in `cmd/fpgrowth` |
+| C8 | No interrupt handling in the reference build (`FPG_ABORT` off) | SIGINT cancels mining: "<prog>: interrupted", exit 130; stdin spool file removed | implemented in `cmd/fpgrowth` |
+| C9 | stdin is read once into memory | stdin is spooled to a temporary file (two passes); failure: "cannot create temporary file for <stdin>" (exit 2) | implemented in `cmd/fpgrowth` |
+
+Kept as upstream (documented, not deviations): `-n0`, `-S0` and infinite
+values are accepted and give empty or saturated results; `long`→`int`
+truncation of `-m`/`-n`/`-p`/`-q`/`-l`.

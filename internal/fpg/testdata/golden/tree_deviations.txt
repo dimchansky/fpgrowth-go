@@ -1,0 +1,38 @@
+# Rules-path golden cases whose Go output differs from the C reference by
+# design. Format: <dataset> | <options> | <deviation id> (docs/differences.md).
+# TestTreeGolden requires a difference and checks its documented shape:
+#   R1  -tr -eb: C evaluates nothing (prints 0), Go the imbalance ratio;
+#       Go equals the oracle
+#   R2  -p with a measure: C filters before setting the measure; with -ts
+#       Go's lines are a proper subsequence of C's
+#   R3  -R with head-only items: C puts them into bodies; Go equals the
+#       oracle and is a proper subsequence of C
+#   R4  conviction is +Inf (C: 0) for confidence 1; C is a proper
+#       subsequence of Go, Go equals the oracle
+#   R8  -tr -S limits the body support (C: body and head); Go equals the
+#       oracle
+#   R9  Yates' correction clamped at 0 (C: spurious positive values); Go
+#       equals the oracle and is a proper subsequence of C
+
+r00.tab | -tr -s-2 -c0 -eb -d0 | R1
+r00.tab | -tr -s-2 -c0 -ev -d1 | R4
+r00.tab | -tr -s-2 -c0 -ev -d10 -i | R4
+r02.w.tab | -tr -s-3 -c0 -S60 | R8
+r02.w.tab | -tr -s-3 -c0 -eb -d0 | R1
+r06.tab | -tr -s20 -c0 -S60 | R8
+r06.tab | -tr -s20 -c0 -eb -d0 | R1
+r09.tab | -tm -s-2 -el -d120 -p-1 | R2
+r09.tab | -tr -s-2 -c0 -Rapp1.app | R3
+r09.tab | -tr -s-2 -c0 -S60 | R8
+r09.tab | -tr -s-2 -c0 -eb -d0 | R1
+r09.tab | -tr -s-2 -c0 -ev -d1 | R4
+r09.tab | -tr -s-2 -c0 -ev -d10 -i | R4
+r09.tab | -ts -s-2 -el -d120 -p1 | R2
+test1.tab | -tm -s-2 -el -d120 -p-1 | R2
+test1.tab | -tr -s-2 -c0 -Rapp1.app | R3
+test1.tab | -tr -s-2 -c0 -S60 | R8
+test1.tab | -tr -s-2 -c0 -eb -d0 | R1
+test1.tab | -tr -s-2 -c0 -ey -d1 | R9
+test3.w.tab | -tm -s-3 -el -d120 -p-1 | R2
+test3.w.tab | -tr -s-3 -c0 -S60 | R8
+test3.w.tab | -tr -s-3 -c0 -eb -d0 | R1

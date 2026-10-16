@@ -1,0 +1,79 @@
+additional evaluation measures (option -e#)
+frequent item sets:
+  x   no measure (default)
+  b   binary logarithm of support quotient            (+)
+association rules:
+  x   no measure                                      
+  o   rule support (original def.: body & head)       (+)
+  c   rule confidence                                 (+)
+  d   absolute confidence difference to prior         (+)
+  l   lift value (confidence divided by prior)        (+)
+  a   absolute difference of lift value to 1          (+)
+  q   difference of lift quotient to 1                (+)
+  v   conviction (inverse lift for negated head)      (+)
+  e   absolute difference of conviction to 1          (+)
+  r   difference of conviction quotient to 1          (+)
+  b   imbalance ratio                                 (+)
+  k   Kulczynski measure                              (+)
+  w   difference of Kulczynski measure to 0.5         (+)
+  u   conditional probability ratio                   (+)
+  j   importance (binary log. of cond. prob. ratio)   (+)
+  z   certainty factor (relative confidence change)   (+)
+  n   normalized chi^2 measure                        (+)
+  p   p-value from (unnormalized) chi^2 measure       (-)
+  y   normalized chi^2 measure with Yates' correction (+)
+  t   p-value from Yates-corrected chi^2 measure      (-)
+  i   information difference to prior                 (+)
+  g   p-value from G statistic/information difference (-)
+  f   Fisher's exact test (table probability)         (-)
+  h   Fisher's exact test (chi^2 measure)             (-)
+  m   Fisher's exact test (information gain)          (-)
+  s   Fisher's exact test (support)                   (-)
+All measures for association rules are also applicable
+to item sets and are then aggregated over all possible
+association rules with a single item in the consequent.
+The aggregation mode can be set with the option -a#.
+Measures marked with (+) must meet or exceed the threshold,
+measures marked with (-) must not exceed the threshold
+in order for the rule or item set to be reported.
+
+evaluation measure aggregation modes (option -a#)
+  x   no aggregation (use first value)
+  m   minimum of individual measure values
+  n   maximum of individual measure values
+  a   average of individual measure values
+
+fpgrowth algorithm variants (option -A#)
+  s   simple  tree nodes with only successor and parent
+  c   complex tree nodes with children and siblings (default)
+  d   top-down processing on a single prefix tree
+  t   top-down processing of the prefix trees
+Variant 'd' does not support mining closed/maximal item sets,
+variant 't' does not support the use of a k-items machine, and
+only variant 'c' supports item reordering w.r.t. conditional support,
+but closed/maximal item sets can only be mined without reordering.
+These restrictions may be removed in future versions of this program.
+Rules as the target type or using a rule-based evaluation measure
+enforces algorithm variant 'd'.
+information output format characters (option -v#)
+  %%  a percent sign
+  %i  number of items (item set size)
+  %a  absolute item set  support
+  %s  relative item set  support as a fraction
+  %S  relative item set  support as a percentage
+  %b  absolute body set  support
+  %x  relative body set  support as a fraction
+  %X  relative body set  support as a percentage
+  %h  absolute head item support
+  %y  relative head item support as a fraction
+  %Y  relative head item support as a percentage
+  %c  rule confidence as a fraction
+  %C  rule confidence as a percentage
+  %l  lift value of a rule (confidence/prior)
+  %L  lift value of a rule as a percentage
+  %e  additional evaluation measure
+  %E  additional evaluation measure as a percentage
+  %Q  total transaction weight (database size)
+All format characters can be preceded by the number
+of significant digits to be printed (at most 32 digits),
+even though this value is ignored for integer numbers.

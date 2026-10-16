@@ -45,5 +45,21 @@ subsequence of the Go lines; B5: the Go lines are a proper subsequence of
 the C lines). When regenerating, new mismatches must be classified there
 by hand.
 
+## Rules path (`tree_*` files)
+
+`tree_cases.txt` (written by `FPG_GOLDEN_GEN=1 go test ./internal/fpg -run
+TestTreeGoldenGenerate`, together with the appearance files
+`data/app*.app`) lists cases of the item set tree path: association rules
+(`-tr`) with all `-A` letters, `-q` orders, confidence, sizes, `-o`, every
+rule measure letter with and without `-i`, item sets of every target with
+rule measures and aggregation modes, and the documented deviations (`-eb`,
+`-S`, `-p`, `-R`). `gen.sh` writes `tree_expected.txt` in the same format
+as `expected.txt`, running rules with `-v' [%a %b %h %e]'` and item sets
+with `-v' [%a %e]'`. `TestTreeGolden` replays them through `internal/isrout`
+(the same text output as the CLI) and requires identical lines, except for
+`testdata/golden/tree_deviations.txt` (R1, R2, R3, R4, R8, R9 of
+`docs/differences.md`), where it requires a difference of the documented
+shape and, where the oracle models it, equality with the oracle.
+
 Golden files in the repository were produced on macOS arm64 with Apple
 clang 21 (`cc`).

@@ -1,10 +1,6 @@
 package fpg
 
-import (
-	"math"
-
-	"github.com/dimchansky/fpgrowth-go/internal/tract"
-)
+import "github.com/dimchansky/fpgrowth-go/internal/tract"
 
 // csNode is a node of a children/sibling tree (upstream CSNODE). Children
 // are sorted ascending by id.
@@ -35,9 +31,7 @@ type csTree struct {
 type csArena struct{ nodes []csNode }
 
 func (a *csArena) alloc(n csNode) int32 {
-	if len(a.nodes) >= math.MaxInt32 {
-		panic("fpg: node arena exceeds 2^31-1 nodes")
-	}
+	checkArena(len(a.nodes))
 	a.nodes = append(a.nodes, n)
 	return int32(len(a.nodes) - 1)
 }
@@ -385,7 +379,7 @@ func (m *miner) mineComplex() error {
 	}
 	k := len(s)
 	t := &csTree{cnt: k, heads: make([]csHead, k)}
-	m.cs.nodes = make([]csNode, 0, 2*m.bag.Extent()+16)
+	m.cs.nodes = make([]csNode, 0, presize(2*m.bag.Extent()+16))
 	t.root = m.cs.alloc(csNode{
 		id: tract.End, parent: nilIdx, succ: nilIdx,
 		sibling: nilIdx, children: nilIdx,

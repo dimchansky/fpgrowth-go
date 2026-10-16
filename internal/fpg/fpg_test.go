@@ -519,10 +519,16 @@ func TestStateAndPaths(t *testing.T) {
 	for _, c := range []Config{
 		func() Config { c := DefaultConfig(); c.Target = report.TargetRules; return c }(),
 		func() Config { c := DefaultConfig(); c.Eval = 1; return c }(),
-		func() Config { c := DefaultConfig(); c.Eval = 25; c.Target = report.TargetClosed; return c }(),
+		func() Config {
+			c := DefaultConfig()
+			c.Eval = 25
+			c.Thresh = 100
+			c.Target = report.TargetClosed
+			return c
+		}(),
 	} {
-		_, err := Mine(context.Background(), c, tract.NewItemBase[string](), scan, nil)
-		if !errors.Is(err, ErrRulesNotImplemented) {
+		rep, err := Mine(context.Background(), c, tract.NewItemBase[string](), scan, nil)
+		if err != nil || rep.Count() == 0 {
 			t.Errorf("rules path %+v: %v", c, err)
 		}
 	}

@@ -1,0 +1,167 @@
+# CLI golden cases: "<name> <arguments as shell words>", run in
+# testdata/data as "fpgrowth <arguments>" by reference/harness/cli/gen.sh
+# (C reference) and by TestGolden (Go). "<file" reads stdin from a file
+# (default: empty stdin), ">&-" closes stdout. Cases whose Go output
+# differs by design are listed in deviations.txt.
+
+# usage and help
+usage
+help -!
+help-late -s10 -! -tq
+
+# docs/upstream/cli-io.md §9.1
+t1 test1.tab -
+t1-abs -s-2 test1.tab -
+t1-s0 -s0 test1.tab -
+t1-m2n3 -m2 -n3 -s20 test1.tab -
+t1-m0 -m0 -v' (%a)|' test1.tab -
+t1-tc -tc test1.tab -
+t1-tm -tm test1.tab -
+t1-tg -tg test1.tab -
+t1-tr -tr test1.tab -
+t1-tr-abs -tr -s-2 -c60 test1.tab -
+t1-tr-fmt -tr -k, -I' => ' test1.tab -
+t1-sep -k, test1.tab -
+t1-info -v' %a %s %S %Q %i' test1.tab -
+t1-Z -Z test1.tab
+t1-P -P '' test1.tab
+t1-eb -eb -d0 -v' %e' test1.tab -
+t1-tc-el -tc -el -d0 -p0 test1.tab -
+t1-F -F60:50 -s20 test1.tab -
+t1-As -As test1.tab -
+t1-Ad -Ad test1.tab -
+t1-At -At test1.tab -
+t1-q0 -q0 test1.tab -
+t1-q-2 -q-2 test1.tab -
+t2 -f',.;:' -l test2.tab -
+t3-w -w test3.tab -
+t3-w-abs -w -s-3 test3.tab -
+csv test1.csv -
+csv-b -b, test1.csv -
+t6pct -r% -f'\n' -b'\n' test6pct.tab -
+sel -R sel.txt test1.tab -
+app -tr -R app.txt -c0 test1.tab -
+
+# more options and grammar
+cluster -s10m2n5 test1.tab -
+cluster-Z -tcZx test1.tab -
+octal -m010 test1.tab -
+hex -m0x2 test1.tab -
+hex-noprefix -m0xZ test1.tab -
+trunc -m4294967298 test1.tab -
+blank-num '-m 2' test1.tab -
+hexfloat -s0x1E test1.tab -
+string-next -k - test1.tab -
+string-empty -v '' test1.tab -
+string-attached -k:: test1.tab -
+target-alone -t test1.tab -
+target-f -tf test1.tab -
+last-wins -s50 -s20 -m3 -m2 test1.tab -
+F-cont -F60:50Z -s20 test1.tab -
+F-trailing -F60: -s20 test1.tab -
+F-abs -F-6:-5 test1.tab -
+n0 -n0 test1.tab -
+nmzm -m3 -n2 test1.tab -
+S0 -S0 test1.tab -
+S-abs -S-4 test1.tab -
+s-inf -s-inf test1.tab -
+s-huge -s-1e12 test1.tab -
+N -N test1.tab -
+tr-o -tr -o -c50 test1.tab -
+tr-Z -tr -Z test1.tab
+tr-P -tr -P '' test1.tab -
+tr-el -tr -el -d110 -v' %e' test1.tab -
+tr-sizes -tr -m2 -n2 -c0 -s-2 test1.tab -
+ts-ec-am -ts -ec -am -d50 -v' %e' test1.tab -
+ts-ez-i -ts -ez -i -d0 -v' %e' test1.tab -
+tm-ev -tm -ev -an -d0 -v' %e' test1.tab -
+tg-ey -tg -ey -aa -d0 -v' %e' test1.tab -
+l0-As -As -l0 test1.tab -
+l3-Ad -Ad -l3 -x test1.tab -
+reorder -j -u -tm test1.tab -
+psp-out -P '' -s-1 test1.tab -
+stdin - - <test1.tab
+stdin-empty-name '' - <test1.tab
+stdin-weighted -w - - <test3.tab
+sel-stdin -R '' test1.tab - <sel.txt
+crlf crlf.tab -
+comment comment.tab -
+dupitems dupitems.tab -
+
+# errors (validation order, messages, exit codes)
+err-s-space -s 20 in out
+err-m-neg -m-1 test1.tab
+err-n-neg -n-1 test1.tab
+err-m-huge -m99999999999999999999 test1.tab
+err-s101 -s101 test1.tab
+err-s-round -s100.0000001 test1.tab
+err-s-exp -s1234567 test1.tab
+err-s1e -s1e test1.tab
+err-sinf -sinf test1.tab
+err-c101 -c101 test1.tab
+err-c-neg -c-1 test1.tab
+err-tq -tq test1.tab
+err-e -e test1.tab
+err-eq -e% test1.tab
+err-aq -aq test1.tab
+err-a -a test1.tab
+err-algo -Aq test1.tab
+err-z -z test1.tab
+err-dashdash -- test1.tab
+err-m25 -m2.5 test1.tab
+err-m08 -m08 test1.tab
+err-optarg test1.tab -k
+err-args test1.tab a b
+err-noinfile -s10
+err-order -m-1 -s200 -tq -n-2
+err-stdin2 -R '' -
+err-nofile nonexistent.tab -
+err-Fabc -Fabc test1.tab
+err-F-colon -F:5 test1.tab -
+err-R-dash -R- test1.tab -
+err-R-nofile -R nosel.txt test1.tab -
+err-empty empty.tab -
+err-blank-only blank.tab -
+err-s90 -s90 test1.tab -
+err-weight -w badw.tab -
+err-weight-exp -w test1.tab -
+err-weight-empty -w wempty.tab -
+err-out test1.tab nodir/out.txt
+err-psp -P nodir/p.txt test1.tab -
+err-closed-out test1.tab - >&-
+err-sel-blank -R selblank.txt test1.tab -
+err-app-dup -tr -R appdup.txt test1.tab -
+err-app-fld -tr -R appfld.txt test1.tab -
+err-app-exp -tr -R appexp.txt test1.tab -
+err-app-unk -tr -R appunk.txt test1.tab -
+err-app-fld1 -tr -R appfld1.txt test1.tab -
+
+# documented deviations (see deviations.txt)
+dev-h -hXX test1.tab -
+dev-g -g gnames.tab -
+dev-fast-empty -s-1 ab.tab -
+dev-Z-stdout -Z test1.tab -
+dev-d -m2 -v' (%d)' test1.tab -
+dev-eb-rules -tr -eb -v' %e' test1.tab -
+dev-ev-rules -tr -s-2 -c0 -ev -d1 -v' %e' r00.tab -
+dev-S-rules -tr -c0 -S60 test1.tab -
+dev-R3 -tr -s-2 -c0 -R app1.app test1.tab -
+dev-p -ts -s-2 -el -d120 -p1 -v' %e' r09.tab -
+dev-snan -snan test1.tab -
+dev-maxsupp-nan -Snan test1.tab -
+dev-cnan -cnan test1.tab -
+dev-dnan -dnan test1.tab -
+dev-Fnan -Fnan test1.tab -
+dev-esc -f'\,;' escsep.tab -
+dev-esc-end -s-1 -f';\' escsep.tab -
+dev-nonascii -s-1 -fé nonascii.tab -
+dev-negw -w negw.tab -
+dev-bigw -w bigw.tab -
+dev-longfield -s-1 longnames.tab -
+dev-lastsep -s-1 lastsep.tab -
+dev-recnum -w recnum.tab -
+dev-dir . -
+dev-At -ts -At -s20 b1a.tab -
+dev-tg-m2 -tg -s-1 -m2 b3.tab -
+dev-tm-pex -tm -s-2 b4.tab -
+dev-tm-x -tm -s-1 -x -As m9.tab -

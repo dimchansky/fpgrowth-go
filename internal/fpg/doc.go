@@ -44,10 +44,17 @@
 //	project, count, clear, filter     m16.project, count, clear, filter
 //	rec_pos, rec_neg, m16_mine        m16.recPos, machine.recNeg, machine.mine
 //	hibit, prjms                      hibit, prjms
+//	fpg_tree, rec_tree                miner.fillTree, miner.recTree (+ relink)
+//	fpg_mine (rules/evaluation path)  Miner.mineTree (internal/istree)
+//	FPG_ABORT -1 return               ctx.Err()
+//	memsys allocation failure         ErrTooLarge (int32 node arena overflow)
 //
-// Not ported here: fpg_tree and rec_tree (association rules and rule-based
-// evaluation through the item set tree; Miner.Mine returns
-// ErrRulesNotImplemented for that path), the data modes FPG_NORECODE,
+// The rules path (association rules, item sets with a rule-based
+// evaluation measure) fills an item set tree (internal/istree) with
+// rec_tree and lets it evaluate, filter and report; Miner.SetProgress
+// observes its phases.
+//
+// Not ported here: the data modes FPG_NORECODE,
 // FPG_NOFILTER, FPG_NOSORT, FPG_NOREDUCE, FPG_NOPACK (unreachable from the
 // fpgrowth program and partly broken upstream, core B8), the debug
 // printers, VISITED counters and FPG_ZLIB. Pre-formatting of supports
@@ -76,6 +83,12 @@
 //     without the zmax+1 depth limit, so the closed/maximal repository is
 //     complete and only closed/maximal sets are reported.
 //   - B9: threshold conversions saturate instead of being undefined.
+//   - rules-eval.md B1: for association rules the measure code
+//     EvalLogRatio (-eb) selects ruleval.Imbalance.
+//   - rules-eval.md B2: on the rules path the evaluation measure is set
+//     before the evaluation filter, which runs for every prune value.
+//   - A node arena that would exceed 2^31-1 nodes makes Mine return
+//     ErrTooLarge instead of crashing.
 //
 // Upstream bug B4 (and M9, its 16-items machine variant: -tm -x with -As
 // or -Ad loses the maximal set made of items that occur in every

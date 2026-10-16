@@ -1,0 +1,40 @@
+# CLI golden cases whose Go output differs from the C reference by design.
+# Format: <case> <id> [comment]; the ids are those of docs/differences.md
+# (NaN: option values that upstream accepts with undefined behavior and
+# the port rejects, see cmd/fpgrowth/options.go). TestGolden requires a
+# difference from testdata/golden and equality with testdata/golden-go.
+t1-s0           M2   -s0: no support-0 sets
+cluster-Z       O6   -Z statistics after the item sets on stdout
+hex-noprefix    O6   (-m0xZ sets -Z)
+F-cont          O6   (-F60:50Z sets -Z)
+dev-Z-stdout    O6
+tm-ev           R4   conviction +Inf for confidence 1
+dev-ev-rules    R4
+tg-ey           R9   Yates' correction clamped at 0
+psp-out         O3   fast output path: wrong pattern spectrum (report B6)
+dev-fast-empty  O3   fast output path: spurious empty set
+dev-h           O1   -h record header written
+dev-g           O2   -g scanable names
+dev-d           O10  %d is the absolute support
+dev-eb-rules    R1   -tr -eb is the imbalance ratio
+dev-S-rules     R8   -tr -S limits the body support
+dev-R3          R3   head-only items not in bodies
+dev-p           R2   -p filters with the evaluation measure
+dev-snan        NaN  rejected: invalid minimum support nan
+dev-maxsupp-nan NaN  rejected: invalid maximum support nan
+dev-cnan        NaN  rejected: invalid minimum confidence nan
+dev-dnan        NaN  rejected: invalid evaluation threshold nan
+dev-Fnan        NaN  rejected: invalid support border nan
+dev-esc         I1   unknown escape \, stands for ','
+dev-esc-end     I1   trailing backslash stands for itself
+dev-nonascii    I2   non-ASCII separator bytes
+dev-negw        M6   negative weights rejected
+dev-bigw        M7   64-bit weights (C crashes)
+dev-longfield   I4   no 1024-byte field limit
+dev-lastsep     I3   final record ending in a field separator kept
+dev-recnum      I5   record number in messages
+dev-dir         I5   read error names the file
+dev-At          M1   -At item map (C crashes)
+dev-tg-m2       M3   generators with -m2
+dev-tm-pex      M4   maximal set of top-level perfect extensions
+dev-tm-x        M9   -tm -x with the 16-items machine

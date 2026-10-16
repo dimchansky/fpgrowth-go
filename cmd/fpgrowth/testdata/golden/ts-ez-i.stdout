@@ -1,0 +1,21 @@
+d 0
+c 0
+c d 0
+b 0
+b d 0
+b c 0.52381
+b c d 0
+a 0
+a d 0
+a c 0
+a c d 0
+a b 0.444444
+a b d 0
+a b c 0.333333
+a b c d 0
+e 0
+e d 1
+e c 0
+e c d 1
+e a 0
+e a d 1

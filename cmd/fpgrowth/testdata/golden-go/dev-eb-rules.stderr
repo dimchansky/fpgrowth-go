@@ -1,0 +1,7 @@
+fpgrowth - find frequent item sets with the fpgrowth algorithm
+version 6.21 (2022.11.22)        (c) 2004-2022   Christian Borgelt
+reading test1.tab ... [5 item(s), 10 transaction(s)] done [T].
+filtering, sorting and recoding items ... [5 item(s)] done [T].
+sorting and reducing transactions ... [8/10 transaction(s)] done [T].
+finding frequent item set(s) ... done [T].
+writing <stdout> ... [7 rule(s)] done [T].

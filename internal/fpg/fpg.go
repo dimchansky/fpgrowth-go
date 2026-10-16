@@ -25,6 +25,9 @@ type Miner[T comparable] struct {
 	th    thresholds
 	rep   *report.Reporter
 	state int
+	// progress, if set, is called at the start and end of the phases of
+	// the rules path (SetProgress).
+	progress func(p Phase, done bool)
 }
 
 // Miner states.
@@ -136,7 +139,14 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 	if c.Target == report.TargetRules || isRuleEval(c.Eval) {
 		mrep |= report.ModeNoFilter // filtering done by the item set tree
 	}
-	rep.SetSupport(m.th.supp, m.th.smax)
+	smax := m.th.smax
+	if c.Target == report.TargetRules {
+		// The item set tree applies the maximum support to the rule
+		// support itself (deviation for rules-eval.md B8), so the
+		// reporter must not limit the support of body and head.
+		smax = report.MaxSupp
+	}
+	rep.SetSupport(m.th.supp, smax)
 	rep.SetSize(c.ZMin, c.ZMax)
 	if c.Eval == EvalLogRatio {
 		rep.SetEval(report.LogRatio, +1, c.Thresh/100.0)
@@ -149,28 +159,23 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 
 // Mine is a port of fpg_mine: it finalizes the reporter (Setup) and runs
 // the selected variant, which reports the item sets to the reporter's
-// sink. The rules path (association rules, rule-based evaluation) returns
-// ErrRulesNotImplemented. Cancellation of ctx is checked at every
-// recursion entry and returns ctx.Err(); an error of the sink is returned
-// unchanged.
-func (m *Miner[T]) Mine(ctx context.Context) error {
+// sink. Association rules and item sets with a rule-based evaluation go
+// through the item set tree (fpg_tree, see mineTree). Cancellation of ctx
+// is checked at every recursion entry and returns ctx.Err(); an error of
+// the sink is returned unchanged; a tree that outgrows its node arena
+// gives ErrTooLarge.
+func (m *Miner[T]) Mine(ctx context.Context) (err error) {
 	if m.state != stateReporter {
 		return ErrState
 	}
 	m.state = stateMined
+	defer recoverOverflow(&err)
 	m.rep.Setup()
 	c := &m.cfg
 	if c.Target == report.TargetRules || isRuleEval(c.Eval) {
 		return m.mineTree(ctx)
 	}
 	return mineItemSets(ctx, c, m.bag, m.rep, m.th.supp)
-}
-
-// mineTree is the hook for the rules path (fpg_tree/rec_tree with the item
-// set tree, followed by the istree filtering, evaluation and reporting
-// steps of fpg_mine).
-func (m *Miner[T]) mineTree(context.Context) error {
-	return ErrRulesNotImplemented
 }
 
 // Mine runs the whole pipeline on an item base that is configured

@@ -39,9 +39,7 @@ type fpTree struct {
 type fpArena struct{ nodes []fpNode }
 
 func (a *fpArena) alloc(n fpNode) int32 {
-	if len(a.nodes) >= math.MaxInt32 {
-		panic("fpg: node arena exceeds 2^31-1 nodes")
-	}
+	checkArena(len(a.nodes))
 	a.nodes = append(a.nodes, n)
 	return int32(len(a.nodes) - 1)
 }
@@ -391,7 +389,7 @@ func (m *miner) mineSimple() error {
 	}
 	k := len(s)
 	t := &fpTree{cnt: k, dir: m.dir, heads: make([]fpHead, k)}
-	m.fp.nodes = make([]fpNode, 0, 2*m.bag.Extent()+16)
+	m.fp.nodes = make([]fpNode, 0, presize(2*m.bag.Extent()+16))
 	t.root = m.fp.alloc(fpNode{id: tract.End, parent: nilIdx, succ: nilIdx})
 	for i := range t.heads {
 		t.heads[i] = fpHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}

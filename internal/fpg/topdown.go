@@ -1,10 +1,6 @@
 package fpg
 
-import (
-	"math"
-
-	"github.com/dimchansky/fpgrowth-go/internal/tract"
-)
+import "github.com/dimchansky/fpgrowth-go/internal/tract"
 
 // tdNode is a node of a top-down tree (upstream TDNODE). The tree is
 // stored reversed (highest ids at the root level); sibling lists are
@@ -28,9 +24,7 @@ type tdTree struct {
 type tdArena struct{ nodes []tdNode }
 
 func (a *tdArena) alloc(n tdNode) int32 {
-	if len(a.nodes) >= math.MaxInt32 {
-		panic("fpg: node arena exceeds 2^31-1 nodes")
-	}
+	checkArena(len(a.nodes))
 	a.nodes = append(a.nodes, n)
 	return int32(len(a.nodes) - 1)
 }
@@ -274,7 +268,7 @@ func (m *miner) mineTopDown() error {
 		items[i] = tract.Item(x)
 	}
 	t := &tdTree{cnt: k, root: nilIdx, items: items}
-	m.td.nodes = make([]tdNode, 0, 2*m.bag.Extent()+16)
+	m.td.nodes = make([]tdNode, 0, presize(2*m.bag.Extent()+16))
 	buf := m.path
 	for tx, w := range m.bag.Backward() {
 		n := 0

@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
 )
 
 // Algorithm selects the FP-growth variant (upstream FPG_SIMPLE ...
@@ -108,7 +109,9 @@ type Config struct {
 	// ZMax >= MaxSize means no limit. Both must be >= 0.
 	ZMin, ZMax int
 	// Eval is the evaluation measure code (EvalNone, EvalLogRatio or a
-	// rule measure code below EvalLogRatio).
+	// rule measure code below EvalLogRatio, i.e. a ruleval.Measure). For
+	// association rules EvalLogRatio selects ruleval.Imbalance, the rule
+	// measure of the same -e letter 'b' (deviation for rules-eval.md B1).
 	Eval int
 	// InvalidateBelowExpected is upstream's FPG_INVBXS flag (-i), passed
 	// to rule-based evaluation.
@@ -163,10 +166,6 @@ var (
 	// ErrNoItems reports that no item is frequent (upstream E_NOITEMS,
 	// "no (frequent) items found").
 	ErrNoItems = errors.New("fpg: no (frequent) items found")
-	// ErrRulesNotImplemented is returned by Miner.Mine for the rules
-	// path (association rules or a rule-based evaluation measure), which
-	// needs the item set tree (fpg_tree, rec_tree, internal/istree).
-	ErrRulesNotImplemented = errors.New("fpg: rules path not implemented")
 	// ErrState reports a call out of the New, Data, Reporter, Mine order.
 	ErrState = errors.New("fpg: method called out of order")
 )
@@ -232,6 +231,12 @@ func (c *Config) normalize() {
 	}
 	if c.Target != report.TargetRules {
 		c.Conf = 100 // neutral confidence
+	} else if c.Eval == EvalLogRatio {
+		// Deviation from upstream (rules-eval.md B1): fpgrowth maps -eb to
+		// its item set measure for every target, so rules are not
+		// evaluated at all and the documented rule measure "imbalance
+		// ratio" (b) is unreachable. For rules 'b' selects it.
+		c.Eval = int(ruleval.Imbalance)
 	}
 	if c.Algo == AlgoAuto {
 		c.Algo = AlgoComplex
