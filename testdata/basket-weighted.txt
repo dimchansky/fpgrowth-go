@@ -1,0 +1,6 @@
+# the last field is the transaction weight (upstream -w)
+bread milk 3
+bread diapers beer eggs 1
+milk diapers beer cola 2
+bread milk diapers beer 1
+bread milk diapers cola (2)

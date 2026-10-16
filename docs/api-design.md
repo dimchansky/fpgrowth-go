@@ -170,3 +170,26 @@ CLI keeps upstream's "no (frequent) items found" error).
 
 Language level stays at 1.26 (D3): generic functions suffice; Go 1.27
 generic methods are not needed for this surface.
+
+## Implementation notes (deviations from this design, accepted)
+
+1. `Fraction(f)` is converted after pass 1 with upstream's formula applied
+   to `f` directly (`ceil(f·W·(1−ε))`, `floor(f·W·(1+ε))`) and passed as an
+   absolute count, because `100·f/100 ≠ f` for ~15 % of fractions.
+   `Fraction(K/100)` equals CLI `-sK` exactly. Confidence and evaluation
+   thresholds use a percentage `p` with `p/100 == f` when one exists,
+   otherwise the neighbor on the permissive side.
+2. `CSVFormat` zero value is usable: `WeightColumn` is 1-based (0 = none,
+   negative counts from the end), `KeepEmptyFields` (default false),
+   `LazyQuotes`, a UTF-8 BOM is skipped, blank lines are not transactions.
+3. Appearance maps are registered in first-occurrence order (map iteration
+   order cannot leak into output); tie order may differ from the CLI with
+   an appearance file, results do not.
+4. Names: `Aggregate*`, `RuleSupport`, `Information`,
+   `ConditionalProbabilityRatio`; the zero `Measure` is invalid.
+5. Settings that would silently have no effect are rejected
+   (`ErrInvalidOptions`).
+6. Additions: `ErrSyntax`, `Options.PatternSpectrum`, nil callback =
+   count only, `Rule.Value` is NaN without evaluation, `Rule.Support` is
+   always the support of body ∪ head (thresholds follow
+   `OriginalSupport`).

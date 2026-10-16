@@ -1,0 +1,6 @@
+count,item 1,item 2,item 3,item 4
+3,bread,milk,,
+1,bread,diapers,beer,eggs
+2,milk,diapers,beer,"cola, diet"
+1,bread,milk,diapers,beer
+2,bread,milk,diapers,"cola, diet"

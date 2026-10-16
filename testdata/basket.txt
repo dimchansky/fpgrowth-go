@@ -1,0 +1,6 @@
+# market baskets in upstream's default format: one transaction per line
+bread milk
+bread diapers beer eggs
+milk diapers beer cola
+bread milk diapers beer
+bread milk diapers cola
