@@ -179,10 +179,10 @@ type Evaluation struct {
 	// body and head were independent. Rule measures only.
 	InvalidateBelowExpected bool
 	// PruneSize (upstream -p) enables pruning of item sets with the
-	// evaluation from this item set size on: values <= 0 prune backward
-	// (only the evaluation filter), positive values also prune forward
-	// (sets that fail are not extended). nil disables pruning. Item sets
-	// with a rule measure only.
+	// evaluation: 0 prunes backward, a negative value -k prunes weakly
+	// forward and a positive value k prunes strongly forward, from item
+	// set size |k| on (see upstream's -p help). nil disables pruning.
+	// Item sets with a rule measure only.
 	PruneSize *int
 }
 

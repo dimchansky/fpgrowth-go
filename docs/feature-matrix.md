@@ -80,6 +80,6 @@ All upstream rows were verified at the end of Stage 1 (review
 
 | Feature | Go component | Status |
 | --- | --- | --- |
-| Generic item identifiers (`T comparable`) | root package, `internal/tract` | planned |
-| Replayable transaction sources (in-memory, generated, files, CSV) | root package | planned |
-| Streaming results (iterators/callbacks), cancellation | root package | planned |
+| Generic item identifiers (`T comparable`) | root package, `internal/tract` | verified |
+| Replayable transaction sources (in-memory, generated, files, CSV) | root package | verified |
+| Streaming results (iterators/callbacks), cancellation | root package | verified |

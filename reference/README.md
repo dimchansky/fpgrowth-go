@@ -30,7 +30,7 @@ check, a build or a post-build check fails.
 | `/bin/bash` | The upstream makefiles set `SHELL = /bin/bash`. |
 | `sha256sum` or `shasum` | For the pristine check (`sha256sum` on Linux, `shasum -a 256` on macOS). |
 | `nm` | Optional; used to check that assertions and sanitizers took effect. |
-| `patch` | Only if `patches/*.patch` exist (currently there are none). |
+| `patch` | Only if top-level `patches/*.patch` exist (currently there are none). |
 
 Environment variables: `CC` (default `cc`; `-std=c99` is appended
 unless `CC` already contains `-std=`), `LD` (default: `CC`), `MAKE`,
@@ -120,7 +120,9 @@ upstream directory is never written to.
 2. **Out-of-tree copy.** The tree is copied to `build/<variant>/`.
    Any `patches/*.patch` would be applied to the copy with `patch -p1`.
    None are needed: all four variants compile from the pristine sources
-   with clang, so `patches/` does not exist.
+   with clang, so there are no top-level patches. Patches in
+   subdirectories (e.g. `patches/istree/fpgrowth-p-order.patch`, used to
+   verify deviation R2) are never applied to the oracle builds.
 
 3. **make.** `make -C build/<variant>/fpgrowth/src fpgrowth` with the
    variables `CC`, `LD`, `ADDFLAGS` (with `-ffp-contract=off` except for

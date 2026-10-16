@@ -17,7 +17,9 @@ linked documents.
   randomized differential suite `reference/difftest` (0 failures in
   30 000+ cases). Medium/Low review findings: docs fixed (F4, F6–F8, F10);
   F1/F2/F3/F9 test-suite work in progress.
-- **Stage 2 (idiomatic API, sources, streaming):** next.
+- **Stage 2 (idiomatic API, sources, streaming): implemented** (public
+  API `c86391c`, design `docs/api-design.md`, README, `docs/algorithm.md`,
+  `docs/cli.md`); Stage 2 critic review pending.
 
 ## Next steps
 

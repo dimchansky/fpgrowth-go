@@ -187,8 +187,13 @@ generic methods are not needed for this surface.
    an appearance file, results do not.
 4. Names: `Aggregate*`, `RuleSupport`, `Information`,
    `ConditionalProbabilityRatio`; the zero `Measure` is invalid.
-5. Settings that would silently have no effect are rejected
-   (`ErrInvalidOptions`).
+5. Evaluation settings that would silently have no effect are rejected
+   (`ErrInvalidOptions`): `Aggregate`/`PruneSize` for rules,
+   `LogSupportRatio` with `-a/-i/-p` or for rules, `ItemMachine > 16`,
+   `IncludeEmpty` with `MinSize > 1`. Tuning flags are performance hints
+   and, like upstream, are accepted where they do not apply (e.g. any
+   `Tuning` for rules, `NoHeadUnionTail` for non-maximal targets,
+   `ItemMachine` with `TopDown`).
 6. Additions: `ErrSyntax`, `Options.PatternSpectrum`, nil callback =
    count only, `Rule.Value` is NaN without evaluation, `Rule.Support` is
    always the support of body ∪ head (thresholds follow
