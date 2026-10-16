@@ -44,15 +44,16 @@ Status: **decided** (policy fixed, implementation pending) or
 
 | # | Upstream behavior (evidence) | Go behavior | Status / test |
 | --- | --- | --- | --- |
-| O1 | `-h` (record header) has no effect (report B1, cli) | Header is written as documented | decided |
-| O2 | `-g` (scanable item names) has no effect (report B2, cli) | Names are quoted as documented | decided |
+| O1 | `-h` (record header) has no effect (report B1, cli) | Header is written as documented | implemented in `internal/isrout` (golden `t1-hdr*`) |
+| O2 | `-g` (scanable item names) has no effect (report B2, cli) | Names are quoted as documented | implemented in `internal/isrout` (golden `names-g`) |
 | O3 | Fast output path prints a spurious empty-set line and a wrong pattern spectrum (report B3, core B6, cli) | Single output path; no spurious line | implemented in `internal/report` (script `allA_file_m1`) |
 | O4 | Count-only mode (no output file) ignores `-n` for closed/maximal counts (report B4) | Counts honour `-n` | implemented in `internal/report` (test1 `-n1` scripts) |
 | O5 | Binomial set count overflows with 63 perfect extensions (report B5) | Saturating 64-bit count | implemented in `internal/report` (63/64/70-pex scripts) |
+| O10 | `%d` works only on the fast path (sets with absolute support format) and stays literal otherwise (report B6) | For item sets `%d` always prints the absolute support; for rules it stays literal as upstream | implemented in `internal/isrout` (golden `t1-dnormal`) |
 | O9 | Pattern spectrum memory grows with the support range (162 MB for two sets, tract) | Sparse rows; identical output | implemented in `internal/report` (memory test) |
-| O6 | `-Z` statistics are spliced into stdout output at 64 KiB boundaries (report B9, cli) | Statistics are written after the item sets | decided |
-| O7 | `-P` write errors are ignored (cli) | Reported as errors | decided |
-| O8 | Number formatting rounds half-to-odd and differs from `printf` (report B7/B8) | **Preserved** for byte-compatible output (not a defect) | decided |
+| O6 | `-Z` statistics are spliced into stdout output at 64 KiB boundaries (report B9, cli) | Statistics are written after the item sets | implemented in `internal/isrout` (`TestWriter_WriteStats`) |
+| O7 | `-P` write errors are ignored (cli) | Reported as errors | implemented in `internal/isrout` (`TestWriteSpectrumErrors`) |
+| O8 | Number formatting rounds half-to-odd and differs from `printf` (report B7/B8) | **Preserved** for byte-compatible output (not a defect) | implemented in `internal/isrout` (18,829-case numout corpus) |
 
 ## Input (CLI)
 

@@ -1,0 +1,156 @@
+# Golden output cases for internal/isrout (see reference/harness/isrout).
+#
+#   case NAME INPUT [DEVIATION]   starts a case on INPUT (this directory)
+#   arg VALUE                     one fpgrowth argument (rest of the line)
+#
+# Arguments -v -k -I -h -g are format options: the Go test passes them to
+# the Writer. All other arguments are mining options. A case with a
+# DEVIATION id expects NAME.go.out, which must differ from NAME.c.out.
+
+# --- item sets, test1.tab ---
+case t1-default test1.tab
+
+case t1-abs test1.tab
+arg -s-2
+
+case t1-codes test1.tab
+arg -v %a %s %S %Q %q %i %x %X
+
+case t1-digits test1.tab
+arg -v|%0S|%1S|%2S|%3s|%10s|%12S|%32s|%11x|%99S|%%|%5
+
+case t1-unknown test1.tab
+arg -v %b %h %c %y %l %L %123S %.2S %-5S %%%
+
+case t1-sep test1.tab
+arg -k,
+
+case t1-sep2 test1.tab
+arg -k::
+arg -v[%a]
+
+case t1-empty test1.tab
+arg -m0
+arg -v (%a) %w %W %r %R %z %3W
+
+case t1-eb test1.tab
+arg -eb
+arg -d0
+arg -v %e %E %p %P %3e %12e %0E %a
+
+case t1-closed test1.tab
+arg -tc
+arg -v %a %S %i
+
+case t1-maximal test1.tab
+arg -tm
+arg -v (%S) %i
+
+case t1-closed-n test1.tab
+arg -tc
+arg -n2
+arg -v (%a) %i %Q
+
+case t1-gen test1.tab
+arg -tg
+arg -m2
+arg -n3
+arg -s20
+
+case t1-dfast test1.tab
+arg -s-3
+arg -v (%d)
+
+case t3-weights test3.tab
+arg -w
+arg -v %a %S %Q %s
+
+# --- item sets, other data ---
+case r37-pct r37.tab
+arg -s1
+arg -v %S %s %3S %1S %0S %7S %11S %2s
+
+case r37-abs r37.tab
+arg -s-3
+arg -v %a %4X %5x %9S
+
+case r37-eb r37.tab
+arg -s-2
+arg -eb
+arg -d-100
+arg -v %e %4E %11e
+
+case tiny-thr tiny.tab
+arg -s-1
+arg -v %s %S %2S %12s %3x %0s
+
+case eighth eighth.tab
+arg -s-1
+arg -v %S %2S %1S %3s %0S
+
+case names-raw names.tab
+arg -s-1
+arg -v %a
+
+# --- association rules ---
+case t1-rules test1.tab
+arg -tr
+
+case t1-rules-abs test1.tab
+arg -tr
+arg -s-2
+arg -c60
+
+case t1-rules-sep test1.tab
+arg -tr
+arg -k,
+arg -I =>
+
+case t1-rules-codes test1.tab
+arg -tr
+arg -s-1
+arg -c0
+arg -v %i %a %b %h %s %S %x %X %y %Y %c %C %l %L %e %E %Q %q %w %d %%|%5
+
+case t1-rules-eval test1.tab
+arg -tr
+arg -el
+arg -d0
+arg -v %e %E %4e %12e
+
+case r37-rules r37.tab
+arg -tr
+arg -s5
+arg -c30
+arg -v %3C %7l %L %11c %0Y %y %2X
+
+case r37-rules-cf r37.tab
+arg -tr
+arg -s5
+arg -c30
+arg -ez
+arg -d-100
+arg -v %e %3E
+
+# --- documented deviations ---
+case t1-hdr test1.tab O1
+arg -hHDR:
+
+case t1-hdr-empty test1.tab O1
+arg -m0
+arg -h<
+arg -v (%a)
+
+case t1-rules-hdr test1.tab O1
+arg -tr
+arg -hR:
+
+case t1-dnormal test1.tab B6
+arg -m2
+arg -s-3
+arg -v (%d)
+
+case names-g names.tab O2
+arg -s-1
+arg -g
+arg -v %a
