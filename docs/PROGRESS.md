@@ -4,47 +4,28 @@ Durable project state so work can resume after a context reset. Keep this
 short: current status, next steps, open problems. Details belong in the
 linked documents.
 
-## Current status
+## Current status (2026-10-16)
 
-- **Stage 0 (preparation)** — in progress.
-  - Environment: macOS arm64, Go 1.27.2 toolchain (1.27.1 installed
-    system-wide; `toolchain go1.27.2` auto-downloads), Apple clang 21,
-    Python 3.14, Node 23, gh, staticcheck, golangci-lint, benchstat.
-    Missing: govulncheck, goreleaser, actionlint (install when needed).
-  - Go skills: `samber/cc-skills-golang` 2.0.1 already installed as a
-    Claude Code plugin (`cc-skills-golang:*` skills).
-  - code-review-graph 2.3.9 installed via pipx; repo graph built over the
-    upstream C sources (`code-review-graph build`). Local config files it
-    created (`.mcp.json`, `.claude/`) are gitignored.
-  - Upstream FP-Growth 6.21 vendored (commit "Import pristine upstream ...").
-  - Upstream audits running: fpgrowth core, tract/fim16/clomax/patspec,
-    report, rules/evaluation, CLI/IO, reference build + sanitizers.
+- **Stage 0 (preparation): done.** Toolchain Go 1.27.2 (`toolchain`
+  directive; language level 1.26), clang, staticcheck 2026.2.2,
+  `samber/cc-skills-golang` skills, code-review-graph 2.3.9. Upstream
+  FP-Growth 6.21 vendored and audited (`docs/upstream/*.md`).
+- **Stage 1 (faithful port): accepted** by an independent critic
+  (`docs/reviews/stage1-review-1.md`, no Critical/High findings).
+  Packages: `internal/{tract,tabread,cconv,report,ruleval,istree,fpg,isrout,oracle}`,
+  `cmd/fpgrowth`; C reference build and harnesses in `reference/`;
+  randomized differential suite `reference/difftest` (0 failures in
+  30 000+ cases). Medium/Low review findings: docs fixed (F4, F6–F8, F10);
+  F1/F2/F3/F9 test-suite work in progress.
+- **Stage 2 (idiomatic API, sources, streaming):** next.
 
-## PAUSED (2026-10-16, at the user's request)
+## Next steps
 
-Stage 0 audits are complete (`docs/upstream/*.md`); `docs/architecture.md`,
-`docs/feature-matrix.md` and `docs/differences.md` are drafted.
-
-Stage 1 wave 1 was stopped mid-work. Partial, **uncommitted and unreviewed**
-files are in the working tree:
-- `internal/tract/` (item base, recode sort ports, bag) — C harness not done.
-- `internal/tabread/`, `internal/cconv/` — tokenizer tests passed; reader
-  tests/fuzz pending.
-- `internal/ruleval/` — C harness started; Go code just begun.
-- `internal/report/` — in progress (simulator/property tests pending).
-- `internal/oracle/` — unit tests passed; C cross-check pending.
-- `reference/build.sh`, `reference/README.md` — variant build being
-  rewritten (add `-ffp-contract=off` to all variants, plus a `native`
-  variant); `docs/upstream/reference-build.md` not written yet.
-- `reference/harness/*` — partial C harnesses.
-
-## Next steps (on resume)
-
-1. Resume or restart the six wave-1 tasks above from their partial files;
-   review each deliverable, then commit package by package.
-2. Wave 2: `internal/fpg` (variants + fim16, fixes core B1/B3/B5),
-   `internal/istree` (rules path; decide rules B1/B2), `internal/isrout`.
-3. Wave 3: CLI, golden fixtures, differential tests, Stage 1 review.
+1. Finish Stage 1 review follow-ups F1/F2/F3/F9 (difftest predicates,
+   large-data mode, boundary-aware count-only comparison, fuzz targets).
+2. Stage 2: design the public root-package API (generic items, replayable
+   sources incl. CSV/files, streaming results, cancellation), README,
+   examples; then the Stage 2 critic review.
 
 ## Open problems
 
