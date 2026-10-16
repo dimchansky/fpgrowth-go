@@ -93,3 +93,13 @@ Status: **decided** (policy fixed, implementation pending) or
 Kept as upstream (documented, not deviations): `-n0`, `-S0` and infinite
 values are accepted and give empty or saturated results; `long`→`int`
 truncation of `-m`/`-n`/`-p`/`-q`/`-l`.
+
+## Library API (no upstream counterpart; behavior relative to the CLI)
+
+| # | CLI / upstream behavior | Library behavior | Status / test |
+| --- | --- | --- | --- |
+| L-1 | Appearance file items are registered in file order | `RuleOptions.Appearance` (a map) is registered in first-occurrence order in the data, so Go map order cannot leak into results; tie order among equal-frequency items may differ from the CLI with an appearance file (results identical) | implemented (root tests) |
+| L-2 | Empty database or no frequent items: error "no (frequent) items found" (exit 15) | Not an error: nothing is reported (even with `IncludeEmpty`), `Summary.FrequentItems` is 0 | implemented (root tests) |
+| L-3 | `-n` below `-m` gives empty output | `MaxSize < MinSize` is rejected with `ErrInvalidOptions` | implemented (root tests) |
+| L-4 | Upstream table format only | Additional RFC 4180 CSV sources (`CSVFile`, `CSVReader`) with their own documented semantics | implemented (root tests, `FuzzCSVFile`) |
+| L-5 | Thresholds given in percent (`-s`, `-S`) or negative absolute values | `Fraction(f)` applies upstream's rounding formula to `f` directly; `Count(n)` is exact for all int64 values | implemented (root tests) |
