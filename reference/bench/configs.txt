@@ -1,0 +1,48 @@
+# Configurations of the Go-vs-C comparison (reference/bench/compare.sh).
+# Format: <id> <input file> <fpgrowth options...>
+# Inputs are written by `go run ./bench/gen -all -dir <data>`; thresholds
+# are chosen so that every run reports 10^4 to 10^6 patterns.
+
+# sparse: 20,000 transactions, 1,000 items, average length 9.3
+sparse-s        sparse.tab        -s0.1
+sparse-c        sparse.tab        -tc -s0.1
+sparse-m        sparse.tab        -tm -s0.1
+sparse-g        sparse.tab        -tg -s0.1
+sparse-r        sparse.tab        -tr -s0.1 -c60
+sparse-r-lift   sparse.tab        -tr -s0.05 -c50 -el -d150
+
+# sparse-large: 200,000 transactions, 20,000 items, average length 11.1
+large-s         sparse-large.tab  -s0.05
+large-c         sparse-large.tab  -tc -s0.05
+large-m         sparse-large.tab  -tm -s0.05
+
+# dense: 20,000 transactions, 80 items, average length 28.1 (planted patterns)
+dense-s         dense.tab         -s5
+dense-c         dense.tab         -tc -s5
+dense-m         dense.tab         -tm -s5
+dense-g         dense.tab         -tg -s10
+dense-r         dense.tab         -tr -s10 -c90 -n4
+dense-r-lift    dense.tab         -tr -s10 -c80 -n4 -el -d150
+
+# variants on dense data (frequent and closed item sets)
+dense-s-As-l0   dense.tab         -s10 -As -l0
+dense-s-As      dense.tab         -s10 -As
+dense-s-Ac-j    dense.tab         -s10 -Ac -j
+dense-s-Ac      dense.tab         -s10 -Ac
+dense-s-Ad      dense.tab         -s10 -Ad
+dense-s-At      dense.tab         -s10 -At
+dense-c-As-l0   dense.tab         -tc -s10 -As -l0
+dense-c-As      dense.tab         -tc -s10 -As
+dense-c-Ac-j    dense.tab         -tc -s10 -Ac -j
+dense-c-Ac      dense.tab         -tc -s10 -Ac
+dense-c-Ad      dense.tab         -tc -s10 -Ad
+dense-c-At      dense.tab         -tc -s10 -At
+
+# long: 10,000 transactions, 400 items, average length 62.2
+long-s          long.tab          -s2.5
+long-c          long.tab          -tc -s2.5
+long-m          long.tab          -tm -s2.5
+
+# weighted: like sparse, integer weights 1..20 in the last field
+weighted-s      weighted.tab      -w -s0.2
+weighted-c      weighted.tab      -w -tc -s0.2
