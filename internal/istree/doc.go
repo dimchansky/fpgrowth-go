@@ -23,7 +23,7 @@
 //	t.SetSize(zmin, x)                     // x = zmax (+1 for closed/maximal), capped at the largest transaction
 //	fill the tree like rec_tree:           // fpg_tree/rec_tree (internal/fpg)
 //	    rec(n): if !t.Expandable(1) { return }
-//	            t.AddChildren()            // result is informational, not an error
+//	            if _, err := t.AddChildren(); err != nil { return err } // only ErrTooLarge
 //	            for i := 1; i < n; i++ {
 //	                if supp(i) < smin { continue }
 //	                if !t.Down(i) { continue }
@@ -97,4 +97,9 @@
 //
 // Supports are tract.Supp (int64) instead of upstream's 32-bit int; the
 // skip flag is the int64 sign bit.
+//
+// Nodes, counters, identifier maps and child slots are addressed by int32
+// indices. AddChildren returns ErrTooLarge (wrapping tract.ErrTooLarge)
+// instead of growing an arena beyond math.MaxInt32 entries, where upstream
+// would run out of memory; the tree is unusable afterwards.
 package istree

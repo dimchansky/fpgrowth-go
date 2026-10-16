@@ -1,0 +1,180 @@
+package difftest
+
+import (
+	"fmt"
+	"math"
+	"slices"
+	"strings"
+)
+
+// maxListed bounds the number of differences listed per check.
+const maxListed = 5
+
+// setParams derives the brute-force item set parameters of a case.
+func (c *tcase) setParams(total int64) bfSetParams {
+	p := bfSetParams{
+		target: c.target,
+		smin:   absMinSupp(c.sArg, total),
+		smax:   absMaxSupp(100, total),
+		zmin:   c.zmin,
+		zmax:   math.MaxInt,
+		border: absBorder(c.border, c.zmin, total),
+	}
+	if c.hasSMax {
+		p.smax = absMaxSupp(c.sMaxArg, total)
+	}
+	if c.zmax >= 0 {
+		p.zmax = c.zmax
+	}
+	return p
+}
+
+// ruleParams derives the brute-force rule parameters of a case.
+func (c *tcase) ruleParams(total int64) bfRuleParams {
+	sp := c.setParams(total)
+	return bfRuleParams{
+		smin: sp.smin, smax: sp.smax, orig: c.orig, conf: c.conf / 100,
+		zmin: sp.zmin, zmax: sp.zmax, appear: c.appVals, defApp: c.defAppVal,
+	}
+}
+
+// verifyGo checks the Go result against the brute force: exactly without
+// an evaluation measure, as a subset (with exact supports) with one.
+func (o *outcome) verifyGo(c *tcase, db *bfDB, gr *runResult) {
+	subset := c.eval != 'x'
+	want := map[string][3]int64{} // key -> supp, body supp, head supp
+	if c.isRules() {
+		for _, r := range db.rules(c.ruleParams(db.total)) {
+			want[ruleKey(r.head, r.body)] = [3]int64{r.supp, r.bsup, r.hs}
+		}
+	} else {
+		p := c.setParams(db.total)
+		if slices.Contains(o.deviations, "R2") {
+			// -p prunes sets with the measure before the closed, maximal
+			// or generator filter runs on the remaining sets, so these
+			// properties hold only relative to the pruned tree: check
+			// that the sets are frequent with the right supports.
+			p.target = 's'
+		}
+		for _, s := range db.sets(p) {
+			want[setKey(s.items)] = [3]int64{s.supp}
+		}
+	}
+	o.bfChecked, o.bfSubset = true, subset
+	if c.countOnly {
+		n := reportedCount(gr.stderr)
+		if n < 0 || (!subset && n != int64(len(want))) || n > int64(len(want)) {
+			o.fail("brute force: Go counted %d, brute force %d (subset %v)", n, len(want), subset)
+		}
+		return
+	}
+	recs, err := parseOutput(gr.out, c.info, c.isRules(), c.sep, c.imp)
+	if err != nil {
+		o.fail("Go output: %v", err)
+		return
+	}
+	fields := "a"
+	if c.isRules() {
+		fields = "abh"
+	}
+	var bad []string
+	seen := map[string]bool{}
+	for _, r := range recs {
+		w, ok := want[r.key]
+		if !ok {
+			bad = append(bad, "not in brute force: "+r.line)
+			continue
+		}
+		seen[r.key] = true
+		for k := range fields {
+			if i := c.info.fieldIndex(fields[k : k+1]); i >= 0 && int64(r.values[i]) != w[k] {
+				bad = append(bad, fmt.Sprintf("%%%c: Go %s, brute force %d", fields[k], r.line, w[k]))
+			}
+		}
+	}
+	if !subset {
+		for _, k := range sortedKeys(want) {
+			if !seen[k] {
+				bad = append(bad, fmt.Sprintf("missing in Go: %q %v", strings.ReplaceAll(k, "\x00", " "), want[k]))
+			}
+		}
+	}
+	if len(bad) > 0 {
+		o.fail("brute force (%d differences): %s", len(bad), strings.Join(bad[:min(len(bad), maxListed)], "; "))
+	}
+}
+
+// selfCheck checks the consistency of the Go outputs: the logged count,
+// the -Z statistics and the pattern spectrum must describe the sets or
+// rules written.
+func (o *outcome) selfCheck(c *tcase, gr *runResult) {
+	n := reportedCount(gr.stderr)
+	var recs []record
+	if !c.countOnly {
+		var err error
+		if recs, err = parseOutput(gr.out, c.info, c.isRules(), c.sep, c.imp); err != nil {
+			return // reported by compareC
+		}
+		if n != int64(len(recs)) {
+			o.fail("self-check: log says %d, output has %d", n, len(recs))
+		}
+	}
+	if !c.stats {
+		if len(gr.stdout) > 0 {
+			o.fail("self-check: unexpected stdout %q", gr.stdout)
+		}
+	} else {
+		all, per, ok := parseStats(gr.stdout)
+		switch {
+		case !ok:
+			o.fail("self-check: bad -Z statistics %q", gr.stdout)
+		case all != n:
+			o.fail("self-check: -Z all %d, log %d", all, n)
+		case !c.countOnly:
+			var want []int64
+			for _, r := range recs {
+				for len(want) <= r.size() {
+					want = append(want, 0)
+				}
+				want[r.size()]++
+			}
+			for len(per) > len(want) && per[len(per)-1] == 0 {
+				per = per[:len(per)-1]
+			}
+			for len(want) > len(per) && want[len(want)-1] == 0 {
+				want = want[:len(want)-1]
+			}
+			if !slices.Equal(per, want) {
+				o.fail("self-check: -Z per size %v, output %v", per, want)
+			}
+		}
+	}
+	if c.spectrum && !c.countOnly {
+		psp, err := parseSpectrum(gr.psp)
+		ai := c.info.fieldIndex("a")
+		want := map[[2]int64]int64{}
+		for _, r := range recs {
+			want[[2]int64{int64(r.size()), int64(r.values[ai])}]++
+		}
+		switch {
+		case !gr.hasPsp:
+			o.fail("self-check: no pattern spectrum written")
+		case err != nil:
+			o.fail("self-check: %v", err)
+		case !mapsEqual(psp, want):
+			o.fail("self-check: pattern spectrum %v, output %v", psp, want)
+		}
+	}
+}
+
+func mapsEqual(a, b map[[2]int64]int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}

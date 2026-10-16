@@ -1,6 +1,7 @@
 package report
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -22,6 +23,52 @@ func treeSets(t *cmTree) []string {
 	out = append(out, fmtSet(nil, t.nodes[0].supp))
 	walk(t.nodes[0].children, nil)
 	return out
+}
+
+// treeAdd is cmTree.add for tests that cannot overflow.
+func treeAdd(tb testing.TB, tr *cmTree, items []tract.Item, supp tract.Supp) {
+	tb.Helper()
+	if err := tr.add(items, supp); err != nil {
+		tb.Fatalf("add(%v, %d): %v", items, supp, err)
+	}
+}
+
+// mustProject is projectTree for tests that cannot overflow.
+func mustProject(tb testing.TB, dst, src *cmTree, item tract.Item, keep []bool) *cmTree {
+	tb.Helper()
+	t, err := projectTree(dst, src, item, keep)
+	if err != nil {
+		tb.Fatalf("projectTree(%d): %v", item, err)
+	}
+	return t
+}
+
+// cmAdd is closedMaximal.add for tests that cannot overflow.
+func cmAdd(tb testing.TB, cm *closedMaximal, item tract.Item, supp tract.Supp) bool {
+	tb.Helper()
+	ok, err := cm.add(item, supp)
+	if err != nil {
+		tb.Fatalf("add(%d, %d): %v", item, supp, err)
+	}
+	return ok
+}
+
+// cmTail is closedMaximal.tail for tests that cannot overflow.
+func cmTail(tb testing.TB, cm *closedMaximal, items []tract.Item) tract.Supp {
+	tb.Helper()
+	s, err := cm.tail(items)
+	if err != nil {
+		tb.Fatalf("tail(%v): %v", items, err)
+	}
+	return s
+}
+
+// cmUpdate is closedMaximal.update for tests that cannot overflow.
+func cmUpdate(tb testing.TB, cm *closedMaximal, items []tract.Item, supp tract.Supp) {
+	tb.Helper()
+	if err := cm.update(items, supp); err != nil {
+		tb.Fatalf("update(%v, %d): %v", items, supp, err)
+	}
 }
 
 func fmtSet(items []tract.Item, s tract.Supp) string {
@@ -70,7 +117,7 @@ func TestCMTree_AddGet(t *testing.T) {
 			}{{[]tract.Item{4, 2, 1}, 3}, {[]tract.Item{4, 3}, 5}, {[]tract.Item{4, 2}, 4}, {[]tract.Item{2}, 6}} {
 				items := slices.Clone(s.items)
 				sortItems(items, dir)
-				tr.add(items, s.supp)
+				treeAdd(t, tr, items, s.supp)
 			}
 			if tr.max != 6 || tr.nodes[0].supp != 6 {
 				t.Fatalf("max %d root %d, want 6", tr.max, tr.nodes[0].supp)
@@ -85,10 +132,10 @@ func TestCMTree_AddGet(t *testing.T) {
 func TestCMTree_PruneMerges(t *testing.T) {
 	t.Parallel()
 	tr := newCMTree(true)
-	tr.add([]tract.Item{5, 3, 1}, 2)
-	tr.add([]tract.Item{5, 2}, 4)
-	tr.add([]tract.Item{4, 3}, 3)
-	tr.add([]tract.Item{3, 1}, 1)
+	treeAdd(t, tr, []tract.Item{5, 3, 1}, 2)
+	treeAdd(t, tr, []tract.Item{5, 2}, 4)
+	treeAdd(t, tr, []tract.Item{4, 3}, 3)
+	treeAdd(t, tr, []tract.Item{3, 1}, 1)
 	tr.pruneTo(3)
 	// items 5 and 4 are merged away; their subtrees join the list
 	want := []string{"{}:4", "{3}:3", "{3 1}:2", "{2}:4"}
@@ -108,7 +155,7 @@ func TestCMTree_PruneMerges(t *testing.T) {
 	}
 	// freed nodes are reused
 	n := len(tr.nodes)
-	tr.add([]tract.Item{0}, 1)
+	treeAdd(t, tr, []tract.Item{0}, 1)
 	if len(tr.nodes) != n {
 		t.Fatalf("add did not reuse a freed node: %d -> %d nodes", n, len(tr.nodes))
 	}
@@ -118,10 +165,10 @@ func TestProjectTree(t *testing.T) {
 	t.Parallel()
 	src := newCMTree(true)
 	src.item = cmValid
-	src.add([]tract.Item{4, 3, 1}, 2)
-	src.add([]tract.Item{4, 2}, 5)
-	src.add([]tract.Item{3, 2}, 3)
-	dst := projectTree(nil, src, 4, nil)
+	treeAdd(t, src, []tract.Item{4, 3, 1}, 2)
+	treeAdd(t, src, []tract.Item{4, 2}, 5)
+	treeAdd(t, src, []tract.Item{3, 2}, 3)
+	dst := mustProject(t, nil, src, 4, nil)
 	if got, want := treeSets(dst), []string{"{}:5", "{3}:2", "{3 1}:2", "{2}:5"}; !slices.Equal(got, want) {
 		t.Fatalf("projection: %v, want %v", got, want)
 	}
@@ -135,12 +182,12 @@ func TestProjectTree(t *testing.T) {
 	// projection with keep flags merges dropped nodes into their parents
 	keep := make([]bool, 5)
 	keep[1] = true
-	x := projectTree(nil, src, 3, keep)
+	x := mustProject(t, nil, src, 3, keep)
 	if got, want := treeSets(x), []string{"{}:3", "{1}:2"}; !slices.Equal(got, want) {
 		t.Fatalf("keep projection: %v, want %v", got, want)
 	}
 	// a missing projection item gives an empty valid tree
-	e := projectTree(nil, src, 0, nil)
+	e := mustProject(t, nil, src, 0, nil)
 	if got := treeSets(e); !slices.Equal(got, []string{"{}:0"}) || !e.valid() {
 		t.Fatalf("empty projection: %v", got)
 	}
@@ -153,13 +200,13 @@ func TestClosedMaximal_Protocol(t *testing.T) {
 		t.Fatalf("new repository: supp %d stored %v", cm.supp(), cm.stored)
 	}
 	// prefix {4, 2}, store {4, 2, 1}:3
-	if !cm.add(4, 6) || !cm.add(2, 4) {
+	if !cmAdd(t, cm, 4, 6) || !cmAdd(t, cm, 2, 4) {
 		t.Fatal("add on empty repository failed")
 	}
 	if cm.supp() != cmNone {
 		t.Fatalf("supp with no superset = %d", cm.supp())
 	}
-	cm.update([]tract.Item{4, 2, 1}, 3)
+	cmUpdate(t, cm, []tract.Item{4, 2, 1}, 3)
 	if !cm.stored || cm.supp() != 3 {
 		t.Fatalf("after update: stored %v supp %d", cm.stored, cm.supp())
 	}
@@ -168,20 +215,20 @@ func TestClosedMaximal_Protocol(t *testing.T) {
 		t.Fatalf("after remove: cnt %d supp %d", cm.cnt, cm.supp())
 	}
 	// {4, 1} with support 3 has the stored superset {4, 2, 1}:3
-	if cm.add(1, 3) {
+	if cmAdd(t, cm, 1, 3) {
 		t.Fatal("add of a dominated item succeeded")
 	}
-	if !cm.add(1, 4) {
+	if !cmAdd(t, cm, 1, 4) {
 		t.Fatal("add with larger support failed")
 	}
 	cm.remove(5) // more than cnt: back to the empty prefix
 	if cm.cnt != 0 {
 		t.Fatalf("cnt after remove(5) = %d", cm.cnt)
 	}
-	if got := cm.tail(nil); got != 1 {
+	if got := cmTail(t, cm, nil); got != 1 {
 		t.Fatalf("empty tail = %d, want 1", got)
 	}
-	if got := cm.tail([]tract.Item{3}); got != 0 {
+	if got := cmTail(t, cm, []tract.Item{3}); got != 0 {
 		t.Fatalf("tail with empty prefix = %d, want 0", got)
 	}
 }
@@ -189,19 +236,19 @@ func TestClosedMaximal_Protocol(t *testing.T) {
 func TestClosedMaximal_Tail(t *testing.T) {
 	t.Parallel()
 	cm := newClosedMaximal(-1, 6)
-	if !cm.add(5, 7) {
+	if !cmAdd(t, cm, 5, 7) {
 		t.Fatal("add 5 failed")
 	}
-	cm.update([]tract.Item{5, 4, 2, 1}, 3)
+	cmUpdate(t, cm, []tract.Item{5, 4, 2, 1}, 3)
 	cm.remove(1)
-	if !cm.add(4, 6) {
+	if !cmAdd(t, cm, 4, 6) {
 		t.Fatal("add 4 failed")
 	}
 	// {4} ∪ {2, 1} is covered by the stored {5, 4, 2, 1}
-	if got := cm.tail([]tract.Item{2, 1}); got != 3 {
+	if got := cmTail(t, cm, []tract.Item{2, 1}); got != 3 {
 		t.Fatalf("tail {2 1} under {4} = %d, want 3", got)
 	}
-	if got := cm.tail([]tract.Item{3}); got != 0 {
+	if got := cmTail(t, cm, []tract.Item{3}); got != 0 {
 		t.Fatalf("tail {3} under {4} = %d, want 0", got)
 	}
 }
@@ -209,15 +256,86 @@ func TestClosedMaximal_Tail(t *testing.T) {
 func TestClosedMaximal_Ascending(t *testing.T) {
 	t.Parallel()
 	cm := newClosedMaximal(+1, 4)
-	if !cm.add(0, 5) || !cm.add(1, 3) {
+	if !cmAdd(t, cm, 0, 5) || !cmAdd(t, cm, 1, 3) {
 		t.Fatal("add failed")
 	}
-	cm.update([]tract.Item{0, 1, 3}, 3)
+	cmUpdate(t, cm, []tract.Item{0, 1, 3}, 3)
 	cm.remove(1)
-	if cm.add(3, 3) {
+	if cmAdd(t, cm, 3, 3) {
 		t.Fatal("{0 3} is dominated by {0 1 3}")
 	}
-	if got := cm.tail([]tract.Item{2, 3}); got != 0 {
+	if got := cmTail(t, cm, []tract.Item{2, 3}); got != 0 {
 		t.Fatalf("tail {2 3} = %d, want 0", got)
+	}
+}
+
+// setMaxRepoNodes lowers the repository node limit for one test. Tests
+// that call it must not run in parallel.
+func setMaxRepoNodes(tb testing.TB, n int) {
+	tb.Helper()
+	old := maxRepoNodes
+	maxRepoNodes = n
+	tb.Cleanup(func() { maxRepoNodes = old })
+}
+
+func TestCMTree_AddTooLarge(t *testing.T) { //nolint:paralleltest // changes maxRepoNodes
+	setMaxRepoNodes(t, 3)
+	tr := newCMTree(true)
+	err := tr.add([]tract.Item{3, 2, 1}, 4)
+	if !errors.Is(err, ErrTooLarge) || !errors.Is(err, tract.ErrTooLarge) {
+		t.Fatalf("add beyond the node limit: %v, want ErrTooLarge wrapping tract.ErrTooLarge", err)
+	}
+	if len(tr.nodes) != 3 {
+		t.Fatalf("tree grew to %d nodes, limit 3", len(tr.nodes))
+	}
+	// within the limit (freed nodes are reused) adding still works
+	tr = newCMTree(true)
+	if err := tr.add([]tract.Item{3, 2}, 4); err != nil {
+		t.Fatalf("add within the limit: %v", err)
+	}
+}
+
+func TestProjectTree_TooLarge(t *testing.T) { //nolint:paralleltest // changes maxRepoNodes
+	src := newCMTree(true)
+	src.item = cmValid
+	treeAdd(t, src, []tract.Item{4, 3, 1}, 2)
+	treeAdd(t, src, []tract.Item{4, 2}, 5)
+	setMaxRepoNodes(t, 2) // the copy of the subtree of 4 needs 3 nodes
+	for _, keep := range [][]bool{nil, {true, true, true, true, true}} {
+		dst, err := projectTree(nil, src, 4, keep)
+		if !errors.Is(err, ErrTooLarge) || dst == nil {
+			t.Fatalf("keep %v: projectTree = %v, %v; want a tree and ErrTooLarge", keep != nil, dst, err)
+		}
+		treeAdd(t, src, []tract.Item{4, 3, 1}, 2) // restore the projected item
+	}
+}
+
+func TestClosedMaximal_TooLarge(t *testing.T) { //nolint:paralleltest // changes maxRepoNodes
+	// prefix {4} with the stored set {5, 4, 2, 1}: projecting the
+	// repository on 4 must copy {2, 1}
+	setup := func() *closedMaximal {
+		cm := newClosedMaximal(-1, 6)
+		cmAdd(t, cm, 5, 7)
+		cmUpdate(t, cm, []tract.Item{5, 4, 2, 1}, 3)
+		cm.remove(1)
+		cmAdd(t, cm, 4, 6)
+		return cm
+	}
+	tests := []struct {
+		name string
+		op   func(cm *closedMaximal) error
+	}{
+		{"tail", func(cm *closedMaximal) error { _, err := cm.tail([]tract.Item{2, 1}); return err }},
+		{"add", func(cm *closedMaximal) error { _, err := cm.add(2, 1); return err }},
+		{"update", func(cm *closedMaximal) error { return cm.update([]tract.Item{4, 3}, 2) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := setup()
+			setMaxRepoNodes(t, 1) // every new node fails
+			if err := tt.op(cm); !errors.Is(err, ErrTooLarge) {
+				t.Fatalf("%s: %v, want ErrTooLarge", tt.name, err)
+			}
+		})
 	}
 }

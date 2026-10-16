@@ -62,6 +62,7 @@
 //	cmt_project, cmt_xproj        projectTree
 //	merge_*, prune_*              cmTree.merge, prune
 //	copy, xcopy_*                 cmTree.copyFrom, xcopyFrom
+//	MEMSYS allocation failure     ErrTooLarge (int32 node indices), (*Reporter).Err
 //	PATSPEC, psp_create           Spectrum, NewSpectrum
 //	psp_incfrq, psp_getfrq        (*Spectrum).Add, Frequency
 //	psp_sigcnt, psp_total         (*Spectrum).SigCount, Total

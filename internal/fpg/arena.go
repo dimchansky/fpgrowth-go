@@ -8,7 +8,9 @@ import (
 )
 
 // ErrTooLarge is returned by Miner.Mine when a variant needs more tree
-// nodes than its int32-indexed node arena can address. It wraps
+// nodes than its int32-indexed node arena can address, or when the item
+// set tree (istree.ErrTooLarge) or the reporter's closed/maximal
+// repository (report.ErrTooLarge) outgrows its int32 indices. It wraps
 // tract.ErrTooLarge, so errors.Is(err, tract.ErrTooLarge) also holds.
 var ErrTooLarge = fmt.Errorf("fpg: more than %d tree nodes: %w", math.MaxInt32, tract.ErrTooLarge)
 

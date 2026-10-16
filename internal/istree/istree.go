@@ -23,6 +23,21 @@ func isSkip(s tract.Supp) bool { return s < 0 }
 // confEps is upstream's 1-DBL_EPSILON.
 const confEps = 1 - 0x1p-52
 
+// ErrTooLarge is returned by AddChildren when the tree would need more
+// nodes, counters, identifier map entries or child slots than its int32
+// indices can address. It wraps tract.ErrTooLarge.
+var ErrTooLarge = fmt.Errorf("istree: item set tree exceeds %d entries: %w",
+	math.MaxInt32, tract.ErrTooLarge)
+
+// maxArena is the size limit of every arena of a Tree (nodes, cnts, ids,
+// chn). It is a variable so that tests can provoke an overflow with small
+// data; tests that change it must not run in parallel.
+var maxArena = math.MaxInt32
+
+// fits reports whether an arena of length n can grow by k entries without
+// exceeding maxArena.
+func fits(n, k int) bool { return k <= maxArena-n }
+
 // node is an item set tree node (upstream ISTNODE). Its counters,
 // identifier map and child slots live in the tree's shared arenas.
 //
@@ -360,26 +375,36 @@ func (t *Tree) Supp(item tract.Item) tract.Supp {
 // AddChildren is a port of ist_addchn: it creates the children of the node
 // of the insertion cursor for all counters whose sets can be extended (see
 // child), unless the node has children already. It reports whether
-// children were created.
-func (t *Tree) AddChildren() bool {
+// children were created. It fails only with ErrTooLarge (upstream: out of
+// memory); the tree must not be used afterwards.
+func (t *Tree) AddChildren() (bool, error) {
 	if t.nodes[t.curr].chcnt > 0 {
-		return false
+		return false, nil
 	}
-	ok := t.children(t.curr)
+	ok, err := t.children(t.curr)
+	if err != nil {
+		return false, err
+	}
 	if t.depth+1 > t.height {
 		t.height = t.depth + 1
 	}
 	t.isLvl = false
-	return ok
+	return ok, nil
 }
 
 // children is a port of children(): it creates the child nodes of node ni
-// and its child slot array. It reports whether any child was created.
-func (t *Tree) children(ni int32) bool {
+// and its child slot array. It reports whether any child was created. It
+// fails only with ErrTooLarge.
+func (t *Tree) children(ni int32) (bool, error) {
 	list := t.childList[:0]
 	size := t.nodes[ni].size
 	for i := range size {
-		if c := t.newChild(ni, i); c >= 0 {
+		c, err := t.newChild(ni, i)
+		if err != nil {
+			t.childList = list
+			return false, err
+		}
+		if c >= 0 {
 			list = append(list, c)
 		}
 	}
@@ -387,12 +412,15 @@ func (t *Tree) children(ni int32) bool {
 	nd := &t.nodes[ni]
 	if len(list) == 0 {
 		nd.chcnt = 0 // upstream: ITEM_MIN (CHILDCNT 0)
-		return false
+		return false, nil
 	}
 	first := t.nodes[list[0]].item
-	n := int32(len(list))
-	if nd.offset >= 0 { // pure child array from the first to the last child
+	n := int32(len(list)) // at most size children
+	if nd.offset >= 0 {   // pure child array from the first to the last child
 		n = int32(t.nodes[list[len(list)-1]].item-first) + 1
+	}
+	if !fits(len(t.chn), int(n)) {
+		return false, ErrTooLarge
 	}
 	nd.chn = int32(len(t.chn))
 	nd.chcnt = n
@@ -413,30 +441,30 @@ func (t *Tree) children(ni int32) bool {
 	for _, c := range list {
 		t.nodes[c].parent = ni
 	}
-	return true
+	return true, nil
 }
 
 // newChild is a port of child() for IST_REVERSE without perfect extension
 // pruning: it creates the child node of node ni for counter index (the set
 // S = path ∪ {item}) with a counter for every smaller candidate item k for
 // which S ∪ {k} may be frequent and may yield a rule, and returns its
-// index, or -1 if no candidate qualifies.
+// index, or -1 if no candidate qualifies. It fails only with ErrTooLarge.
 //
 // A candidate k qualifies if neither k nor item is ignored, the set does
 // not get two head-only items, S ∪ {k} has every subset with one item less
 // stored with at least the minimum support, and at least one of these
 // subsets has the minimum body support.
-func (t *Tree) newChild(ni int32, index int32) int32 {
+func (t *Tree) newChild(ni int32, index int32) (int32, error) {
 	nd := &t.nodes[ni]
 	cnts := t.counters(nd)
 	supp := cnts[index]
 	if supp < t.smin {
-		return -1
+		return -1, nil
 	}
 	item := t.itemAt(nd, index)
 	app := t.appear(item)
 	if app == tract.AppearNone || (app == tract.AppearHead && nd.hdonly) {
-		return -1 // do not combine two head-only items
+		return -1, nil // do not combine two head-only items
 	}
 	hdonly := app == tract.AppearHead || nd.hdonly
 	body := 0
@@ -484,14 +512,22 @@ func (t *Tree) newChild(ni int32, index int32) int32 {
 		}
 	}
 	t.cand = cand
-	m := int32(len(cand))
+	m := int32(len(cand)) // candidates are distinct items: m <= MaxInt32
 	if m <= 0 {
-		return -1
+		return -1, nil
 	}
 	// decide on the node structure: identifier map if the candidates fill
 	// less than half of their item range
 	n := int32(cand[m-1]-cand[0]) + 1
-	isMap := m+m < n
+	isMap := int64(m)+int64(m) < int64(n)
+	size := n
+	if isMap {
+		size = m
+	}
+	if !fits(len(t.nodes), 1) || !fits(len(t.cnts), int(size)) ||
+		(isMap && !fits(len(t.ids), int(m))) {
+		return -1, ErrTooLarge
+	}
 	c := node{parent: ni, item: item, hdonly: hdonly, cnts: int32(len(t.cnts))}
 	if isMap {
 		c.offset = -1
@@ -513,7 +549,7 @@ func (t *Tree) newChild(ni int32, index int32) int32 {
 		}
 	}
 	t.nodes = append(t.nodes, c)
-	return int32(len(t.nodes) - 1)
+	return int32(len(t.nodes) - 1), nil
 }
 
 // makelvls is a port of makelvls()/reclvls(): it rebuilds the per-level

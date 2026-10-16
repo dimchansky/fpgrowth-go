@@ -88,7 +88,9 @@
 //   - rules-eval.md B2: on the rules path the evaluation measure is set
 //     before the evaluation filter, which runs for every prune value.
 //   - A node arena that would exceed 2^31-1 nodes makes Mine return
-//     ErrTooLarge instead of crashing.
+//     ErrTooLarge instead of crashing; so do the item set tree and the
+//     closed/maximal repository of the reporter (their own ErrTooLarge
+//     errors are mapped to this package's).
 //
 // Upstream bug B4 (and M9, its 16-items machine variant: -tm -x with -As
 // or -Ad loses the maximal set made of items that occur in every

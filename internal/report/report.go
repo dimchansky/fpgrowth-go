@@ -87,6 +87,7 @@ type Reporter struct {
 	ldps   []float64    // binary logarithms of the item probabilities
 
 	cm   *closedMaximal
+	err  error // latched repository error (ErrTooLarge), see Err
 	gen  *generatorTable
 	sto  tract.Supp   // maximum superset support for storing a set
 	iset []tract.Item // scratch: repository set / generator key
@@ -279,10 +280,22 @@ func (r *Reporter) updateXmax() {
 // of its extensions can be reported (a stored superset has at least the
 // same support) or if the extended set is not a generator. The caller must
 // then skip the subtree, the report and the removal.
+//
+// If the closed/maximal repository cannot grow (ErrTooLarge), Add latches
+// the error and returns false; the next Report returns it, and Err
+// reports it after mining. Once an error is latched, Add always returns
+// false.
 func (r *Reporter) Add(item tract.Item, supp tract.Supp) bool {
 	switch {
+	case r.err != nil:
+		return false
 	case r.cm != nil:
-		if !r.cm.add(item, supp) {
+		ok, err := r.cm.add(item, supp)
+		if err != nil {
+			r.err = err
+			return false
+		}
+		if !ok {
 			return false
 		}
 	case r.gen != nil:
@@ -359,13 +372,26 @@ func (r *Reporter) Uses(item tract.Item) bool { return r.inUse[item] }
 // sets): it returns true if the current set together with all tail items
 // (sorted in repository order) is already covered by a stored maximal set,
 // so that the subtree need not be processed. It returns false if the
-// reporter has no closed/maximal repository.
+// reporter has no closed/maximal repository. If the repository cannot grow
+// (ErrTooLarge), Tail latches the error like Add and returns true, so that
+// the miner skips the subtree.
 func (r *Reporter) Tail(items []tract.Item) bool {
 	if r.cm == nil {
 		return false
 	}
-	return r.cm.tail(items) > 0
+	s, err := r.cm.tail(items)
+	if err != nil {
+		r.err = err
+		return true
+	}
+	return s > 0
 }
+
+// Err returns the error latched by Add, Tail or Report when the
+// closed/maximal repository outgrew its int32 node indices (ErrTooLarge),
+// or nil. Once set, the reporter's results are incomplete and every
+// Report returns the error; a miner should stop and return it.
+func (r *Reporter) Err() error { return r.err }
 
 // Len is a port of isr_cnt: the number of items in the current set.
 func (r *Reporter) Len() int { return r.cnt }
@@ -442,8 +468,12 @@ func (r *Reporter) ReportEval(eval float64) error {
 // before subsets, the oldest remaining extension first. Each set passes the
 // border and the evaluation before it is counted and sent to the sink.
 //
-// Report returns the first error returned by the sink.
+// Report returns the first error returned by the sink, or the latched
+// repository error (see Err).
 func (r *Reporter) Report() error {
+	if r.err != nil {
+		return r.err
+	}
 	n := len(r.pexs)
 	s := r.supps[r.cnt]
 	if r.cm != nil {
@@ -472,7 +502,10 @@ func (r *Reporter) Report() error {
 			copy(set[n:], r.items[:r.cnt])
 			sortItems(set, r.dir)
 		}
-		r.cm.update(set, s)
+		if err := r.cm.update(set, s); err != nil {
+			r.err = err
+			return err
+		}
 		if r.target == TargetMaximal && rs >= 0 {
 			return nil
 		}

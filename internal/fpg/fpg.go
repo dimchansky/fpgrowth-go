@@ -2,8 +2,10 @@ package fpg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/dimchansky/fpgrowth-go/internal/istree"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
@@ -162,8 +164,9 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 // sink. Association rules and item sets with a rule-based evaluation go
 // through the item set tree (fpg_tree, see mineTree). Cancellation of ctx
 // is checked at every recursion entry and returns ctx.Err(); an error of
-// the sink is returned unchanged; a tree that outgrows its node arena
-// gives ErrTooLarge.
+// the sink is returned unchanged; a tree that outgrows its node arena, the
+// item set tree or the closed/maximal repository of the reporter gives
+// ErrTooLarge.
 func (m *Miner[T]) Mine(ctx context.Context) (err error) {
 	if m.state != stateReporter {
 		return ErrState
@@ -173,9 +176,27 @@ func (m *Miner[T]) Mine(ctx context.Context) (err error) {
 	m.rep.Setup()
 	c := &m.cfg
 	if c.Target == report.TargetRules || isRuleEval(c.Eval) {
-		return m.mineTree(ctx)
+		err = m.mineTree(ctx)
+	} else {
+		err = mineItemSets(ctx, c, m.bag, m.rep, m.th.supp)
 	}
-	return mineItemSets(ctx, c, m.bag, m.rep, m.th.supp)
+	if err == nil {
+		// a repository overflow in Add or Tail that no later Report
+		// returned (e.g. in the last subtree)
+		err = m.rep.Err()
+	}
+	return tooLarge(err)
+}
+
+// tooLarge maps the capacity errors of the reporter's closed/maximal
+// repository and of the item set tree to ErrTooLarge, the error of the
+// miner's own node arenas; other errors (sink, cancellation) are returned
+// unchanged.
+func tooLarge(err error) error {
+	if errors.Is(err, report.ErrTooLarge) || errors.Is(err, istree.ErrTooLarge) {
+		return ErrTooLarge
+	}
+	return err
 }
 
 // Mine runs the whole pipeline on an item base that is configured

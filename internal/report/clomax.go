@@ -1,6 +1,7 @@
 package report
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -18,6 +19,22 @@ import (
 // Upstream allocates nodes from one MEMSYS per tree; here every tree owns a
 // node arena (a slice addressed by int32 indices, nodes[0] being the root)
 // with a free list, so clearing a tree is O(1) and keeps its capacity.
+//
+// Node indices are int32, so a tree holds at most maxRepoNodes nodes. An
+// allocation beyond that limit (upstream: memory exhaustion of the MEMSYS)
+// fails with ErrTooLarge, which every allocating function returns; the
+// repository is unusable afterwards and the reporter latches the error.
+
+// ErrTooLarge is returned (by Reporter.Report and Reporter.Err) when a
+// tree of the closed/maximal repository would need more nodes than its
+// int32 indices can address. It wraps tract.ErrTooLarge.
+var ErrTooLarge = fmt.Errorf("report: closed/maximal repository exceeds %d nodes: %w",
+	math.MaxInt32, tract.ErrTooLarge)
+
+// maxRepoNodes is the node limit of every repository tree. It is a
+// variable so that tests can provoke an overflow with small data; tests
+// that change it must not run in parallel.
+var maxRepoNodes = math.MaxInt32
 
 const (
 	nilNode int32 = -1 // null node index
@@ -79,18 +96,19 @@ func (t *cmTree) before(a, b tract.Item) bool {
 	return a < b
 }
 
-// alloc returns the index of an unused node (ms_alloc). Its fields are
-// unspecified. alloc may reallocate t.nodes.
-func (t *cmTree) alloc() int32 {
+// alloc returns the index of an unused node (ms_alloc), or ErrTooLarge if
+// the tree already has maxRepoNodes nodes and none is free. The node's
+// fields are unspecified. alloc may reallocate t.nodes.
+func (t *cmTree) alloc() (int32, error) {
 	if n := t.free; n >= 0 {
 		t.free = t.nodes[n].sibling
-		return n
+		return n, nil
 	}
-	if len(t.nodes) >= math.MaxInt32 {
-		panic("report: closed/maximal repository tree exceeds 2^31-1 nodes")
+	if len(t.nodes) >= maxRepoNodes {
+		return nilNode, ErrTooLarge
 	}
 	t.nodes = append(t.nodes, cmNode{})
-	return int32(len(t.nodes) - 1)
+	return int32(len(t.nodes) - 1), nil // len <= maxRepoNodes <= MaxInt32
 }
 
 // release returns node n to the free list (ms_free).
@@ -101,8 +119,8 @@ func (t *cmTree) release(n int32) {
 
 // add is a port of cmt_add: it adds the item set items (in tree order) with
 // support supp, raising the support of every node on its path and the
-// tree's maximum to at least supp.
-func (t *cmTree) add(items []tract.Item, supp tract.Supp) {
+// tree's maximum to at least supp. It fails only with ErrTooLarge.
+func (t *cmTree) add(items []tract.Item, supp tract.Supp) error {
 	if supp > t.max {
 		t.max = supp
 	}
@@ -119,7 +137,10 @@ func (t *cmTree) add(items []tract.Item, supp tract.Supp) {
 			node = c
 			continue
 		}
-		n := t.alloc()
+		n, err := t.alloc()
+		if err != nil {
+			return err
+		}
 		t.nodes[n] = cmNode{item: it, supp: supp, sibling: c, children: nilNode}
 		if prev >= 0 {
 			t.nodes[prev].sibling = n
@@ -127,16 +148,20 @@ func (t *cmTree) add(items []tract.Item, supp tract.Supp) {
 			t.nodes[node].children = n
 		}
 		for _, rest := range items[k+1:] {
-			m := t.alloc()
+			m, err := t.alloc()
+			if err != nil {
+				return err
+			}
 			t.nodes[m] = cmNode{item: rest, supp: supp, sibling: nilNode, children: nilNode}
 			t.nodes[n].children = m
 			n = m
 		}
-		return
+		return nil
 	}
 	if supp > t.nodes[node].supp {
 		t.nodes[node].supp = supp
 	}
+	return nil
 }
 
 // get is a port of cmt_get: it returns the support stored for the item set
@@ -257,16 +282,23 @@ func (t *cmTree) pastItem(item tract.Item) tract.Item {
 }
 
 // copyFrom is a port of copy: it copies the sibling list s of src (with
-// all subtrees) into t and returns the new list.
-func (t *cmTree) copyFrom(src *cmTree, s int32) int32 {
+// all subtrees) into t and returns the new list. It fails only with
+// ErrTooLarge.
+func (t *cmTree) copyFrom(src *cmTree, s int32) (int32, error) {
 	head, last := nilNode, nilNode
 	for ; s >= 0; s = src.nodes[s].sibling {
 		sn := src.nodes[s]
 		c := nilNode
 		if sn.children >= 0 {
-			c = t.copyFrom(src, sn.children)
+			var err error
+			if c, err = t.copyFrom(src, sn.children); err != nil {
+				return nilNode, err
+			}
 		}
-		n := t.alloc()
+		n, err := t.alloc()
+		if err != nil {
+			return nilNode, err
+		}
 		t.nodes[n] = cmNode{item: sn.item, supp: sn.supp, sibling: nilNode, children: c}
 		if last < 0 {
 			head = n
@@ -275,23 +307,30 @@ func (t *cmTree) copyFrom(src *cmTree, s int32) int32 {
 		}
 		last = n
 	}
-	return head
+	return head, nil
 }
 
 // xcopyFrom is a port of xcopy_pos/xcopy_neg: it copies the sibling list s
 // of src into t, keeping only nodes whose item is flagged in keep; the
-// subtrees of dropped nodes are merged into the result.
-func (t *cmTree) xcopyFrom(src *cmTree, s int32, keep []bool) int32 {
+// subtrees of dropped nodes are merged into the result. It fails only with
+// ErrTooLarge.
+func (t *cmTree) xcopyFrom(src *cmTree, s int32, keep []bool) (int32, error) {
 	head, last, b := nilNode, nilNode, nilNode
 	for ; s >= 0; s = src.nodes[s].sibling {
 		sn := src.nodes[s]
 		c := nilNode
 		if sn.children >= 0 {
-			c = t.xcopyFrom(src, sn.children, keep)
+			var err error
+			if c, err = t.xcopyFrom(src, sn.children, keep); err != nil {
+				return nilNode, err
+			}
 		}
 		switch {
 		case keep[sn.item]:
-			n := t.alloc()
+			n, err := t.alloc()
+			if err != nil {
+				return nilNode, err
+			}
 			t.nodes[n] = cmNode{item: sn.item, supp: sn.supp, sibling: nilNode, children: c}
 			if last < 0 {
 				head = n
@@ -309,19 +348,20 @@ func (t *cmTree) xcopyFrom(src *cmTree, s int32, keep []bool) int32 {
 	}
 	switch {
 	case b < 0:
-		return head
+		return head, nil
 	case head < 0:
-		return b
+		return b, nil
 	default:
-		return t.merge(head, b)
+		return t.merge(head, b), nil
 	}
 }
 
 // projectTree is a port of cmt_project (keep == nil) and cmt_xproj (keep
 // != nil): it projects src on its top-level item, storing the subtree of
 // item in dst (created if nil) and removing item from src. With keep, only
-// the flagged items are retained in dst.
-func projectTree(dst, src *cmTree, item tract.Item, keep []bool) *cmTree {
+// the flagged items are retained in dst. It fails only with ErrTooLarge
+// (dst is returned anyway, so that the caller keeps its arena).
+func projectTree(dst, src *cmTree, item tract.Item, keep []bool) (*cmTree, error) {
 	if dst == nil {
 		dst = newCMTree(src.desc)
 	}
@@ -330,24 +370,28 @@ func projectTree(dst, src *cmTree, item tract.Item, keep []bool) *cmTree {
 	dst.max, src.max = cmNone, cmNone
 	dst.nodes[0].supp = 0
 	if src.nodes[0].children < 0 {
-		return dst
+		return dst, nil
 	}
 	p := src.prune(src.nodes[0].children, item)
 	src.nodes[0].children = p
 	if p < 0 || src.nodes[p].item != item {
-		return dst
+		return dst, nil
 	}
 	src.max = src.nodes[p].supp
 	dst.nodes[0].supp = src.max
 	if c := src.nodes[p].children; c >= 0 {
+		var err error
 		if keep == nil {
-			dst.nodes[0].children = dst.copyFrom(src, c)
+			dst.nodes[0].children, err = dst.copyFrom(src, c)
 		} else {
-			dst.nodes[0].children = dst.xcopyFrom(src, c, keep)
+			dst.nodes[0].children, err = dst.xcopyFrom(src, c, keep)
+		}
+		if err != nil {
+			return dst, err
 		}
 	}
 	src.nodes[0].children = src.prune(src.nodes[0].children, src.pastItem(item))
-	return dst
+	return dst, nil
 }
 
 // closedMaximal is a port of CLOMAX, the closed/maximal item set filter.
@@ -368,7 +412,7 @@ type closedMaximal struct {
 func newClosedMaximal(dir, numItems int) *closedMaximal {
 	cm := &closedMaximal{desc: dir < 0, keep: make([]bool, numItems)}
 	t := newCMTree(cm.desc)
-	t.add(nil, 0)
+	_ = t.add(nil, 0) // an empty set allocates no node
 	t.item = cmValid
 	cm.trees = []*cmTree{t}
 	return cm
@@ -394,21 +438,26 @@ func (cm *closedMaximal) tree(p int) *cmTree {
 
 // add is a port of cm_add: it extends the prefix by item unless a stored
 // superset of prefix ∪ {item} has a support of at least supp, in which case
-// it returns false and leaves the prefix unchanged.
-func (cm *closedMaximal) add(item tract.Item, supp tract.Supp) bool {
+// it returns false and leaves the prefix unchanged. It fails only with
+// ErrTooLarge.
+func (cm *closedMaximal) add(item tract.Item, supp tract.Supp) (bool, error) {
 	p := cm.cnt
 	t := cm.tree(p)
 	if t == nil || !t.valid() {
 		src := cm.trees[p-1]
-		t = projectTree(t, src, src.item, nil)
+		var err error
+		t, err = projectTree(t, src, src.item, nil)
 		cm.trees[p] = t
+		if err != nil {
+			return false, err
+		}
 	}
 	t.pruneTo(item)
 	if t.max >= supp {
-		return false
+		return false, nil
 	}
 	cm.cnt++
-	return true
+	return true, nil
 }
 
 // remove is a port of cm_remove: it removes n items from the prefix and
@@ -428,13 +477,14 @@ func (cm *closedMaximal) remove(n int) {
 // tail is a port of cm_tail (head union tail pruning): it projects the
 // tree of the current prefix keeping only the tail items (in repository
 // order), stores the projection as the next tree and returns the support of
-// the whole tail in it if positive, else 0. An empty tail yields 1.
-func (cm *closedMaximal) tail(items []tract.Item) tract.Supp {
+// the whole tail in it if positive, else 0. An empty tail yields 1. It
+// fails only with ErrTooLarge.
+func (cm *closedMaximal) tail(items []tract.Item) (tract.Supp, error) {
 	if len(items) == 0 {
-		return 1
+		return 1, nil
 	}
 	if cm.cnt <= 0 {
-		return 0
+		return 0, nil
 	}
 	p := cm.cnt
 	dst := cm.tree(p)
@@ -442,21 +492,24 @@ func (cm *closedMaximal) tail(items []tract.Item) tract.Supp {
 	for _, it := range items {
 		cm.keep[it] = true
 	}
-	t := projectTree(dst, src, src.item, cm.keep)
+	t, err := projectTree(dst, src, src.item, cm.keep)
 	for _, it := range items {
 		cm.keep[it] = false
 	}
 	cm.trees[p] = t
-	if s := t.get(items); s > 0 {
-		return s
+	if err != nil {
+		return 0, err
 	}
-	return 0
+	if s := t.get(items); s > 0 {
+		return s, nil
+	}
+	return 0, nil
 }
 
 // update is a port of cm_update: it stores the item set items (sorted in
 // repository order, containing every prefix item) with support supp in all
-// trees of the current prefix.
-func (cm *closedMaximal) update(items []tract.Item, supp tract.Supp) {
+// trees of the current prefix. It fails only with ErrTooLarge.
+func (cm *closedMaximal) update(items []tract.Item, supp tract.Supp) error {
 	j := 0
 	for i := range cm.cnt {
 		t := cm.trees[i]
@@ -464,7 +517,10 @@ func (cm *closedMaximal) update(items []tract.Item, supp tract.Supp) {
 			j++
 		}
 		j++
-		t.add(items[j:], supp)
+		if err := t.add(items[j:], supp); err != nil {
+			return err
+		}
 		cm.stored = true
 	}
+	return nil
 }

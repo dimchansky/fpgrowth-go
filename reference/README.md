@@ -228,3 +228,56 @@ or format warnings.
 
 None of the warnings points at a defect. The defects that do exist were
 found at run time; see `docs/upstream/reference-build.md`.
+
+## Differential test suite (`difftest/`)
+
+`difftest/` (package `difftest`, tests and helpers only) runs the C
+reference and the Go CLI side by side on random cases and compares them.
+
+```bash
+cd reference
+go test ./difftest/                       # 10,000 cases, about 35 s on 10 cores
+DIFFTEST_CASES=50000 go test ./difftest/ -timeout 30m
+./difftest.sh 50000 [seed]                # same, writes difftest-summary.txt
+DIFFTEST_SEED=1 DIFFTEST_ONLY=429 go test ./difftest/ -run TestDifferential -v -artifacts
+```
+
+- **Binaries.** The C oracle is `build/release/fpgrowth/src/fpgrowth`; the
+  test runs `./build.sh release` if it is missing (or `DIFFTEST_REBUILD` is
+  set) and is skipped without a C compiler. `DIFFTEST_C` points to another
+  C binary. The Go CLI is built from `../cmd/fpgrowth` into a temporary
+  directory. Both run in the case directory with `argv[0]` `fpgrowth`.
+- **Cases.** Case `i` of base seed `DIFFTEST_SEED` (default 1) is fully
+  determined by the pair: a random dataset (generator copied from
+  `internal/oracle`, because a nested module cannot import the root
+  module's internal packages; `TestGenerate_matchesOracle` pins the copy
+  to the oracle's golden hashes) and a random option set covering targets
+  `s c m g r` and variants `-As -Ac -Ad -At` (cycled evenly), `-x -j -u
+  -l -q`, relative, absolute and zero `-s`, `-S -m -n -F -c -o`, every
+  `-e` measure with `-a -d -i -p`, `-R` selection and appearance files,
+  `-Z -P -k -I`, file output and count-only mode.
+- **Comparison.** Every case prints absolute supports (`%a`, `%b`, `%h`)
+  and the measure with 17 digits (`%17e`), so both outputs are parsed into
+  canonical records (sorted set, or head and sorted body). Supports must
+  be equal; floats agree within justified tolerances (1e-12 relative;
+  for the logarithmic measures a bound proportional to `N ln N` of the
+  total weight `N`, see `measureTol`); records on one side only must lie
+  at the evaluation threshold; common records must come in the same
+  order; stdout, stderr (without timings) and the pattern spectrum must
+  be identical. Byte equality of all outputs is reported separately.
+- **Deviations.** Cases that trigger a documented deviation
+  (`docs/differences.md`: M1-M5, M9, R1-R3, R8, R11, O3, O4; predicates
+  in `caseDeviations`) are not compared with C; the Go result must equal
+  an independent brute-force evaluation (`brute.go`: frequent, closed,
+  maximal, generator sets and single-head rules with all support, size,
+  border, selection and appearance constraints), or be a subset of it
+  with exact supports when an evaluation measure filters. Value-level
+  measure deviations (R4-R7, R9) excuse single records in the direction
+  of the fix. Every successful Go run is also checked against the brute
+  force and for consistency of its log count, `-Z` statistics and pattern
+  spectrum.
+- **Report.** The summary lists cases per verdict (byte-equal,
+  semantic-equal, tolerated, error-equal, deviation-verified, FAIL),
+  brute-force checks, tolerated values, deviations, and each failure with
+  its seed, case index and a reproducing command; `-artifacts` keeps the
+  inputs and both outputs of failing cases.

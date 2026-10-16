@@ -1,6 +1,7 @@
 package istree
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -92,6 +93,14 @@ func (d *dataset) supp(codes []tract.Item) tract.Supp {
 	return d.db.Support(oracle.NewItemSet(names...))
 }
 
+// addChildren is AddChildren for test trees, which cannot outgrow their
+// arenas; an error is a test bug.
+func addChildren(tr *Tree) {
+	if _, err := tr.AddChildren(); err != nil {
+		panic(err)
+	}
+}
+
 // fillRecTree fills the tree exactly like fpgrowth's rec_tree: depth first,
 // items in increasing code order, every frequent extension k < i of a
 // frequent set S ∪ {i} set in the node of S ∪ {i}.
@@ -103,7 +112,7 @@ func fillRecTree(tr *Tree, supp func([]tract.Item) tract.Supp, smin tract.Supp) 
 		if !tr.Expandable(1) {
 			return
 		}
-		tr.AddChildren()
+		addChildren(tr)
 		for i := 1; i < n; i++ {
 			s := append(set, tract.Item(i))
 			if supp(s) < smin {
@@ -146,7 +155,7 @@ func fillLevelwise(tr *Tree, supp func([]tract.Item) tract.Supp, smin tract.Supp
 			if !tr.Expandable(1) {
 				continue
 			}
-			tr.AddChildren()
+			addChildren(tr)
 			n := tr.NumItems()
 			if len(path) > 0 {
 				n = int(path[len(path)-1])
@@ -408,8 +417,10 @@ func TestTree_Insertion(t *testing.T) {
 	if !tr.Expandable(1) || tr.Down(1) {
 		t.Fatal("cursor at the root must be expandable and have no children yet")
 	}
-	if !tr.AddChildren() || tr.AddChildren() {
-		t.Fatal("AddChildren: want true once, then false")
+	first, err1 := tr.AddChildren()
+	second, err2 := tr.AddChildren()
+	if !first || second || err1 != nil || err2 != nil {
+		t.Fatalf("AddChildren: %v, %v then %v, %v; want true once, then false", first, err1, second, err2)
 	}
 	if tr.Height() != 2 {
 		t.Fatalf("height = %d, want 2", tr.Height())
@@ -437,6 +448,62 @@ func TestTree_Insertion(t *testing.T) {
 	}
 }
 
+func TestFits(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		n, k int
+		want bool
+	}{
+		{"empty", 0, 0, true},
+		{"to the limit", math.MaxInt32 - 3, 3, true},
+		{"one beyond", math.MaxInt32 - 3, 4, false},
+		{"full", math.MaxInt32, 1, false},
+		{"full, nothing added", math.MaxInt32, 0, true},
+		{"huge request", 0, math.MaxInt32 + 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := fits(tt.n, tt.k); got != tt.want {
+				t.Errorf("fits(%d, %d) = %v, want %v", tt.n, tt.k, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTree_AddChildrenTooLarge(t *testing.T) { //nolint:paralleltest // changes maxArena
+	// The root of TestTree_Insertion's tree gets children for items 1, 2
+	// and 3 with 1, 2 and 3 counters (4 root counters, 1 root node).
+	tests := []struct {
+		name  string
+		limit int
+	}{
+		{"nodes", 1},    // the first child node does not fit
+		{"counters", 6}, // counters 4+1 fit, 5+2 do not
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := New(Params{Freqs: []tract.Supp{5, 4, 3, 6}, Total: 8, MinSupp: 2, MinBody: 2, MinConf: 1})
+			old := maxArena
+			maxArena = tt.limit
+			t.Cleanup(func() { maxArena = old })
+			ok, err := tr.AddChildren()
+			if ok || !errors.Is(err, ErrTooLarge) || !errors.Is(err, tract.ErrTooLarge) {
+				t.Fatalf("AddChildren with arena limit %d = %v, %v; want false, ErrTooLarge", tt.limit, ok, err)
+			}
+			if len(tr.nodes) > tt.limit || len(tr.chn) > 0 {
+				t.Errorf("%d nodes and %d child slots after the failure, limit %d", len(tr.nodes), len(tr.chn), tt.limit)
+			}
+		})
+	}
+	// with the default limit the same tree grows normally
+	tr := New(Params{Freqs: []tract.Supp{5, 4, 3, 6}, Total: 8, MinSupp: 2, MinBody: 2, MinConf: 1})
+	if ok, err := tr.AddChildren(); !ok || err != nil {
+		t.Fatalf("AddChildren = %v, %v; want true, nil", ok, err)
+	}
+}
+
 func TestTree_NodeLayout(t *testing.T) {
 	// Only the items 0, 2, 8 and 9 are frequent. The root's child for
 	// item 9 gets the candidates 0, 2 and 8: 3 candidates over a range of
@@ -444,7 +511,7 @@ func TestTree_NodeLayout(t *testing.T) {
 	// array.
 	freqs := []tract.Supp{5, 1, 4, 1, 1, 1, 1, 1, 5, 6}
 	tr := New(Params{Freqs: freqs, Total: 10, MinSupp: 2, MinBody: 2, MinConf: 1})
-	tr.AddChildren()
+	addChildren(tr)
 	if !tr.Down(9) {
 		t.Fatal("no child for item 9")
 	}

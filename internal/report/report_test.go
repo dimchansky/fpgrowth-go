@@ -325,6 +325,87 @@ func TestReporter_TailWithoutRepository(t *testing.T) {
 	}
 }
 
+func TestReporter_RepositoryTooLarge(t *testing.T) { //nolint:paralleltest // changes maxRepoNodes
+	t.Run("report", func(t *testing.T) {
+		r := New(4, 10, nil)
+		r.SetTarget(TargetClosed, 0, -1)
+		sink := &sliceSink{}
+		r.SetSink(sink)
+		r.Setup()
+		setMaxRepoNodes(t, 2) // storing {3 2 1} needs a root and two nodes
+		for i, s := range []tract.Supp{5, 4, 3} {
+			if !r.Add(tract.Item(3-i), s) {
+				t.Fatalf("Add(%d) failed", 3-i)
+			}
+		}
+		if err := r.Report(); !errors.Is(err, ErrTooLarge) || !errors.Is(err, tract.ErrTooLarge) {
+			t.Fatalf("Report: %v, want ErrTooLarge", err)
+		}
+		if !errors.Is(r.Err(), ErrTooLarge) {
+			t.Fatalf("Err after a failed Report: %v", r.Err())
+		}
+		if len(sink.sets) != 0 {
+			t.Fatalf("reported %v despite the error", sink.sets)
+		}
+		r.Remove(1)
+		if r.Add(0, 1) {
+			t.Fatal("Add succeeded after the repository failed")
+		}
+		if err := r.Report(); !errors.Is(err, ErrTooLarge) {
+			t.Fatalf("second Report: %v, want the latched ErrTooLarge", err)
+		}
+	})
+	t.Run("tail", func(t *testing.T) {
+		r := New(6, 10, nil)
+		r.SetTarget(TargetMaximal, 0, -1)
+		r.SetSink(&sliceSink{})
+		r.Setup()
+		for _, it := range []tract.Item{5, 4, 2, 1} {
+			if !r.Add(it, 3) {
+				t.Fatalf("Add(%d) failed", it)
+			}
+		}
+		if err := r.Report(); err != nil {
+			t.Fatal(err)
+		}
+		r.Remove(4)
+		if !r.Add(4, 6) {
+			t.Fatal("Add(4) failed")
+		}
+		setMaxRepoNodes(t, 1) // projecting on {4} must copy {2 1}
+		if !r.Tail([]tract.Item{2, 1}) {
+			t.Fatal("Tail = false after a repository overflow, want true (skip the subtree)")
+		}
+		if !errors.Is(r.Err(), ErrTooLarge) {
+			t.Fatalf("Err after a failed Tail: %v", r.Err())
+		}
+		if err := r.Report(); !errors.Is(err, ErrTooLarge) {
+			t.Fatalf("Report after a failed Tail: %v, want ErrTooLarge", err)
+		}
+	})
+	t.Run("add", func(t *testing.T) {
+		r := New(6, 10, nil)
+		r.SetTarget(TargetClosed, 0, -1)
+		r.SetSink(&sliceSink{})
+		r.Setup()
+		for _, it := range []tract.Item{5, 4, 2, 1} {
+			r.Add(it, 3)
+		}
+		if err := r.Report(); err != nil {
+			t.Fatal(err)
+		}
+		r.Remove(4)
+		r.Add(4, 6)
+		setMaxRepoNodes(t, 1) // the projection on {4} for the next item
+		if r.Add(2, 5) {
+			t.Fatal("Add = true after a repository overflow")
+		}
+		if !errors.Is(r.Err(), ErrTooLarge) {
+			t.Fatalf("Err after a failed Add: %v", r.Err())
+		}
+	})
+}
+
 func TestReporter_StatsCopyAndBorder(t *testing.T) {
 	t.Parallel()
 	r := New(4, 10, nil)

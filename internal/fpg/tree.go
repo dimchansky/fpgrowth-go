@@ -211,7 +211,9 @@ func (m *miner) recTree(t *fpTree, ist *istree.Tree, n int) error {
 	if !ist.Expandable(1) {
 		return nil // no item can be added
 	}
-	ist.AddChildren()
+	if _, err := ist.AddChildren(); err != nil {
+		return err // istree.ErrTooLarge, converted by Miner.Mine
+	}
 	for i := 1; i < n; i++ {
 		if t.heads[i].supp < m.supp {
 			continue // skip infrequent items

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/dimchansky/fpgrowth-go/internal/istree"
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
@@ -603,4 +604,38 @@ func TestArenaOverflow(t *testing.T) {
 		defer recoverOverflow(&err)
 		panic("boom")
 	}()
+}
+
+// TestTooLarge checks that Miner.Mine maps the capacity errors of the
+// reporter's closed/maximal repository and of the item set tree (provoked
+// with small limits in their own packages) to ErrTooLarge and leaves other
+// errors alone.
+func TestTooLarge(t *testing.T) {
+	t.Parallel()
+	errSink := errors.New("sink failed")
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{"nil", nil, nil},
+		{"repository", report.ErrTooLarge, ErrTooLarge},
+		{"wrapped repository", fmt.Errorf("x: %w", report.ErrTooLarge), ErrTooLarge},
+		{"item set tree", istree.ErrTooLarge, ErrTooLarge},
+		{"own arena", ErrTooLarge, ErrTooLarge},
+		{"sink", errSink, errSink},
+		{"canceled", context.Canceled, context.Canceled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tooLarge(tt.err)
+			if got != tt.want { //nolint:errorlint // identity is the contract
+				t.Fatalf("tooLarge(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+			if tt.want == ErrTooLarge && !errors.Is(got, tract.ErrTooLarge) {
+				t.Fatalf("%v does not wrap tract.ErrTooLarge", got)
+			}
+		})
+	}
 }
