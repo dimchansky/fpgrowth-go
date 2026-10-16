@@ -45,9 +45,9 @@ func TestEquivalenceCLI(t *testing.T) {
 					t.Fatalf("seed %d %s/%s: %v", c.seed, tg.name, v.name, gerr)
 				}
 				if errors.Is(werr, fpg.ErrNoItems) {
-					if sum.Items != 0 || len(got) != 0 {
+					if sum.FrequentItems != 0 || len(got) != 0 {
 						t.Fatalf("seed %d %s/%s: CLI finds no items, API reports %d items, %d sets",
-							c.seed, tg.name, v.name, sum.Items, len(got))
+							c.seed, tg.name, v.name, sum.FrequentItems, len(got))
 					}
 					continue
 				}
@@ -83,7 +83,7 @@ func TestEquivalenceCLIEvaluation(t *testing.T) {
 		v := algorithms[r.IntN(len(algorithms))]
 		m := Measure(1 + r.IntN(int(LogSupportRatio)))
 		d := thresholds[r.IntN(len(thresholds))]
-		ev := &Evaluation{Measure: m, Threshold: d / 100}
+		ev := &Evaluation{Measure: m, Filter: true, Threshold: d / 100}
 		cfg := cliConfig(tg.cli, v.algo, v.tun, c.smin, c.smax, c.zmin, c.zmax)
 		cfg.Eval = int(m)
 		cfg.Thresh = d
@@ -139,11 +139,11 @@ func TestEquivalenceCLISelection(t *testing.T) {
 		}
 		sel = append(sel, "never-occurs")
 		r.Shuffle(len(sel), func(i, j int) { sel[i], sel[j] = sel[j], sel[i] })
-		cfg := cliConfig(targets[0].cli, Auto, Tuning{}, c.smin, c.smax, c.zmin, c.zmax)
+		cfg := cliConfig(targets[0].cli, AlgorithmAuto, Tuning{}, c.smin, c.smax, c.zmin, c.zmax)
 		want, _, werr := runInternal(t, c.txs, cfg, c.border, func(ib *tract.ItemBase[string]) error {
 			return ib.Select(sel...)
 		})
-		opt := c.options(Frequent, Auto, Tuning{})
+		opt := c.options(TargetFrequent, AlgorithmAuto, Tuning{})
 		opt.Items = sel
 		got, _, gerr := setRecords(t, sourceOf(c.txs), opt)
 		if gerr != nil {
@@ -199,7 +199,7 @@ func TestOracleItemsets(t *testing.T) {
 				if err != nil {
 					t.Fatalf("seed %d: %v", seed, err)
 				}
-				if sum.Items == 0 {
+				if sum.FrequentItems == 0 {
 					for _, s := range want {
 						if len(s.Items) > 0 {
 							t.Fatalf("seed %d %s/%s: no frequent items, oracle has %v", seed, tg.name, v.name, s)
@@ -228,7 +228,7 @@ func itemOrder(t *testing.T, txs []oracle.Transaction, opt Options[string]) []st
 	if err := ib.Count(scanOf(txs)); err != nil {
 		t.Fatal(err)
 	}
-	p.setThresholds(int64(ib.TotalWeight()))
+	p.setThresholds(&Stats{TotalWeight: int64(ib.TotalWeight())})
 	m, err := fpg.New[string](p.cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -259,10 +259,11 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		ev := &Evaluation{
 			Measure:                 Measure(1 + r.IntN(int(LogSupportRatio)-1)),
 			Aggregate:               Aggregation(r.IntN(4)),
+			Filter:                  true,
 			Threshold:               thresholds[r.IntN(len(thresholds))],
 			InvalidateBelowExpected: r.IntN(4) == 0,
 		}
-		if tg.target == Frequent && r.IntN(4) == 0 {
+		if tg.target == TargetFrequent && r.IntN(4) == 0 {
 			zero := 0
 			ev.PruneSize = &zero // backward pruning: the evaluation filter only
 		}
@@ -272,7 +273,7 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sum.Items == 0 {
+		if sum.FrequentItems == 0 {
 			continue
 		}
 		db, err := oracle.New(c.txs, oracle.Options{})
@@ -370,29 +371,38 @@ func TestThresholdBoundaries(t *testing.T) {
 func TestNoFrequentItems(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		txs  [][]string
-		opt  Options[string]
-		sum  Summary
+		name     string
+		txs      [][]string
+		opt      Options[string]
+		expected Stats
 	}{
-		{"empty database", nil, Options[string]{MinSupport: Count(1)}, Summary{}},
+		{"empty database", nil, Options[string]{MinSupport: Count(1)},
+			Stats{MinSupport: 1, MaxSupport: math.MaxInt64}},
 		{"empty transactions", [][]string{{}, {}}, Options[string]{MinSupport: Count(1), IncludeEmpty: true},
-			Summary{Transactions: 2, TotalWeight: 2}},
-		{"support too high", [][]string{{"a"}, {"b"}}, Options[string]{MinSupport: Count(2)},
-			Summary{Transactions: 2, TotalWeight: 2}},
-		{"selection matches nothing", [][]string{{"a"}}, Options[string]{MinSupport: Count(1), Items: []string{"z"}},
-			Summary{Transactions: 1, TotalWeight: 1}},
+			Stats{Transactions: 2, TotalWeight: 2, MinSupport: 1, MaxSupport: math.MaxInt64}},
+		{"support too high", [][]string{{"a"}, {"b"}}, Options[string]{MinSupport: Count(2), MaxSupport: Fraction(1)},
+			Stats{Transactions: 2, TotalWeight: 2, MinSupport: 2, MaxSupport: 2}},
+		{"selection matches nothing", [][]string{{"a"}}, Options[string]{MinSupport: Fraction(0.5), Items: []string{"z"}},
+			Stats{Transactions: 1, TotalWeight: 1, MinSupport: 1, MaxSupport: math.MaxInt64}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sets, sum, err := CollectItemsets(context.Background(), FromItems(tt.txs), tt.opt)
+			var started []Stats
+			opt := tt.opt
+			opt.OnStart = func(st Stats) error {
+				started = append(started, st)
+				return nil
+			}
+			sets, sum, err := CollectItemsets(context.Background(), FromItems(tt.txs), opt)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(sets) != 0 || sum.Transactions != tt.sum.Transactions || sum.TotalWeight != tt.sum.TotalWeight ||
-				sum.Items != 0 || sum.Reported != 0 {
-				t.Errorf("got %v, %+v; expected nothing, %+v", sets, sum, tt.sum)
+			if len(sets) != 0 || sum.Stats != tt.expected || sum.Reported != 0 {
+				t.Errorf("got %v, %+v; expected nothing, %+v", sets, sum, tt.expected)
+			}
+			if len(started) != 1 || started[0] != tt.expected {
+				t.Errorf("OnStart calls %+v, expected one with %+v", started, tt.expected)
 			}
 		})
 	}
@@ -414,7 +424,7 @@ func TestSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	// {}:4 a:3 b:3 c:2 ab:3 ac:2 bc:2 abc:2
-	if sum.Transactions != 4 || sum.TotalWeight != 4 || sum.Items != 3 || sum.Reported != 8 ||
+	if sum.Transactions != 4 || sum.TotalWeight != 4 || sum.FrequentItems != 3 || sum.Reported != 8 ||
 		!slices.Equal(sum.BySize, []uint64{1, 3, 3, 1}) || len(sets) != 8 {
 		t.Fatalf("summary %+v, %d sets", sum, len(sets))
 	}
@@ -439,7 +449,7 @@ func TestIntItems(t *testing.T) {
 	t.Parallel()
 	type sku int32
 	src := FromItems([][]sku{{1, 2, 3}, {1, 2}, {2, 3}, {1, 2, 3}})
-	sets, _, err := CollectItemsets(context.Background(), src, Options[sku]{MinSupport: Count(3), Target: Closed})
+	sets, _, err := CollectItemsets(context.Background(), src, Options[sku]{MinSupport: Count(3), Target: TargetClosed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +696,7 @@ func TestConcurrent(t *testing.T) {
 	t.Parallel()
 	gen := bigSource(500)
 	slice := FromItems([][]string{{"a", "b"}, {"b", "c"}, {"a", "b", "c"}, {"a"}})
-	wantInt, _, err := CollectItemsets(context.Background(), gen, Options[int]{MinSupport: Fraction(0.3), Target: Closed})
+	wantInt, _, err := CollectItemsets(context.Background(), gen, Options[int]{MinSupport: Fraction(0.3), Target: TargetClosed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,7 +709,7 @@ func TestConcurrent(t *testing.T) {
 	for i := range 8 {
 		wg.Go(func() {
 			if i%2 == 0 {
-				got, _, err := CollectItemsets(context.Background(), gen, Options[int]{MinSupport: Fraction(0.3), Target: Closed})
+				got, _, err := CollectItemsets(context.Background(), gen, Options[int]{MinSupport: Fraction(0.3), Target: TargetClosed})
 				if err == nil && fmt.Sprint(got) != fmt.Sprint(wantInt) {
 					err = errors.New("different item sets")
 				}
@@ -728,7 +738,7 @@ func TestDeterministic(t *testing.T) {
 	src := bigSource(300)
 	var first string
 	for range 3 {
-		sets, _, err := CollectItemsets(context.Background(), src, Options[int]{MinSupport: Fraction(0.3), Target: Maximal})
+		sets, _, err := CollectItemsets(context.Background(), src, Options[int]{MinSupport: Fraction(0.3), Target: TargetMaximal})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -789,4 +799,377 @@ func TestMappedErrors(t *testing.T) {
 	if mapInternal(other) != other || mapInternal(nil) != nil {
 		t.Error("other errors must pass unchanged")
 	}
+}
+
+// TestCancelTreePhases cancels rule mining and item set mining with a
+// rule measure (the item set tree path) before the tree is filled (from
+// OnStart) and while results are reported: mining must return
+// context.Canceled, with only a bounded number of results after the
+// cancellation.
+func TestCancelTreePhases(t *testing.T) {
+	t.Parallel()
+	src := bigSource(1000)
+	const cancelAt = 1000
+	// at most a few hundred item sets of up to 30 items after the check
+	const bound = 256 * 30
+	type run func(ctx context.Context, onStart func(Stats) error, fn func() error) error
+	runs := map[string]run{
+		"rules": func(ctx context.Context, onStart func(Stats) error, fn func() error) error {
+			_, err := MineRules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2), OnStart: onStart},
+				func(Rule[int]) error { return fn() })
+			return err
+		},
+		"rules iterator": func(ctx context.Context, onStart func(Stats) error, fn func() error) error {
+			for _, err := range Rules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2), OnStart: onStart}) {
+				if err != nil {
+					return err
+				}
+				if err := fn(); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		"item sets with a rule measure": func(ctx context.Context, onStart func(Stats) error, fn func() error) error {
+			_, err := MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2), OnStart: onStart,
+				Evaluation: &Evaluation{Measure: Lift}}, func(Itemset[int]) error { return fn() })
+			return err
+		},
+		"closed sets filtered by a rule measure": func(ctx context.Context, onStart func(Stats) error, fn func() error) error {
+			_, err := MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2), OnStart: onStart, Target: TargetClosed,
+				Evaluation: &Evaluation{Measure: Lift, Filter: true, Threshold: 0.5, PruneSize: intPtr(0)}},
+				func(Itemset[int]) error { return fn() })
+			return err
+		},
+	}
+	for name, mine := range runs {
+		t.Run(name+"/before the tree", func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			n := 0
+			err := mine(ctx, func(Stats) error { cancel(); return nil }, func() error { n++; return nil })
+			if err != context.Canceled || n != 0 {
+				t.Errorf("got %v after %d results", err, n)
+			}
+		})
+		t.Run(name+"/while reporting", func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			n := 0
+			err := mine(ctx, nil, func() error {
+				if n++; n == cancelAt {
+					cancel()
+				}
+				return nil
+			})
+			if err != context.Canceled {
+				t.Fatalf("got %v after %d results", err, n)
+			}
+			t.Logf("%d results after the cancellation", n-cancelAt)
+			if n < cancelAt || n-cancelAt > bound {
+				t.Errorf("%d results, %d after the cancellation (bound %d)", n, n-cancelAt, bound)
+			}
+		})
+	}
+}
+
+// TestExactCountThresholds checks absolute thresholds beyond 2^53, where
+// float64 cannot represent every support: Count bounds are exact and
+// inclusive, Fraction(1) includes the total weight.
+func TestExactCountThresholds(t *testing.T) {
+	t.Parallel()
+	for _, w := range []int64{1<<53 + 1, 1<<60 + 1, math.MaxInt64} {
+		// a: support w, b and {a, b}: support w-1
+		src := FromSlice([]Transaction[string]{
+			{Items: []string{"a", "b"}, Weight: w - 1},
+			{Items: []string{"a"}, Weight: 1},
+		})
+		a, b, ab := fmt.Sprintf("a:%d", w), fmt.Sprintf("b:%d", w-1), fmt.Sprintf("a b:%d", w-1)
+		tests := []struct {
+			name     string
+			min, max Support
+			expected []string // sorted items and supports
+		}{
+			{"min count w", Count(w), Support{}, []string{a}},
+			{"min count w-1", Count(w - 1), Support{}, []string{ab, a, b}},
+			{"min count w+1", Count(w + 1), Support{}, nil},
+			{"max count w-1", Count(1), Count(w - 1), []string{ab, b}},
+			{"max count w", Count(1), Count(w), []string{ab, a, b}},
+			{"min and max count w", Count(w), Count(w), []string{a}},
+			{"max fraction 1", Count(w), Fraction(1), []string{a}},
+			// the relative tolerance of Fraction exceeds 1 beyond 2^53
+			{"min fraction 1", Fraction(1), Count(w), []string{ab, a, b}},
+		}
+		for _, tt := range tests {
+			if tt.name == "min count w+1" && w == math.MaxInt64 {
+				continue
+			}
+			t.Run(fmt.Sprintf("%s of %d", tt.name, w), func(t *testing.T) {
+				t.Parallel()
+				sets, sum, err := CollectItemsets(context.Background(), src, Options[string]{
+					MinSupport: tt.min, MaxSupport: tt.max})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []string
+				for _, s := range sets {
+					got = append(got, fmt.Sprintf("%s:%d", strings.Join(slices.Sorted(slices.Values(s.Items)), " "), s.Support))
+				}
+				slices.Sort(got)
+				if !slices.Equal(got, tt.expected) {
+					t.Errorf("got %q, expected %q (stats %+v)", got, tt.expected, sum.Stats)
+				}
+				if tt.min == Fraction(1) && (sum.MinSupport > w || sum.MinSupport < w-w>>50) {
+					t.Errorf("Fraction(1) resolved to %d of %d", sum.MinSupport, w)
+				}
+			})
+		}
+		t.Run(fmt.Sprintf("rules of %d", w), func(t *testing.T) {
+			t.Parallel()
+			tests := map[int64][]string{
+				w:     {"a <- {}"},
+				w - 1: {"a <- {b}", "a <- {}", "b <- {a}", "b <- {}"},
+			}
+			for minSupp, expected := range tests {
+				rules, sum, err := CollectRules(context.Background(), src, RuleOptions[string]{
+					MinSupport: Count(minSupp), OriginalSupport: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []string
+				for _, r := range rules {
+					got = append(got, fmt.Sprintf("%s <- {%s}", r.Head, strings.Join(r.Body, " ")))
+				}
+				slices.Sort(got)
+				if !slices.Equal(got, expected) {
+					t.Errorf("min %d: got %q, expected %q", minSupp, got, expected)
+				}
+				if sum.MinSupport != minSupp || sum.MaxSupport != math.MaxInt64 {
+					t.Errorf("min %d: resolved %+v", minSupp, sum.Stats)
+				}
+			}
+		})
+	}
+}
+
+// TestOnStart checks that OnStart is called once, before the first
+// result, with the Stats that the Summary also has, and that its error
+// stops mining unchanged.
+func TestOnStart(t *testing.T) {
+	t.Parallel()
+	src := FromSlice([]Transaction[string]{
+		{Items: []string{"a", "b"}, Weight: 3},
+		{Items: []string{"a", "c"}, Weight: 1},
+		{Items: nil, Weight: 6},
+	})
+	expected := Stats{Transactions: 3, TotalWeight: 10, FrequentItems: 2, MinSupport: 3, MaxSupport: 5}
+	var calls []Stats
+	results := 0
+	onStart := func(st Stats) error {
+		if results != 0 {
+			t.Errorf("OnStart after %d results", results)
+		}
+		calls = append(calls, st)
+		return nil
+	}
+	sum, err := MineItemsets(context.Background(), src,
+		Options[string]{MinSupport: Fraction(0.3), MaxSupport: Count(5), OnStart: onStart},
+		func(Itemset[string]) error { results++; return nil })
+	if err != nil || results != 3 || len(calls) != 1 || calls[0] != expected || sum.Stats != expected {
+		t.Errorf("item sets: err %v, %d results, calls %+v, summary %+v", err, results, calls, sum.Stats)
+	}
+	calls, results = nil, 0
+	sum, err = MineRules(context.Background(), src,
+		RuleOptions[string]{MinSupport: Fraction(0.3), MaxSupport: Count(5), OnStart: onStart},
+		func(Rule[string]) error { results++; return nil })
+	// b <- a, c <- a, a <- b (body supports 4, 4, 3; empty bodies have 10);
+	// with confidence 0 every item is frequent for rules
+	expected.FrequentItems = 3
+	if err != nil || results != 3 || len(calls) != 1 || calls[0] != expected || sum.Stats != expected {
+		t.Errorf("rules: err %v, %d results, calls %+v, summary %+v", err, results, calls, sum.Stats)
+	}
+	errNo := errors.New("not today")
+	sum, err = MineItemsets(context.Background(), src,
+		Options[string]{MinSupport: Count(1), OnStart: func(Stats) error { return errNo }},
+		func(Itemset[string]) error { results++; return nil })
+	if err != errNo || sum.Reported != 0 || sum.FrequentItems != 3 {
+		t.Errorf("error: %v, %+v", err, sum)
+	}
+	_, err = MineRules(context.Background(), src,
+		RuleOptions[string]{MinSupport: Count(100), OnStart: func(Stats) error { return errNo }}, nil)
+	if err != errNo {
+		t.Errorf("rules without frequent items: %v", err)
+	}
+	failing := failingSource([][]string{{"a"}}, 2, 0, errNo)
+	called := false
+	_, err = MineItemsets(context.Background(), failing,
+		Options[string]{MinSupport: Count(1), OnStart: func(Stats) error { called = true; return nil }}, nil)
+	if !errors.Is(err, errNo) || called {
+		t.Errorf("failing second pass: %v, OnStart called %v", err, called)
+	}
+}
+
+// TestInvalidItems checks that items that cannot be map keys or never
+// equal themselves are errors, not panics or misleading replay errors.
+func TestInvalidItems(t *testing.T) {
+	t.Parallel()
+	opt := Options[any]{MinSupport: Count(1)}
+	tests := []struct {
+		name  string
+		items [][]any
+		ok    bool
+	}{
+		{"comparable dynamic types", [][]any{{1, "a", nil, struct{ X any }{2}}, {1}}, true},
+		{"slice", [][]any{{1}, {[]int{1}}}, false},
+		{"map in a struct", [][]any{{struct{ X any }{map[int]int{}}}}, false},
+		{"nan", [][]any{{1}, {math.NaN()}}, false},
+		{"nan in an array", [][]any{{[2]float64{1, math.NaN()}}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := MineItemsets(context.Background(), FromItems(tt.items), opt, nil)
+			if tt.ok != (err == nil) || !tt.ok && !errors.Is(err, ErrInvalidItem) {
+				t.Errorf("got %v", err)
+			}
+			_, err = MineRules(context.Background(), FromItems(tt.items), RuleOptions[any]{MinSupport: Count(1)}, nil)
+			if tt.ok != (err == nil) || !tt.ok && !errors.Is(err, ErrInvalidItem) {
+				t.Errorf("rules: got %v", err)
+			}
+		})
+	}
+	_, err := MineItemsets(context.Background(), FromItems([][]float64{{1, math.NaN()}}), Options[float64]{MinSupport: Count(1)}, nil)
+	if !errors.Is(err, ErrInvalidItem) || !strings.Contains(err.Error(), "transaction 1 (pass 1)") {
+		t.Errorf("float NaN: %v", err)
+	}
+	_, err = MineItemsets(context.Background(), FromItems([][]float64{{1}}),
+		Options[float64]{MinSupport: Count(1), Items: []float64{1, math.NaN()}}, nil)
+	if !errors.Is(err, ErrInvalidOptions) || !strings.Contains(err.Error(), "Items: item 1:") {
+		t.Errorf("NaN in Items: %v", err)
+	}
+	_, err = MineItemsets(context.Background(), FromItems([][]any{{1}}),
+		Options[any]{MinSupport: Count(1), Items: []any{[]byte("x")}}, nil)
+	if !errors.Is(err, ErrInvalidOptions) {
+		t.Errorf("slice in Items: %v", err)
+	}
+}
+
+// FuzzMineItemsets compares MineItemsets with the brute-force oracle for
+// fuzzed databases and random options: every target, variant and tuning,
+// support and size limits, borders, and evaluations with and without
+// filtering.
+func FuzzMineItemsets(f *testing.F) {
+	fuzzSeeds(f)
+	f.Fuzz(func(t *testing.T, word uint64, data []byte) {
+		txs := decodeFuzzTxs(data)
+		b := fuzzBits(word)
+		c := testCase{txs: txs, smax: 100, zmin: 1, zmax: fpg.MaxSize}
+		if b.take(1) == 0 {
+			n := int64(1 + b.take(2))
+			c.smin, c.minSupp = float64(-n), Count(n)
+		} else {
+			k := 1 + b.take(6)%60
+			c.smin, c.minSupp = float64(k), Fraction(float64(k)/100)
+		}
+		switch b.take(2) {
+		case 1:
+			n := int64(1 + b.take(3))
+			c.smax, c.maxSupp = float64(-n), Count(n)
+		case 2:
+			k := 30 + b.take(6)
+			c.smax, c.maxSupp = float64(k), Fraction(float64(k)/100)
+		}
+		switch b.take(2) {
+		case 1:
+			c.zmin, c.includeEmpty = 0, true
+		case 2:
+			c.zmin = 2 + b.take(1)
+		}
+		if b.take(1) == 1 {
+			c.zmax = max(c.zmin, 1) + b.take(2)
+		}
+		if b.take(2) == 0 {
+			n := int64(1 + b.take(2))
+			c.border = []float64{float64(-n), 20}
+			c.pubBorder = []Support{Count(n), Fraction(0.2)}
+		}
+		tg := targets[b.take(2)]
+		v := algorithms[b.take(4)%len(algorithms)]
+		tun := merge(v.tun, Tuning{
+			NoPerfectExtensions: b.take(1) == 1,
+			NoHeadUnionTail:     b.take(1) == 1,
+			ItemOrder:           ItemOrder(b.take(3) % 6),
+		})
+		opt := c.options(tg.target, v.algo, tun)
+		evalMode := b.take(2) // 0, 1: none, 2: values only, 3: filter
+		if evalMode >= 2 {
+			opt.Evaluation = &Evaluation{
+				Measure:                 Measure(1 + b.take(5)%(int(LogSupportRatio)-1)),
+				Aggregate:               Aggregation(b.take(2)),
+				InvalidateBelowExpected: b.take(1) == 1,
+			}
+			if evalMode == 3 {
+				opt.Evaluation.Filter = true
+				opt.Evaluation.Threshold = []float64{-1, 0, 0.01, 0.1, 0.5, 1, 1.5, 10}[b.take(3)]
+				if tg.target == TargetFrequent && b.take(1) == 1 {
+					opt.Evaluation.PruneSize = intPtr(0) // backward pruning: the filter only
+				}
+			}
+		}
+		got, sum, err := CollectItemsets(context.Background(), sourceOf(txs), opt)
+		if err != nil {
+			t.Fatalf("%+v: %v", opt, err)
+		}
+		if sum.Reported != uint64(len(got)) {
+			t.Fatalf("reported %d, got %d", sum.Reported, len(got))
+		}
+		db, err := oracle.New(txs, oracle.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		total := db.Total()
+		p := oracle.NewSetParams(tg.oracle, oracle.AbsMinSupp(c.smin, total))
+		p.MaxSupp = oracle.AbsMaxSupp(c.smax, total)
+		p.MinSize = c.zmin
+		if c.zmax < fpg.MaxSize {
+			p.MaxSize = c.zmax
+		}
+		p.Border = oracle.AbsBorder(c.border, c.zmin, total)
+		if sum.FrequentItems == 0 {
+			if len(got) > 0 {
+				t.Fatalf("no frequent items, %d sets", len(got))
+			}
+			want, err := db.Mine(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range want {
+				if len(s.Items) > 0 {
+					t.Fatalf("no frequent items, oracle has %v", s)
+				}
+			}
+			return
+		}
+		if evalMode == 3 {
+			e := opt.Evaluation
+			rm := ruleval.Measure(e.Measure)
+			p.Eval = &oracle.SetEval{
+				Measure: oracle.Measure{
+					Func: oracle.MeasureFunc(rm.Func()), Dir: oracle.Direction(rm.Dir()),
+					Threshold: e.Threshold, InvalidateBelowExpected: e.InvalidateBelowExpected,
+				},
+				Agg:   oracle.Aggregation(e.Aggregate),
+				Order: itemOrder(t, txs, opt),
+			}
+		}
+		want, err := db.Mine(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{IgnoreEval: evalMode != 3}); d != "" {
+			t.Fatalf("%s/%s %+v eval %+v:\n%s", tg.name, v.name, opt, opt.Evaluation, d)
+		}
+	})
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
+	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
 // Algorithm selects the FP-growth variant (upstream FPG_SIMPLE ...
@@ -103,6 +104,17 @@ type Config struct {
 	SMin float64
 	// SMax is the maximum support, in the same notation as SMin.
 	SMax float64
+	// HasCounts makes MinCount and MaxCount the minimum and maximum
+	// support instead of SMin and SMax. It is the library's exact path for
+	// absolute thresholds: the float notation of SMin and SMax cannot
+	// represent every support above 2^53.
+	HasCounts bool
+	// MinCount is the absolute minimum support if HasCounts is set; values
+	// below 1 act as 1.
+	MinCount tract.Supp
+	// MaxCount is the absolute maximum support if HasCounts is set
+	// (math.MaxInt64: no limit).
+	MaxCount tract.Supp
 	// Conf is the minimum confidence of rules in percent, in [0, 100].
 	Conf float64
 	// ZMin and ZMax are the minimum and maximum item set (rule) size;
@@ -120,6 +132,10 @@ type Config struct {
 	Agg int
 	// Thresh is the evaluation threshold in percent (-d).
 	Thresh float64
+	// EvalNoFilter computes the evaluation values without filtering by
+	// Thresh (an extension for the library; upstream always filters). It
+	// requires Prune == NoPrune.
+	EvalNoFilter bool
 	// Algo is the FP-growth variant.
 	Algo Algorithm
 	// Mode holds the operation mode flags.
@@ -187,6 +203,8 @@ func (c *Config) validate() error {
 		return bad("invalid minimum support %g", c.SMin)
 	case math.IsNaN(c.SMax):
 		return bad("invalid maximum support %g", c.SMax)
+	case c.HasCounts && (c.MinCount < 0 || c.MaxCount < 0):
+		return bad("invalid support counts %d, %d", c.MinCount, c.MaxCount)
 	case !(c.Conf >= 0 && c.Conf <= 100):
 		return bad("invalid minimum confidence %g", c.Conf)
 	case c.ZMin < 0:
@@ -199,6 +217,8 @@ func (c *Config) validate() error {
 		return bad("invalid aggregation mode %d", c.Agg)
 	case math.IsNaN(c.Thresh):
 		return bad("invalid evaluation threshold %g", c.Thresh)
+	case c.EvalNoFilter && c.Prune != NoPrune:
+		return bad("evaluation pruning %d without evaluation filter", c.Prune)
 	case c.Algo < AlgoSimple || c.Algo > AlgoAuto:
 		return bad("invalid algorithm variant %d", int(c.Algo))
 	case c.Mode&^modeAll != 0:

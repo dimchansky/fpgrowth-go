@@ -581,3 +581,142 @@ func genTxs(t testing.TB, seed uint64, items int) []oracle.Transaction {
 	}
 	return txs
 }
+
+// countingSink counts the reported item sets and rules and cancels (sets
+// *flag) at the cancelAt-th result.
+type countingSink struct {
+	n, cancelAt int
+	flag        *bool
+}
+
+func (s *countingSink) count() error {
+	s.n++
+	if s.n == s.cancelAt {
+		*s.flag = true
+	}
+	return nil
+}
+
+func (s *countingSink) ItemSet(report.ItemSet) error { return s.count() }
+func (s *countingSink) Rule(report.Rule) error       { return s.count() }
+
+// TestTree_Abort checks that Filter, CloMax and Report stop with the
+// error of the abort function, and that Report delivers only a bounded
+// number of results after the abort function starts failing.
+func TestTree_Abort(t *testing.T) {
+	t.Parallel()
+	txs, err := oracle.Generate(oracle.GenConfig{
+		Seed: 77, NumTransactions: 300, NumItems: 13, MinLen: 4, MaxLen: 10,
+		Patterns: 3, PatternLen: 5, PatternProb: 0.5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errAbort := errors.New("aborted")
+	d := newDataset(t, txs, 2, 0, nil)
+	build := func() (*Tree, *bool, *int) {
+		tr := New(Params{Freqs: d.freqs, Total: d.total, MinSupp: 2, MinBody: 2, MinConf: 0})
+		tr.SetSize(1, d.maxLen)
+		fillRecTree(tr, d.supp, 2)
+		tr.SetEval(Eval{Measure: ruleval.Lift, Threshold: 0.5})
+		isCanceled, calls := new(bool), new(int)
+		tr.SetAbort(func() error {
+			*calls++
+			if *isCanceled {
+				return errAbort
+			}
+			return nil
+		})
+		return tr, isCanceled, calls
+	}
+	if tr, _, _ := build(); len(tr.nodes) < 4*abortEvery {
+		t.Fatalf("only %d nodes; the test needs more than %d", len(tr.nodes), 4*abortEvery)
+	}
+
+	phases := []struct {
+		name string
+		run  func(tr *Tree) error
+	}{
+		{"filter backward", func(tr *Tree) error { return tr.Filter(0) }},
+		{"filter weak forward", func(tr *Tree) error { return tr.Filter(-2) }},
+		{"filter strong forward", func(tr *Tree) error { return tr.Filter(2) }},
+		{"clomax closed safe", func(tr *Tree) error { return tr.CloMax(report.TargetClosed, true) }},
+		{"clomax maximal", func(tr *Tree) error { return tr.CloMax(report.TargetMaximal, false) }},
+		{"clomax generators", func(tr *Tree) error { return tr.CloMax(report.TargetGenerators, false) }},
+	}
+	for _, ph := range phases {
+		t.Run(ph.name, func(t *testing.T) {
+			t.Parallel()
+			tr, _, calls := build()
+			if err := ph.run(tr); err != nil {
+				t.Fatalf("not canceled: %v", err)
+			}
+			if *calls == 0 {
+				t.Fatal("abort function never called")
+			}
+			tr, isCanceled, calls := build()
+			*isCanceled = true
+			if err := ph.run(tr); err != errAbort {
+				t.Fatalf("canceled: got %v", err)
+			}
+			if *calls != 1 {
+				t.Errorf("%d abort calls after the first failure", *calls-1)
+			}
+		})
+	}
+	for name, target := range map[string]report.Target{"report rules": report.TargetRules, "report sets": report.TargetAll} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tr, _, _ := build()
+			tr.Init()
+			rep := report.New(len(d.names), d.total, d.freqs)
+			rep.SetTarget(target, report.ModeNoFilter, -1)
+			rep.SetSupport(2, report.MaxSupp)
+			rep.Setup()
+			full := &countingSink{flag: new(bool)}
+			rep.SetSink(full)
+			if err := tr.Report(rep, target); err != nil {
+				t.Fatal(err)
+			}
+			const cancelAt = 100
+			if full.n < 20*cancelAt {
+				t.Fatalf("only %d results; the test needs more", full.n)
+			}
+			tr, isCanceled, _ := build()
+			tr.Init()
+			rep = report.New(len(d.names), d.total, d.freqs)
+			rep.SetTarget(target, report.ModeNoFilter, -1)
+			rep.SetSupport(2, report.MaxSupp)
+			rep.Setup()
+			sink := &countingSink{cancelAt: cancelAt, flag: isCanceled}
+			rep.SetSink(sink)
+			if err := tr.Report(rep, target); err != errAbort {
+				t.Fatalf("got %v", err)
+			}
+			// at most abortEvery counters after the cancellation, each with
+			// at most maxLen rules (one item set)
+			if after := sink.n - cancelAt; after > abortEvery*d.maxLen {
+				t.Errorf("%d results after the cancellation (of %d), bound %d", after, full.n, abortEvery*d.maxLen)
+			}
+		})
+	}
+}
+
+// TestTree_AbortAllocs checks that the cancellation check does not
+// allocate. AllocsPerRun must not run in parallel.
+func TestTree_AbortAllocs(t *testing.T) { //nolint:paralleltest // AllocsPerRun
+	tr := New(Params{Freqs: []tract.Supp{3, 2}, Total: 4, MinSupp: 1})
+	done := make(chan struct{})
+	errAbort := errors.New("aborted")
+	tr.SetAbort(func() error {
+		select {
+		case <-done:
+			return errAbort
+		default:
+			return nil
+		}
+	})
+	if a := testing.AllocsPerRun(10*abortEvery, func() { _ = tr.tick() }); a != 0 {
+		t.Errorf("the cancellation check allocates %v times", a)
+	}
+}

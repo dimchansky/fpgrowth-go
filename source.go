@@ -1,6 +1,13 @@
 package fpgrowth
 
-import "iter"
+import (
+	"fmt"
+	"io"
+	"io/fs"
+	"iter"
+	"os"
+	"time"
+)
 
 // Transaction is one record of a transaction database.
 type Transaction[T comparable] struct {
@@ -88,4 +95,97 @@ func Generate[T comparable](n int, gen func(i int, buf []T) Transaction[T]) Sour
 			}
 		}
 	})
+}
+
+// runSource is implemented by sources that keep state per mining run:
+// mining calls forRun once and reads the returned source for all passes
+// of the run. The file-backed sources use it to compare the input's size
+// and modification time between passes.
+type runSource[T comparable] interface {
+	Source[T]
+	forRun() Source[T]
+}
+
+// opener opens the input of a reader-backed source once per pass.
+type opener struct {
+	open func() (io.ReadCloser, error)
+	name string
+	// check is the replay check of the current mining run; nil outside
+	// a run (a pass started by calling Transactions directly).
+	check *replayCheck
+}
+
+// openFile returns an open function for the file at path.
+func openFile(path string) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err // not a typed nil *os.File in the interface
+		}
+		return f, nil
+	}
+}
+
+// forRun returns a copy of o with a fresh replay check.
+func (o opener) forRun() opener {
+	o.check = &replayCheck{}
+	return o
+}
+
+// openPass opens the input for one pass and runs the replay check.
+func (o opener) openPass() (io.ReadCloser, error) {
+	if o.open == nil {
+		return nil, invalid("open", "nil function for %s", o.name)
+	}
+	rc, err := o.open()
+	if err != nil {
+		return nil, fmt.Errorf("cannot open file %s: %w", o.name, err)
+	}
+	if rc == nil {
+		return nil, fmt.Errorf("cannot open file %s: open returned a nil reader", o.name)
+	}
+	if err := o.check.verify(rc, o.name); err != nil {
+		_ = rc.Close() // the check's error is the one to report
+		return nil, err
+	}
+	return rc, nil
+}
+
+// replayCheck records the size and modification time of the input at the
+// first pass of a mining run and compares them at later passes. Inputs
+// without a Stat method (such as decompressing readers) are not checked.
+type replayCheck struct {
+	isSet bool
+	size  int64
+	mtime time.Time
+}
+
+// statter is implemented by *os.File.
+type statter interface {
+	Stat() (fs.FileInfo, error)
+}
+
+func (c *replayCheck) verify(rc io.ReadCloser, name string) error {
+	if c == nil {
+		return nil
+	}
+	st, ok := rc.(statter)
+	if !ok {
+		return nil
+	}
+	fi, err := st.Stat()
+	if err != nil {
+		return fmt.Errorf("read error on file %s: %w", name, err)
+	}
+	if !c.isSet {
+		c.isSet, c.size, c.mtime = true, fi.Size(), fi.ModTime()
+		return nil
+	}
+	if fi.Size() != c.size || !fi.ModTime().Equal(c.mtime) {
+		return newDetailError(fmt.Sprintf(
+			"%s: %s changed between passes (size %d, modified %s; first pass: size %d, modified %s)",
+			ErrNotReplayable, name, fi.Size(), fi.ModTime().Format(time.RFC3339Nano),
+			c.size, c.mtime.Format(time.RFC3339Nano)), ErrNotReplayable)
+	}
+	return nil
 }

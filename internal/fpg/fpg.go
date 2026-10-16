@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/dimchansky/fpgrowth-go/internal/istree"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
@@ -151,7 +152,11 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 	rep.SetSupport(m.th.supp, smax)
 	rep.SetSize(c.ZMin, c.ZMax)
 	if c.Eval == EvalLogRatio {
-		rep.SetEval(report.LogRatio, +1, c.Thresh/100.0)
+		thresh := c.Thresh / 100.0
+		if c.EvalNoFilter {
+			thresh = math.Inf(-1) // every value passes (also NaN)
+		}
+		rep.SetEval(report.LogRatio, +1, thresh)
 	}
 	rep.SetTarget(c.Target, mrep, -1)
 	m.rep = rep
@@ -163,7 +168,11 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 // the selected variant, which reports the item sets to the reporter's
 // sink. Association rules and item sets with a rule-based evaluation go
 // through the item set tree (fpg_tree, see mineTree). Cancellation of ctx
-// is checked at every recursion entry and returns ctx.Err(); an error of
+// is checked at every recursion entry, every few thousand transactions
+// while the item set tree's FP-tree is built, and every few hundred nodes
+// or counters in the item set tree's filter and report phases; it returns
+// ctx.Err(). Results already found between two checks may still be
+// reported after the cancellation. An error of
 // the sink is returned unchanged; a tree that outgrows its node arena, the
 // item set tree or the closed/maximal repository of the reporter gives
 // ErrTooLarge.

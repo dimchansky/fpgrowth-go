@@ -89,8 +89,11 @@ weight are errors (deviations M6, M7).
 with upstream's arithmetic: a percentage `s` becomes
 `ceil(s/100 · W · (1 − 2⁻⁵²))`, a maximum `floor(S/100 · W · (1 + 2⁻⁵²))`.
 The tolerance absorbs the representation error of decimal fractions. The
-library's `Fraction(f)` applies the same formula to `f` directly. The
-effective minimum support is at least 1 (deviation M2). For association
+library's `Fraction(f)` applies the same formula to `f` directly; the
+library's `Count(n)` is passed to the miner as an exact integer, so
+absolute thresholds are exact beyond 2^53, where the CLI's float notation
+`-s-n` is not. The effective minimum support is at least 1 (deviation
+M2). For association
 rules, where the minimum support applies to the rule body, the item set
 threshold is lowered to `ceil(smin · conf)`, because a rule `B -> h` with a
 frequent body and enough confidence can have a body ∪ head support down to
@@ -189,7 +192,7 @@ yields a proper prefix tree without child lists. A projection collects,
 for every node of item `i`, the ancestors on its path and inserts them into
 a new tree with the node's support.
 
-**Complex** (`-Ac`, the default; `Auto` selects it). Nodes also have child
+**Complex** (`-Ac`, the default; `AlgorithmAuto` selects it). Nodes also have child
 and sibling links, children sorted by item, so insertion finds shared
 prefixes in any order. This variant supports conditional item reordering
 (section 8) and uses the 16-items machine for every conditional database
@@ -348,6 +351,9 @@ small.
   average, `-a`). With "invalidate below expected support" (`-i`), a rule
   whose support is not above the expected support gets the measure's
   worst value.
+- **Values without filtering** (library only, `Evaluation` without
+  `Filter`): the measure is computed for every result and nothing is
+  filtered by it; the CLI always filters (`-d`).
 - **Pruning** (`PruneSize`, `-p`, item sets with a rule measure only)
   marks the sets that fail the evaluation. With a negative value `p`,
   from size `max(-p, 2) + 1` on a set is also marked if all its subsets
@@ -386,9 +392,13 @@ variants or tuning settings report the same sets in a different order.
   fused multiply-add, so values match the C reference built without FMA;
   log-based values can differ in the last bit from the platform's C library
   (deviation F-1).
-- Cancellation is checked at every recursion entry and every 1024
-  transactions while reading; a canceled context ends mining with
-  `ctx.Err()`.
+- Cancellation is checked at every recursion entry, every 1024
+  transactions while reading, every 4096 transactions while the item set
+  tree path builds its FP-tree, and every 256 nodes or counters while the
+  item set tree is filtered (`Filter`, `CloMax`) and reported; a canceled
+  context ends mining with `ctx.Err()`. The checks are non-blocking
+  receives on the context's done channel and do not allocate. Results
+  found between two checks may still be reported after the cancellation.
 
 ## 15. References
 

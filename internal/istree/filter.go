@@ -33,12 +33,17 @@ import (
 // complete tree marks exactly the sets that apriori's level-wise
 // ist_commit pruning (the only consumer of a positive prune upstream) would
 // never generate; ist_commit itself has no equivalent on fpgrowth's path.
-func (t *Tree) Filter(size int) {
+//
+// Filter returns nil, or the error of the abort function (SetAbort).
+func (t *Tree) Filter(size int) error {
 	if !t.isLvl {
 		t.makelvls()
 	}
 	for h := t.height - 1; h > 0; h-- {
 		for _, ni := range t.lvls[h] {
+			if err := t.tick(); err != nil {
+				return err
+			}
 			cnts := t.counters(&t.nodes[ni])
 			for i := int32(len(cnts)) - 1; i >= 0; i-- {
 				if cnts[i] < t.smin || t.dir*t.evaluate(ni, i) < t.thresh {
@@ -47,11 +52,15 @@ func (t *Tree) Filter(size int) {
 			}
 		}
 	}
+	var err error
 	switch {
 	case size < 0:
-		t.forward(max(-size, 2), false)
+		err = t.forward(max(-size, 2), false)
 	case size > 0:
-		t.forward(max(size, 2), true)
+		err = t.forward(max(size, 2), true)
+	}
+	if err != nil {
+		return err
 	}
 	if ws := t.worstSigned(); ws < t.thresh {
 		t.wgt |= skip
@@ -59,6 +68,7 @@ func (t *Tree) Filter(size int) {
 			t.cnts[i] |= skip
 		}
 	}
+	return nil
 }
 
 // worstSigned is upstream's ((ist->dir < 0) ? -1 : 0), the constant value of
@@ -73,10 +83,13 @@ func (t *Tree) worstSigned() float64 {
 // forward is the weak (isStrong false) and strong forward filtering of
 // ist_filter, from level start on. A weak filter marks a set if no subset
 // with one item less qualifies; a strong filter marks it if any does not.
-func (t *Tree) forward(start int, isStrong bool) {
+func (t *Tree) forward(start int, isStrong bool) error {
 	end := len(t.buf)
 	for h := start; h < t.height; h++ {
 		for _, ni := range t.lvls[h] {
+			if err := t.tick(); err != nil {
+				return err
+			}
 			nd := &t.nodes[ni]
 			pn := &t.nodes[nd.parent]
 			parentOK := t.cnts[pn.cnts+t.index(pn, nd.item)] >= t.smin
@@ -108,6 +121,7 @@ func (t *Tree) forward(start int, isStrong bool) {
 			}
 		}
 	}
+	return nil
 }
 
 // clear is a port of clear(): it clears the skip flag of the set formed by
@@ -142,17 +156,20 @@ func (t *Tree) clear(ni int32, items []tract.Item, supp tract.Supp) {
 // the tree, so the tree must hold one more level than the largest size to
 // report (fpgrowth: SetSize(zmin, zmax+1)); sets on the deepest level count
 // as closed and maximal.
-func (t *Tree) CloMax(target report.Target, safe bool) {
+//
+// CloMax returns nil, or the error of the abort function (SetAbort).
+func (t *Tree) CloMax(target report.Target, safe bool) error {
 	if !t.isLvl {
 		t.makelvls()
 	}
 	isMax := target&report.TargetMaximal != 0
 	if safe {
-		t.restore(isMax)
+		if err := t.restore(isMax); err != nil {
+			return err
+		}
 	}
 	if target&report.TargetGenerators != 0 {
-		t.generators()
-		return
+		return t.generators()
 	}
 	// the empty set
 	supp := t.wgt
@@ -168,11 +185,17 @@ func (t *Tree) CloMax(target report.Target, safe bool) {
 	h := 0
 	for ; h < t.height-1; h++ {
 		for _, ni := range t.lvls[h] {
+			if err := t.tick(); err != nil {
+				return err
+			}
 			t.cloMaxNode(ni, isMax)
 		}
 	}
 	// the deepest level: every frequent set is closed and maximal
 	for _, ni := range t.lvls[h] {
+		if err := t.tick(); err != nil {
+			return err
+		}
 		cnts := t.counters(&t.nodes[ni])
 		for i := range cnts {
 			if cnts[i] < t.smin {
@@ -180,17 +203,21 @@ func (t *Tree) CloMax(target report.Target, safe bool) {
 			}
 		}
 	}
+	return nil
 }
 
 // restore is the safe filtering of ist_clomax: top down, every unmarked
 // frequent set unmarks its subsets with one item less (for closed sets only
 // those with a raw counter at most its support, which includes all marked
 // ones).
-func (t *Tree) restore(isMax bool) {
+func (t *Tree) restore(isMax bool) error {
 	end := len(t.buf)
 	supp := report.MaxSupp
 	for k := t.height - 1; k > 0; k-- {
 		for _, ni := range t.lvls[k] {
+			if err := t.tick(); err != nil {
+				return err
+			}
 			nd := &t.nodes[ni]
 			cnts := t.counters(nd)
 			for i := int32(len(cnts)) - 1; i >= 0; i-- {
@@ -218,13 +245,14 @@ func (t *Tree) restore(isMax bool) {
 			}
 		}
 	}
+	return nil
 }
 
 // generators is the generator filter of ist_clomax: a set is marked unless
 // it is frequent and every subset with one item less is an unmarked set
 // with a larger support (a marked subset compares as negative, so the
 // generator property propagates upwards level by level).
-func (t *Tree) generators() {
+func (t *Tree) generators() error {
 	// Deviation from upstream: ist_clomax compares the single items with
 	// the raw total weight, which carries the skip flag after Filter has
 	// marked the empty set; then every item compares as ">= wgt" and no
@@ -241,6 +269,9 @@ func (t *Tree) generators() {
 	end := len(t.buf)
 	for h := 1; h < t.height; h++ {
 		for _, ni := range t.lvls[h] {
+			if err := t.tick(); err != nil {
+				return err
+			}
 			nd := &t.nodes[ni]
 			pn := &t.nodes[nd.parent]
 			pc := t.cnts[pn.cnts+t.index(pn, nd.item)]
@@ -267,6 +298,7 @@ func (t *Tree) generators() {
 			}
 		}
 	}
+	return nil
 }
 
 // cloMaxNode is the closed/maximal check of ist_clomax for the counters of

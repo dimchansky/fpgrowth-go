@@ -1,10 +1,13 @@
 package fpgrowth_test
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"strings"
 
 	fpgrowth "github.com/dimchansky/fpgrowth-go"
@@ -54,7 +57,7 @@ func ExampleMineItemsets() {
 		log.Fatal(err)
 	}
 	fmt.Printf("%d transactions, %d frequent items, %d sets by size %v\n",
-		sum.Transactions, sum.Items, sum.Reported, sum.BySize)
+		sum.Transactions, sum.FrequentItems, sum.Reported, sum.BySize)
 	// Output:
 	// [1 2] 3
 	// [3 1 2] 2
@@ -91,7 +94,7 @@ func ExampleFromSlice() {
 // no frequent superset; both summarize all frequent item sets.
 func ExampleTarget() {
 	src := fpgrowth.FromItems(baskets)
-	for _, target := range []fpgrowth.Target{fpgrowth.Closed, fpgrowth.Maximal} {
+	for _, target := range []fpgrowth.Target{fpgrowth.TargetClosed, fpgrowth.TargetMaximal} {
 		sets, _, err := fpgrowth.CollectItemsets(context.Background(), src,
 			fpgrowth.Options[string]{Target: target, MinSupport: fpgrowth.Count(3)})
 		if err != nil {
@@ -100,8 +103,8 @@ func ExampleTarget() {
 		fmt.Println(target, sets)
 	}
 	// Output:
-	// Closed [{[beer diapers] 3 NaN} {[bread milk] 3 NaN} {[bread diapers] 3 NaN} {[bread] 4 NaN} {[milk diapers] 3 NaN} {[milk] 4 NaN} {[diapers] 4 NaN}]
-	// Maximal [{[beer diapers] 3 NaN} {[bread milk] 3 NaN} {[bread diapers] 3 NaN} {[milk diapers] 3 NaN}]
+	// TargetClosed [{[beer diapers] 3 NaN} {[bread milk] 3 NaN} {[bread diapers] 3 NaN} {[bread] 4 NaN} {[milk diapers] 3 NaN} {[milk] 4 NaN} {[diapers] 4 NaN}]
+	// TargetMaximal [{[beer diapers] 3 NaN} {[bread milk] 3 NaN} {[bread diapers] 3 NaN} {[milk diapers] 3 NaN}]
 }
 
 // Association rules with a minimum confidence; every rule has its
@@ -131,15 +134,15 @@ func ExampleRules() {
 	// [diapers] -> beer  support 3  confidence 0.75  lift 1.25
 }
 
-// An evaluation measure filters the results and fills Value: here only
-// rules whose lift is above 1.
+// An evaluation measure fills Value and, with Filter, filters the
+// results: here only rules whose lift is at least 1.2.
 func ExampleEvaluation() {
 	src := fpgrowth.FromItems(baskets)
 	rules, _, err := fpgrowth.CollectRules(context.Background(), src, fpgrowth.RuleOptions[string]{
 		MinSupport:      fpgrowth.Count(2),
 		OriginalSupport: true, // MinSupport applies to body and head together
 		MinSize:         2,
-		Evaluation:      &fpgrowth.Evaluation{Measure: fpgrowth.Lift, Threshold: 1.2},
+		Evaluation:      &fpgrowth.Evaluation{Measure: fpgrowth.Lift, Filter: true, Threshold: 1.2},
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -161,11 +164,98 @@ func ExampleEvaluation() {
 	// [diapers] -> cola  lift 1.250
 }
 
+// Without Filter, an evaluation only computes the values: the results are
+// those without an evaluation.
+func ExampleEvaluation_valuesOnly() {
+	src := fpgrowth.FromItems(baskets)
+	sets, _, err := fpgrowth.CollectItemsets(context.Background(), src, fpgrowth.Options[string]{
+		MinSupport: fpgrowth.Count(3),
+		MinSize:    2,
+		Evaluation: &fpgrowth.Evaluation{Measure: fpgrowth.Chi2PValue},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, s := range sets {
+		fmt.Printf("%v p-value %.3f\n", s.Items, s.Value)
+	}
+	// Output:
+	// [milk bread] p-value 0.576
+	// [diapers bread] p-value 0.576
+	// [diapers milk] p-value 0.576
+	// [beer diapers] p-value 0.171
+}
+
+// OnStart receives the database statistics before the first result, so
+// relative supports can be streamed.
+func ExampleOptions_onStart() {
+	src := fpgrowth.FromItems(baskets)
+	var total float64
+	_, err := fpgrowth.MineItemsets(context.Background(), src, fpgrowth.Options[string]{
+		MinSupport: fpgrowth.Fraction(0.6),
+		OnStart: func(st fpgrowth.Stats) error {
+			total = float64(st.TotalWeight)
+			fmt.Printf("%d transactions, minimum support %d\n", st.Transactions, st.MinSupport)
+			return nil
+		},
+	}, func(s fpgrowth.Itemset[string]) error {
+		fmt.Printf("%v %.0f%%\n", s.Items, 100*float64(s.Support)/total)
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Output:
+	// 5 transactions, minimum support 3
+	// [bread] 80%
+	// [milk bread] 60%
+	// [milk] 80%
+	// [diapers milk] 60%
+	// [diapers bread] 60%
+	// [diapers] 80%
+	// [beer diapers] 60%
+	// [beer] 60%
+}
+
+// TableReader reads from any replayable input, here a gzip-compressed
+// file that is decompressed on every pass.
+func ExampleTableReader() {
+	open := func() (io.ReadCloser, error) {
+		f, err := os.Open("testdata/basket.txt.gz")
+		if err != nil {
+			return nil, err
+		}
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		return gzipFile{zr, f}, nil
+	}
+	src := fpgrowth.TableReader(open, "basket.txt.gz", fpgrowth.DefaultTableFormat())
+	sets, _, err := fpgrowth.CollectItemsets(context.Background(), src,
+		fpgrowth.Options[string]{Target: fpgrowth.TargetMaximal, MinSupport: fpgrowth.Fraction(0.6)})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(sets)
+	// Output:
+	// [{[beer diapers] 3 NaN} {[bread milk] 3 NaN} {[bread diapers] 3 NaN} {[milk diapers] 3 NaN}]
+}
+
+// gzipFile closes a gzip reader and the file below it.
+type gzipFile struct {
+	*gzip.Reader
+	file *os.File
+}
+
+func (g gzipFile) Close() error { return errors.Join(g.Reader.Close(), g.file.Close()) }
+
 // TableFile streams upstream's text format from a file on every pass.
 func ExampleTableFile() {
 	src := fpgrowth.TableFile("testdata/basket.txt", fpgrowth.DefaultTableFormat())
 	sets, sum, err := fpgrowth.CollectItemsets(context.Background(), src,
-		fpgrowth.Options[string]{Target: fpgrowth.Maximal, MinSupport: fpgrowth.Fraction(0.6)})
+		fpgrowth.Options[string]{Target: fpgrowth.TargetMaximal, MinSupport: fpgrowth.Fraction(0.6)})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -213,7 +303,7 @@ func ExampleGenerate() {
 		return fpgrowth.Transaction[int]{Items: buf, Weight: 1}
 	})
 	sets, _, err := fpgrowth.CollectItemsets(context.Background(), src,
-		fpgrowth.Options[int]{Target: fpgrowth.Closed, MinSupport: fpgrowth.Fraction(0.1)})
+		fpgrowth.Options[int]{Target: fpgrowth.TargetClosed, MinSupport: fpgrowth.Fraction(0.1)})
 	if err != nil {
 		log.Fatal(err)
 	}

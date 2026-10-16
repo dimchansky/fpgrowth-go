@@ -96,6 +96,10 @@ type RuleOptions[T comparable] struct {
 	// Tuning holds performance options (the k-items machine is not used
 	// for rules).
 	Tuning Tuning
+	// OnStart, if not nil, is called once before the first rule is
+	// reported (also if none is), with the Stats of the database. Its
+	// error stops mining and is returned unchanged.
+	OnStart func(Stats) error
 }
 
 // Rule is a reported association rule Body -> Head.
@@ -143,7 +147,7 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 	if !(o.MinConfidence >= 0 && o.MinConfidence <= 1) {
 		return nil, invalid("MinConfidence", "%g outside [0, 1]", o.MinConfidence)
 	}
-	if o.Algorithm < Auto || o.Algorithm > TopDown {
+	if o.Algorithm < AlgorithmAuto || o.Algorithm > AlgorithmTopDown {
 		return nil, invalid("Algorithm", "invalid value %d", int(o.Algorithm))
 	}
 	if err := o.Tuning.validate(); err != nil {
@@ -183,13 +187,16 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 		minSupport: o.MinSupport,
 		maxSupport: o.MaxSupport,
 		hasEval:    o.Evaluation != nil,
+		onStart:    o.OnStart,
 	}, nil
 }
 
 // MineRules mines the association rules of src described by opt and
 // calls fn for each of them, in upstream's order. It behaves like
-// MineItemsets: synchronous, two passes over src, fn's error returned
-// unchanged, ctx.Err() on cancellation, a nil fn only counts.
+// MineItemsets: synchronous, two passes over src, fn's and OnStart's
+// errors returned unchanged, ctx.Err() on cancellation, a nil fn only
+// counts. As with MineItemsets, fn may still be called for a few rules
+// (at most those of a few hundred item sets) after ctx is canceled.
 func MineRules[T comparable](ctx context.Context, src Source[T], opt RuleOptions[T], fn func(Rule[T]) error) (Summary, error) {
 	p, err := opt.plan()
 	if err != nil {

@@ -830,3 +830,77 @@ func FuzzMine(f *testing.F) {
 		checkFuzzRules(t, c, r)
 	})
 }
+
+// TestCountThresholds checks the exact absolute thresholds of
+// Config.HasCounts: equal to the float notation where that is exact,
+// exact beyond 2^53, and never above the body minimum for rules.
+func TestCountThresholds(t *testing.T) {
+	t.Parallel()
+	r := rand.New(rand.NewPCG(8, 8))
+	for range 20000 {
+		w := tract.Supp(r.Int64N(1 << 40))
+		n := tract.Supp(r.Int64N(1 << uint(r.IntN(40)+1)))
+		x := tract.Supp(r.Int64N(1 << uint(r.IntN(40)+1)))
+		for _, rules := range []bool{false, true} {
+			c := DefaultConfig()
+			if rules {
+				c.Target = report.TargetRules
+				c.Conf = float64(r.IntN(101))
+			}
+			c.SMin, c.SMax = -float64(n), -float64(x)
+			want := computeThresholds(&c, w)
+			c.HasCounts, c.MinCount, c.MaxCount = true, n, x
+			if got := computeThresholds(&c, w); got != want {
+				t.Fatalf("rules=%v n %d x %d conf %v: counts %+v, float %+v", rules, n, x, c.Conf, got, want)
+			}
+		}
+	}
+	for _, n := range []tract.Supp{1<<53 + 1, 1<<60 + 1, math.MaxInt64 - 1, math.MaxInt64} {
+		c := DefaultConfig()
+		c.HasCounts, c.MinCount, c.MaxCount = true, n, n
+		if th := computeThresholds(&c, n); th.supp != n || th.body != n || th.smax != n {
+			t.Errorf("count %d: %+v", n, th)
+		}
+		c.Target, c.Conf = report.TargetRules, 100
+		th := computeThresholds(&c, n)
+		// the set minimum is a lower bound of the support of a rule with
+		// body support >= n and confidence 1: n itself, minus the float
+		// tolerance
+		if th.body != n || th.supp > n || float64(th.supp) < float64(n)*(1-0x1p-50) || th.smax != n {
+			t.Errorf("rules count %d: %+v", n, th)
+		}
+	}
+}
+
+// TestEvalNoFilter checks that Config.EvalNoFilter reports the item sets
+// of the unevaluated run, with a rule measure and with LogRatio.
+func TestEvalNoFilter(t *testing.T) {
+	t.Parallel()
+	txs := midDataset(t, 200)
+	base := DefaultConfig()
+	base.SMin = -20
+	plain, err := run(scanOf(txs), base, runOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// thresholds that no value passes (p-values are a maximum)
+	for eval, thresh := range map[int]float64{int(ruleval.Lift): 1e300, int(ruleval.Chi2PValue): -100, EvalLogRatio: 1e300} {
+		cfg := base
+		cfg.Eval, cfg.Thresh, cfg.EvalNoFilter = eval, thresh, true
+		got, err := run(scanOf(txs), cfg, runOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := oracle.DiffSets(plain.sink.sets, got.sink.sets, oracle.DiffOptions{IgnoreEval: true}); d != "" {
+			t.Errorf("eval %d: %s", eval, d)
+		}
+		cfg.EvalNoFilter = false
+		filtered, err := run(scanOf(txs), cfg, runOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(filtered.sink.sets) >= len(plain.sink.sets) {
+			t.Errorf("eval %d: the threshold filters nothing (%d sets)", eval, len(filtered.sink.sets))
+		}
+	}
+}

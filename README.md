@@ -119,9 +119,10 @@ item sets, maximal item sets, generators (free item sets), and association
 rules with a single item as head (`MineRules`, CLI `-tr`; the body may be
 empty).
 
-**Algorithm variants** (`Options.Algorithm`, CLI `-A`): `Simple`, `Complex`
-(the default), `SingleTree` (top-down processing of one prefix tree) and
-`TopDown` (top-down processing of the prefix trees). All variants find the
+**Algorithm variants** (`Options.Algorithm`, CLI `-A`): `AlgorithmSimple`,
+`AlgorithmComplex` (the default, also chosen by `AlgorithmAuto`),
+`AlgorithmSingleTree` (top-down processing of one prefix tree) and
+`AlgorithmTopDown` (top-down processing of the prefix trees). All variants find the
 same sets with the same supports; order and speed differ.
 
 **Optimizations** (`Tuning`, all on by default, as upstream): perfect
@@ -131,9 +132,10 @@ extension pruning (`-x` disables), the k-items machine for up to 16 items
 disables), and the initial item order (`-q`). None of them changes the
 results, only speed and result order. See [docs/algorithm.md](docs/algorithm.md).
 
-**Thresholds**: minimum and maximum support, absolute (`Count`) or relative
-to the total transaction weight (`Fraction`, converted with upstream's
-arithmetic, so `Fraction(k/100)` equals `-sk`); minimum and maximum size;
+**Thresholds**: minimum and maximum support, absolute (`Count`, exact over
+the whole `int64` range, bounds inclusive) or relative to the total
+transaction weight (`Fraction`, converted with upstream's arithmetic, so
+`Fraction(k/100)` equals `-sk`); minimum and maximum size;
 the empty set (`IncludeEmpty`, `-m0`); a per-size support border
 (`Border`, `-F`); minimum rule confidence (`MinConfidence`, `-c`).
 
@@ -150,21 +152,25 @@ with an appearance file for `-tr`).
 (confidence, lift, conviction, Kulczynski, imbalance ratio, certainty
 factor, chi² and G-test values and p-values, Fisher's exact test, ...) for
 rules and, aggregated over the rules `S \ {h} -> h`, for item sets; the
-binary logarithm of the support ratio for item sets; thresholds,
-"invalidate below expected support" and evaluation-based pruning.
+binary logarithm of the support ratio for item sets; the values alone or,
+with `Evaluation.Filter`, thresholds and evaluation-based pruning;
+"invalidate below expected support".
 
 **Rules** carry the support of body ∪ head, body support, head support,
 confidence, lift and the evaluation value. `OriginalSupport` (`-o`) makes
 the support thresholds apply to body ∪ head instead of the body.
 
-**Statistics**: `Summary` reports the number of transactions, the total
-weight, the number of frequent items, the number of results and the
-results per size (`-Z`); `Options.PatternSpectrum` adds the pattern
-spectrum, the number of item sets per (size, support) (`-P`).
+**Statistics**: `Stats` (the number of transactions, the total weight, the
+number of frequent items and the resolved absolute thresholds) is passed
+to `OnStart` before the first result and is part of the `Summary`, which
+also counts the results and the results per size (`-Z`);
+`Options.PatternSpectrum` adds the pattern spectrum, the number of item
+sets per (size, support) (`-P`).
 
 **API**: any `comparable` item type; transaction databases are replayable
-`Source`s (in-memory, generated on demand, streamed from files, or spooled
-from a one-shot reader); results are delivered one at a time through an
+`Source`s (in-memory, generated on demand, streamed from files or any
+reopenable reader such as a gzip stream, or spooled from a one-shot
+reader); results are delivered one at a time through an
 iterator or a callback; mining stops early when the loop is left, the
 callback returns an error or the context is canceled. Mining runs on the
 calling goroutine and starts no goroutines. All functions are safe for
@@ -174,8 +180,9 @@ concurrent use.
 
 The full API reference is the package documentation
 (`go doc -all github.com/dimchansky/fpgrowth-go`). The snippets below are
-bodies of a `main` function that imports `context`, `errors`, `fmt`, `log`,
-`os`, `time` and `fpgrowth "github.com/dimchansky/fpgrowth-go"`; the shown
+bodies of a `main` function that imports `compress/gzip`, `context`,
+`errors`, `fmt`, `io`, `log`, `os`, `time` and
+`fpgrowth "github.com/dimchansky/fpgrowth-go"`; the shown
 output is what they print.
 
 Three entry points exist for each kind of result:
@@ -204,7 +211,7 @@ if err != nil {
 	log.Fatal(err)
 }
 fmt.Printf("%d transactions, %d frequent items, %d sets, by size %v\n",
-	sum.Transactions, sum.Items, sum.Reported, sum.BySize)
+	sum.Transactions, sum.FrequentItems, sum.Reported, sum.BySize)
 ```
 
 ```text
@@ -261,7 +268,7 @@ src := fpgrowth.FromItems([][]string{
 	{"bread", "milk", "diapers", "beer"},
 	{"bread", "milk", "diapers", "cola"},
 })
-for _, target := range []fpgrowth.Target{fpgrowth.Closed, fpgrowth.Maximal} {
+for _, target := range []fpgrowth.Target{fpgrowth.TargetClosed, fpgrowth.TargetMaximal} {
 	opt := fpgrowth.Options[string]{Target: target, MinSupport: fpgrowth.Count(3)}
 	for s, err := range fpgrowth.Itemsets(ctx, src, opt) {
 		if err != nil {
@@ -273,17 +280,17 @@ for _, target := range []fpgrowth.Target{fpgrowth.Closed, fpgrowth.Maximal} {
 ```
 
 ```text
-Closed [beer diapers] 3
-Closed [bread milk] 3
-Closed [bread diapers] 3
-Closed [bread] 4
-Closed [milk diapers] 3
-Closed [milk] 4
-Closed [diapers] 4
-Maximal [beer diapers] 3
-Maximal [bread milk] 3
-Maximal [bread diapers] 3
-Maximal [milk diapers] 3
+TargetClosed [beer diapers] 3
+TargetClosed [bread milk] 3
+TargetClosed [bread diapers] 3
+TargetClosed [bread] 4
+TargetClosed [milk diapers] 3
+TargetClosed [milk] 4
+TargetClosed [diapers] 4
+TargetMaximal [beer diapers] 3
+TargetMaximal [bread milk] 3
+TargetMaximal [bread diapers] 3
+TargetMaximal [milk diapers] 3
 ```
 
 Closedness, maximality and the generator property are decided on all
@@ -332,11 +339,13 @@ for r, err := range fpgrowth.Rules(ctx, src, opt) {
 
 ### Evaluation measures
 
-An `Evaluation` filters the results and fills `Value`. `Threshold` is in
-the units of the measure (a fraction such as 0.1, not upstream's
-percentage 10). For most measures larger is better and the threshold is a
-minimum; for the p-value measures it is a maximum
-(`Measure.HigherIsBetter`).
+An `Evaluation` fills `Value` with a measure for every result; with
+`Filter` it also filters by `Threshold` (without `Filter` the results are
+those without an evaluation). `Threshold` is in the units of the measure
+(a fraction such as 0.1, not upstream's percentage 10). For most measures
+larger is better and the threshold is a minimum; for the p-value measures
+it is a maximum (`Measure.HigherIsBetter`), so a zero threshold filters
+everything there.
 
 ```go
 ctx := context.Background()
@@ -352,7 +361,7 @@ src := fpgrowth.FromItems([][]string{
 sets, _, err := fpgrowth.CollectItemsets(ctx, src, fpgrowth.Options[string]{
 	MinSupport: fpgrowth.Count(2),
 	MinSize:    2,
-	Evaluation: &fpgrowth.Evaluation{Measure: fpgrowth.LogSupportRatio, Threshold: 0.2},
+	Evaluation: &fpgrowth.Evaluation{Measure: fpgrowth.LogSupportRatio, Filter: true, Threshold: 0.2},
 })
 if err != nil {
 	log.Fatal(err)
@@ -365,7 +374,7 @@ rules, _, err := fpgrowth.CollectRules(ctx, src, fpgrowth.RuleOptions[string]{
 	MinSupport:      fpgrowth.Count(2),
 	OriginalSupport: true, // MinSupport applies to body and head together
 	MinSize:         2,
-	Evaluation:      &fpgrowth.Evaluation{Measure: fpgrowth.Lift, Threshold: 1.5},
+	Evaluation:      &fpgrowth.Evaluation{Measure: fpgrowth.Lift, Filter: true, Threshold: 1.5},
 })
 if err != nil {
 	log.Fatal(err)
@@ -385,15 +394,15 @@ for _, r := range rules {
 
 Item sets can also be evaluated with any rule measure, aggregated over the
 rules `S \ {h} -> h` (`Evaluation.Aggregate`: first, minimum, maximum,
-average); `PruneSize` enables upstream's evaluation-based pruning for that
-case.
+average); `PruneSize` (with `Filter`) enables upstream's evaluation-based
+pruning for that case.
 
 ### Streaming from files: TableFile and CSVFile
 
 File sources open the file on every pass, stream it and close it; the file
 is never loaded into memory as a whole. The file must not change between
-the two passes (most changes are detected and reported as
-`ErrNotReplayable`).
+the two passes: mining compares its size and modification time and
+reports a change as `ErrNotReplayable`.
 
 `TableFile` reads upstream's flexible text format. The file `baskets.txt`
 of this example is:
@@ -413,7 +422,7 @@ format := fpgrowth.DefaultTableFormat() // one transaction per line, items separ
 format.Weighted = true                  // the last field is the transaction weight
 src := fpgrowth.TableFile("baskets.txt", format)
 sets, sum, err := fpgrowth.CollectItemsets(ctx, src, fpgrowth.Options[string]{
-	Target:     fpgrowth.Maximal,
+	Target:     fpgrowth.TargetMaximal,
 	MinSupport: fpgrowth.Fraction(0.4),
 })
 if err != nil {
@@ -470,6 +479,79 @@ total weight 9
 ["diapers" "milk"] 5
 ```
 
+The zero `TableFormat` is `DefaultTableFormat()`; any other value is taken
+literally (clear `Comments` to read items that start with `#`).
+
+### Other inputs: TableReader and CSVReader
+
+`TableReader` and `CSVReader` read from any input that can be opened again
+for every pass: a compressed file, embedded data, an `fs.FS`, object
+storage. The function returns a fresh `io.ReadCloser` each time; the name
+appears in error messages.
+
+```go
+ctx := context.Background()
+open := func() (io.ReadCloser, error) {
+	f, err := os.Open("baskets.txt.gz")
+	if err != nil {
+		return nil, err
+	}
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{zr, f}, nil // closing closes the file
+}
+format := fpgrowth.DefaultTableFormat()
+format.Weighted = true
+src := fpgrowth.TableReader(open, "baskets.txt.gz", format)
+sum, err := fpgrowth.MineItemsets(ctx, src, fpgrowth.Options[string]{MinSupport: fpgrowth.Fraction(0.4)}, nil)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(sum.Reported, "item sets")
+```
+
+With `baskets.txt.gz` the gzip-compressed `baskets.txt` of the previous
+section this prints `12 item sets`.
+
+### Relative supports while streaming
+
+`OnStart` is called once before the first result with the `Stats` of the
+database, among them the total weight, so a streaming consumer can print
+relative supports.
+
+```go
+ctx := context.Background()
+src := fpgrowth.FromItems([][]string{{"a", "b"}, {"a"}, {"a", "b"}, {"c"}})
+var total float64
+_, err := fpgrowth.MineItemsets(ctx, src, fpgrowth.Options[string]{
+	MinSupport: fpgrowth.Fraction(0.5),
+	OnStart: func(st fpgrowth.Stats) error {
+		total = float64(st.TotalWeight)
+		fmt.Println("minimum support", st.MinSupport, "of", st.TotalWeight)
+		return nil
+	},
+}, func(s fpgrowth.Itemset[string]) error {
+	fmt.Printf("%v %.0f%%\n", s.Items, 100*float64(s.Support)/total)
+	return nil
+})
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+```text
+minimum support 2 of 4
+[a] 75%
+[b a] 50%
+[b] 50%
+```
+
 ### Generated transactions
 
 `Generate` produces transaction `i` on demand on every pass, so the
@@ -490,7 +572,7 @@ src := fpgrowth.Generate(1000, func(i int, buf []int) fpgrowth.Transaction[int] 
 	return fpgrowth.Transaction[int]{Items: buf, Weight: 1}
 })
 sets, _, err := fpgrowth.CollectItemsets(ctx, src, fpgrowth.Options[int]{
-	Target:     fpgrowth.Closed,
+	Target:     fpgrowth.TargetClosed,
 	MinSupport: fpgrowth.Fraction(0.1),
 })
 if err != nil {
@@ -522,7 +604,7 @@ input size.
 ctx := context.Background()
 // Standard input can be read only once; mining needs two passes. SpoolCSV
 // copies it to a temporary file ("" = os.TempDir()) and streams that file.
-src, cleanup, err := fpgrowth.SpoolCSV(os.Stdin, "", fpgrowth.CSVFormat{})
+src, cleanup, err := fpgrowth.SpoolCSV(ctx, os.Stdin, "", fpgrowth.CSVFormat{})
 if err != nil {
 	log.Fatal(err)
 }
@@ -588,8 +670,13 @@ true 5
 
 ### Cancellation
 
-Mining checks the context at every recursion step and every 1024
-transactions of a pass, and returns `ctx.Err()` when it is canceled.
+Mining checks the context every 1024 transactions of a pass, at every
+recursion step, and every few hundred item sets while the item set tree
+of rules and rule-based evaluations is filtered and reported; it returns
+`ctx.Err()` when it is canceled. Results found since the last check may
+still be delivered after the cancellation (for rules, at most those of a
+few hundred item sets). `SpoolTable` and `SpoolCSV` check the context
+between chunks.
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -616,9 +703,11 @@ if errors.Is(err, context.DeadlineExceeded) {
 Invalid options, source errors and limits are reported as errors, never as
 panics. Test them with `errors.Is`: `ErrInvalidOptions` (the message names
 the field), `ErrNotReplayable`, `ErrNegativeWeight`, `ErrWeightOverflow`,
-`ErrTooLarge` and `ErrSyntax` (malformed table or CSV input). A database
+`ErrTooLarge`, `ErrSyntax` (malformed table or CSV input) and
+`ErrInvalidItem` (an item that is not comparable at run time, such as a
+slice in an `any` item, or not equal to itself, such as NaN). A database
 without frequent items is not an error: nothing is reported and
-`Summary.Items` is 0.
+`Summary.FrequentItems` is 0.
 
 ```go
 ctx := context.Background()

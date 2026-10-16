@@ -125,15 +125,15 @@ var algorithms = []struct {
 	algo Algorithm
 	tun  Tuning
 }{
-	{"auto", Auto, Tuning{}},
-	{"s-l0", Simple, Tuning{ItemMachine: -1}},
-	{"s", Simple, Tuning{}},
-	{"c", Complex, Tuning{}},
-	{"c-j", Complex, Tuning{NoReorder: true}},
-	{"c-l0", Complex, Tuning{ItemMachine: -1}},
-	{"d", SingleTree, Tuning{}},
-	{"d-l4", SingleTree, Tuning{ItemMachine: 4}},
-	{"t", TopDown, Tuning{}},
+	{"auto", AlgorithmAuto, Tuning{}},
+	{"s-l0", AlgorithmSimple, Tuning{ItemMachine: -1}},
+	{"s", AlgorithmSimple, Tuning{}},
+	{"c", AlgorithmComplex, Tuning{}},
+	{"c-j", AlgorithmComplex, Tuning{NoReorder: true}},
+	{"c-l0", AlgorithmComplex, Tuning{ItemMachine: -1}},
+	{"d", AlgorithmSingleTree, Tuning{}},
+	{"d-l4", AlgorithmSingleTree, Tuning{ItemMachine: 4}},
+	{"t", AlgorithmTopDown, Tuning{}},
 }
 
 var targets = []struct {
@@ -142,10 +142,10 @@ var targets = []struct {
 	oracle oracle.Target
 	cli    report.Target
 }{
-	{"frequent", Frequent, oracle.Frequent, report.TargetAll},
-	{"closed", Closed, oracle.Closed, report.TargetClosed},
-	{"maximal", Maximal, oracle.Maximal, report.TargetMaximal},
-	{"generators", Generators, oracle.Generators, report.TargetGenerators},
+	{"frequent", TargetFrequent, oracle.Frequent, report.TargetAll},
+	{"closed", TargetClosed, oracle.Closed, report.TargetClosed},
+	{"maximal", TargetMaximal, oracle.Maximal, report.TargetMaximal},
+	{"generators", TargetGenerators, oracle.Generators, report.TargetGenerators},
 }
 
 // merge combines a variant's tuning with the case's tuning flags.
@@ -165,8 +165,8 @@ func cliConfig(target report.Target, algo Algorithm, tun Tuning, smin, smax floa
 	c.SMin, c.SMax = smin, smax
 	c.ZMin, c.ZMax = zmin, zmax
 	c.Algo = map[Algorithm]fpg.Algorithm{
-		Auto: fpg.AlgoAuto, Simple: fpg.AlgoSimple, Complex: fpg.AlgoComplex,
-		SingleTree: fpg.AlgoSingle, TopDown: fpg.AlgoTopDown,
+		AlgorithmAuto: fpg.AlgoAuto, AlgorithmSimple: fpg.AlgoSimple, AlgorithmComplex: fpg.AlgoComplex,
+		AlgorithmSingleTree: fpg.AlgoSingle, AlgorithmTopDown: fpg.AlgoTopDown,
 	}[algo]
 	if tun.NoPerfectExtensions {
 		c.Mode &^= fpg.ModePerfect
@@ -365,4 +365,46 @@ func numCases(n int) int {
 		return max(n/5, 1)
 	}
 	return n
+}
+
+// fuzzBits hands out the bits of a fuzzed option word.
+type fuzzBits uint64
+
+// take returns the next n bits as an int.
+func (b *fuzzBits) take(n int) int {
+	v := int(uint64(*b) & (1<<n - 1))
+	*b >>= n
+	return v
+}
+
+// decodeFuzzTxs decodes a fuzzed database: a byte 0xf0|w ends the
+// current transaction with weight w (0..3, more bits ignored), any other
+// byte adds item 'a'+b%12. At most 64 transactions; a trailing
+// unterminated transaction has weight 1.
+func decodeFuzzTxs(data []byte) []oracle.Transaction {
+	var txs []oracle.Transaction
+	var items []string
+	for _, b := range data {
+		if len(txs) == 64 {
+			break
+		}
+		if b&0xf0 == 0xf0 {
+			txs = append(txs, oracle.Transaction{Items: items, Weight: tract.Supp(b & 3)})
+			items = nil
+			continue
+		}
+		items = append(items, string(rune('a'+b%12)))
+	}
+	if len(items) > 0 && len(txs) < 64 {
+		txs = append(txs, oracle.Transaction{Items: items, Weight: 1})
+	}
+	return txs
+}
+
+// fuzzSeeds adds seed inputs shared by the public API's fuzz targets.
+func fuzzSeeds(f *testing.F) {
+	f.Add(uint64(0), []byte("\x00\x01\xf1\x01\x02\xf1\x00\x02\xf2\x00\x01\x02\xf1"))
+	f.Add(uint64(0x123456789abcdef), []byte("abcd\xf1abc\xf2bcd\xf1ab\xf3cd\xf1a\xf0\xf1"))
+	f.Add(uint64(0xfedcba9876543210), []byte("\x00\x01\x02\x03\x04\x05\x06\x07\xf1\x00\x01\x02\x03\xf2\x04\x05\x06\x07\xf3"))
+	f.Add(uint64(1<<63|0x5555), []byte("aab\xf1abb\xf1\xf1\xf0ab\xf2"))
 }

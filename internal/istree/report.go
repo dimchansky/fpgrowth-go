@@ -41,6 +41,10 @@ type Eval struct {
 	Invalidate bool
 	// Threshold is the evaluation threshold (-d/100).
 	Threshold float64
+	// NoFilter computes the evaluation of every reported item set and
+	// rule without filtering by Threshold (an extension: upstream always
+	// filters). Filter must not be called then.
+	NoFilter bool
 }
 
 // SetEval is a port of ist_seteval (without the pruning level, which only
@@ -62,7 +66,12 @@ func (t *Tree) SetEval(e Eval) {
 	t.isInvBxs = e.Invalidate
 	t.dir = float64(m.Dir())
 	t.thresh = t.dir * e.Threshold
+	t.isNoFilter = e.NoFilter
 }
+
+// passes reports whether the evaluation value v of an item set passes the
+// threshold (accept if at least as good, so NaN fails).
+func (t *Tree) passes(v float64) bool { return t.isNoFilter || v*t.dir >= t.thresh }
 
 // worst is the constant value of the empty set and the singletons, and the
 // value of invalidated rules: (dir < 0) ? 1 : 0.
@@ -173,6 +182,8 @@ func (t *Tree) Init() {
 // decreasing code order. The order depends only on the item codes and the
 // stored sets, not on the order in which they were inserted.
 //
+// Report also stops with the error of the abort function (SetAbort).
+//
 // Deviation from upstream: an error of the sink aborts the whole report and
 // is returned; upstream ignores the result of its recursive calls, so a
 // write error below the top level was lost.
@@ -189,7 +200,7 @@ func (t *Tree) Report(rep *report.Reporter, target report.Target) error {
 func (t *Tree) isets(rep *report.Reporter, ni int32, supp tract.Supp) error {
 	if !isSkip(supp) {
 		v := t.evaluate(t.evNode, t.evIndex)
-		if v*t.dir >= t.thresh {
+		if t.passes(v) {
 			if err := rep.ReportEval(v); err != nil {
 				return err
 			}
@@ -198,6 +209,9 @@ func (t *Tree) isets(rep *report.Reporter, ni int32, supp tract.Supp) error {
 	nd := &t.nodes[ni]
 	cnts := t.counters(nd)
 	for i := range nd.size {
+		if err := t.tick(); err != nil {
+			return err
+		}
 		s := count(cnts[i])
 		if s < t.smin {
 			continue
@@ -214,7 +228,7 @@ func (t *Tree) isets(rep *report.Reporter, ni int32, supp tract.Supp) error {
 			}
 		} else if !isSkip(raw) {
 			v := t.evaluate(ni, i)
-			if v*t.dir >= t.thresh {
+			if t.passes(v) {
 				if err := rep.ReportEval(v); err != nil {
 					return err
 				}
@@ -230,6 +244,9 @@ func (t *Tree) rules(rep *report.Reporter, ni int32) error {
 	nd := &t.nodes[ni]
 	cnts := t.counters(nd)
 	for i := range nd.size {
+		if err := t.tick(); err != nil {
+			return err
+		}
 		s := count(cnts[i])
 		if s < t.smin {
 			continue
@@ -327,7 +344,7 @@ func (t *Tree) rule(rep *report.Reporter, head tract.Item, supp, body, base trac
 	var val float64
 	if t.fn != nil {
 		val = t.value(supp, body, hs, base)
-		if t.dir*val < t.thresh {
+		if !t.isNoFilter && t.dir*val < t.thresh {
 			return nil
 		}
 	}

@@ -37,9 +37,9 @@ func TestOptionsValidation(t *testing.T) {
 		{"max support count zero", func(o *Options[string]) { o.MaxSupport = Count(0) }, ""},
 		{"border negative", func(o *Options[string]) { o.Border = []Support{Count(1), Count(-2)} }, "Border[1]"},
 		{"border zero entry", func(o *Options[string]) { o.Border = []Support{{}, Fraction(0.5)} }, ""},
-		{"target", func(o *Options[string]) { o.Target = Generators + 1 }, "Target"},
+		{"target", func(o *Options[string]) { o.Target = TargetGenerators + 1 }, "Target"},
 		{"target negative", func(o *Options[string]) { o.Target = -1 }, "Target"},
-		{"algorithm", func(o *Options[string]) { o.Algorithm = TopDown + 1 }, "Algorithm"},
+		{"algorithm", func(o *Options[string]) { o.Algorithm = AlgorithmTopDown + 1 }, "Algorithm"},
 		{"negative min size", func(o *Options[string]) { o.MinSize = -1 }, "MinSize"},
 		{"negative max size", func(o *Options[string]) { o.MaxSize = -1 }, "MaxSize"},
 		{"max below min", func(o *Options[string]) { o.MinSize, o.MaxSize = 3, 2 }, "MaxSize"},
@@ -54,9 +54,15 @@ func TestOptionsValidation(t *testing.T) {
 		{"item order", func(o *Options[string]) { o.Tuning.ItemOrder = ItemOrderSizeSumDescending + 1 }, "Tuning.ItemOrder"},
 		{"evaluation without measure", func(o *Options[string]) { o.Evaluation = &Evaluation{} }, "Evaluation.Measure"},
 		{"evaluation bad measure", func(o *Options[string]) { o.Evaluation = &Evaluation{Measure: LogSupportRatio + 1} }, "Evaluation.Measure"},
-		{"evaluation nan", func(o *Options[string]) { o.Evaluation = &Evaluation{Measure: Lift, Threshold: math.NaN()} }, "Evaluation.Threshold"},
-		{"evaluation inf", func(o *Options[string]) { o.Evaluation = &Evaluation{Measure: Lift, Threshold: math.Inf(1)} }, ""},
-		{"evaluation log ratio", func(o *Options[string]) { o.Evaluation = &Evaluation{Measure: LogSupportRatio, Threshold: 0.5} }, ""},
+		{"evaluation nan", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, Filter: true, Threshold: math.NaN()}
+		}, "Evaluation.Threshold"},
+		{"evaluation inf", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, Filter: true, Threshold: math.Inf(1)}
+		}, ""},
+		{"evaluation log ratio", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: LogSupportRatio, Filter: true, Threshold: 0.5}
+		}, ""},
 		{"log ratio with aggregation", func(o *Options[string]) {
 			o.Evaluation = &Evaluation{Measure: LogSupportRatio, Aggregate: AggregateMax}
 		}, "Evaluation.Aggregate"},
@@ -68,7 +74,20 @@ func TestOptionsValidation(t *testing.T) {
 		}, "Evaluation.PruneSize"},
 		{"bad aggregation", func(o *Options[string]) { o.Evaluation = &Evaluation{Measure: Lift, Aggregate: 4} }, "Evaluation.Aggregate"},
 		{"rule measure full", func(o *Options[string]) {
-			o.Evaluation = &Evaluation{Measure: Chi2PValue, Aggregate: AggregateAverage, InvalidateBelowExpected: true, PruneSize: intPtr(-1)}
+			o.Evaluation = &Evaluation{Measure: Chi2PValue, Aggregate: AggregateAverage, InvalidateBelowExpected: true,
+				Filter: true, Threshold: 0.01, PruneSize: intPtr(-1)}
+		}, ""},
+		{"values only", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Chi2PValue, Aggregate: AggregateAverage, InvalidateBelowExpected: true}
+		}, ""},
+		{"threshold without filter", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, Threshold: 1.5}
+		}, "Evaluation.Threshold"},
+		{"prune without filter", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, PruneSize: intPtr(0)}
+		}, "Evaluation.PruneSize"},
+		{"filter with zero threshold", func(o *Options[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, Filter: true}
 		}, ""},
 		{"prune size min int", func(o *Options[string]) {
 			o.Evaluation = &Evaluation{Measure: Lift, PruneSize: intPtr(math.MinInt32)}
@@ -120,6 +139,9 @@ func TestRuleOptionsValidation(t *testing.T) {
 			o.Evaluation = &Evaluation{Measure: Lift, Aggregate: AggregateMin}
 		}, "Evaluation.Aggregate"},
 		{"prune", func(o *RuleOptions[string]) { o.Evaluation = &Evaluation{Measure: Lift, PruneSize: intPtr(1)} }, "Evaluation.PruneSize"},
+		{"rule threshold without filter", func(o *RuleOptions[string]) {
+			o.Evaluation = &Evaluation{Measure: Lift, Threshold: -1}
+		}, "Evaluation.Threshold"},
 		{"invalidate", func(o *RuleOptions[string]) {
 			o.Evaluation = &Evaluation{Measure: Lift, InvalidateBelowExpected: true}
 		}, ""},
@@ -159,21 +181,25 @@ func TestNilSource(t *testing.T) {
 func TestPlanMapping(t *testing.T) {
 	t.Parallel()
 	o := Options[string]{
-		Target: Maximal, MinSupport: Fraction(0.25), MinSize: 2, MaxSize: 5, Algorithm: SingleTree,
+		Target: TargetMaximal, MinSupport: Fraction(0.25), MinSize: 2, MaxSize: 5, Algorithm: AlgorithmSingleTree,
 		Tuning: Tuning{NoPerfectExtensions: true, NoReorder: true, NoHeadUnionTail: true, ItemMachine: 8,
 			ItemOrder: ItemOrderFrequencyDescending},
-		Evaluation: &Evaluation{Measure: Chi2PValue, Aggregate: AggregateMax, Threshold: 0.05,
+		Evaluation: &Evaluation{Measure: Chi2PValue, Aggregate: AggregateMax, Filter: true, Threshold: 0.05,
 			InvalidateBelowExpected: true, PruneSize: intPtr(3)},
 	}
 	p, err := o.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.setThresholds(1000)
+	st := Stats{TotalWeight: 1000}
+	p.setThresholds(&st)
+	if st.MinSupport != 250 || st.MaxSupport != math.MaxInt64 {
+		t.Errorf("resolved thresholds %+v", st)
+	}
 	c := p.cfg
 	want := fpg.DefaultConfig()
 	want.Target = report.TargetMaximal
-	want.SMin, want.SMax = -250, 100
+	want.HasCounts, want.MinCount, want.MaxCount = true, 250, math.MaxInt64
 	want.ZMin, want.ZMax = 2, 5
 	want.Algo = fpg.AlgoSingle
 	want.Mode = 0
@@ -191,8 +217,9 @@ func TestPlanMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rp.setThresholds(10)
-	if rp.cfg.Target != report.TargetRules || rp.cfg.SMin != -7 || rp.cfg.SMax != -5 || rp.cfg.Conf/100 != 0.8 ||
+	rp.setThresholds(&Stats{TotalWeight: 10})
+	if rp.cfg.Target != report.TargetRules || !rp.cfg.HasCounts || rp.cfg.MinCount != 7 || rp.cfg.MaxCount != 5 ||
+		rp.cfg.Conf/100 != 0.8 || rp.cfg.EvalNoFilter ||
 		rp.cfg.Mode&fpg.ModeOrigSupp == 0 || rp.cfg.ZMin != 1 || rp.cfg.ZMax != fpg.MaxSize {
 		t.Errorf("rule config %+v", rp.cfg)
 	}
@@ -236,22 +263,23 @@ func TestPercentOf(t *testing.T) {
 	}
 }
 
-// TestSupportArgs checks the conservative int64 -> float64 conversion of
-// absolute supports beyond 2^53.
-func TestSupportArgs(t *testing.T) {
+// TestSupportSaturation checks the conversion of thresholds at the ends
+// of the int64 range.
+func TestSupportSaturation(t *testing.T) {
 	t.Parallel()
 	for _, n := range []int64{0, 1, 1 << 53, 1<<53 + 1, 1<<62 + 1, math.MaxInt64 - 1, math.MaxInt64} {
-		lo := -minSuppArg(n)
-		if lo < float64(n) || (lo < 0x1p63 && int64(lo) < n) {
-			t.Errorf("minSuppArg(%d) = %v below n", n, lo)
+		if got := Count(n).minAbs(7); got != n {
+			t.Errorf("Count(%d).minAbs = %d", n, got)
 		}
-		hi := -maxSuppArg(n)
-		if hi >= 0x1p63 || int64(hi) > n {
-			t.Errorf("maxSuppArg(%d) = %v above n", n, hi)
+		if got := Count(n).maxAbs(7); got != n {
+			t.Errorf("Count(%d).maxAbs = %d", n, got)
 		}
 	}
-	if minSuppArg(12345) != -12345 || maxSuppArg(12345) != -12345 {
-		t.Error("small values must be exact")
+	if got := Fraction(1).maxAbs(math.MaxInt64); got != math.MaxInt64 {
+		t.Errorf("Fraction(1).maxAbs(MaxInt64) = %d", got)
+	}
+	if got := (Support{}).maxAbs(5); got != math.MaxInt64 {
+		t.Errorf("unset maximum %d", got)
 	}
 	if suppFromFloat(math.NaN()) != 0 || suppFromFloat(1e300) != math.MaxInt64 || suppFromFloat(-3) != 0 {
 		t.Error("suppFromFloat saturation")
@@ -283,21 +311,21 @@ func TestFractionFormula(t *testing.T) {
 func TestStringers(t *testing.T) {
 	t.Parallel()
 	checks := map[string]string{
-		Count(3).String():                   "Count(3)",
-		Fraction(0.25).String():             "Fraction(0.25)",
-		Support{}.String():                  "unset",
-		Closed.String():                     "Closed",
-		Target(9).String():                  "Target(9)",
-		TopDown.String():                    "TopDown",
-		Algorithm(9).String():               "Algorithm(9)",
-		Lift.String():                       "Lift",
-		LogSupportRatio.String():            "LogSupportRatio",
-		Measure(0).String():                 "Measure(0)",
-		AggregateAverage.String():           "AggregateAverage",
-		Aggregation(7).String():             "Aggregation(7)",
-		AppearHead.String():                 "AppearHead",
-		Appearance(7).String():              "Appearance(7)",
-		Frequent.String() + Simple.String(): "FrequentSimple",
+		Count(3).String():                                  "Count(3)",
+		Fraction(0.25).String():                            "Fraction(0.25)",
+		Support{}.String():                                 "unset",
+		TargetClosed.String():                              "TargetClosed",
+		Target(9).String():                                 "Target(9)",
+		AlgorithmTopDown.String():                          "AlgorithmTopDown",
+		Algorithm(9).String():                              "Algorithm(9)",
+		Lift.String():                                      "Lift",
+		LogSupportRatio.String():                           "LogSupportRatio",
+		Measure(0).String():                                "Measure(0)",
+		AggregateAverage.String():                          "AggregateAverage",
+		Aggregation(7).String():                            "Aggregation(7)",
+		AppearHead.String():                                "AppearHead",
+		Appearance(7).String():                             "Appearance(7)",
+		TargetFrequent.String() + AlgorithmSimple.String(): "TargetFrequentAlgorithmSimple",
 	}
 	for got, want := range checks {
 		if got != want {

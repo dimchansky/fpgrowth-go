@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -74,7 +73,8 @@ const utf8BOM = "\xef\xbb\xbf"
 // CSVFile returns a Source over the CSV file at path. Every pass opens the
 // file, streams it record by record, and closes it before the pass ends,
 // also on errors and when the consumer stops early; the file is never
-// loaded into memory as a whole. The file must not change between passes.
+// loaded into memory as a whole. It is CSVReader with os.Open. The file
+// must not change between passes; mining checks this like for TableFile.
 //
 // Semantics beyond encoding/csv: a UTF-8 byte order mark at the start of
 // the file is skipped; records may have different numbers of fields;
@@ -84,18 +84,33 @@ const utf8BOM = "\xef\xbb\xbf"
 // share one string within a pass.
 //
 // Errors: an invalid Comma or Comment yields an error wrapping
-// ErrInvalidOptions; a file that cannot be opened or read yields an error wrapping
-// the underlying I/O error (an *os.PathError for open failures); malformed
-// CSV yields an error wrapping ErrSyntax and the *csv.ParseError; an
-// invalid weight yields an error wrapping ErrSyntax, a negative one
-// ErrNegativeWeight. Messages start with "<path>:<line>:".
+// ErrInvalidOptions; a file that cannot be opened yields an error "cannot
+// open file <path>: ..." wrapping the *os.PathError, a failed read "read
+// error on file <path>: ..." wrapping the I/O error; malformed CSV yields
+// an error wrapping ErrSyntax and the *csv.ParseError; an invalid weight
+// yields an error wrapping ErrSyntax, a negative one ErrNegativeWeight.
+// Messages of malformed input start with "<path>:<line>:".
 func CSVFile(path string, f CSVFormat) Source[string] {
-	return csvSource{path: path, format: f}
+	return CSVReader(openFile(path), path, f)
+}
+
+// CSVReader returns a Source over the CSV input that open returns, like
+// TableReader does for the table format: every pass calls open, streams
+// the reader and closes it; open must return the same data every time;
+// name identifies the input in error messages (see CSVFile). Inputs with a
+// Stat method (like *os.File) are checked for changes between passes.
+func CSVReader(open func() (io.ReadCloser, error), name string, f CSVFormat) Source[string] {
+	return csvSource{in: opener{open: open, name: name}, format: f}
 }
 
 type csvSource struct {
-	path   string
+	in     opener
 	format CSVFormat
+}
+
+func (s csvSource) forRun() Source[string] {
+	s.in = s.in.forRun()
+	return s
 }
 
 func (s csvSource) Transactions() iter.Seq2[Transaction[string], error] {
@@ -106,20 +121,21 @@ func (s csvSource) Transactions() iter.Seq2[Transaction[string], error] {
 	}
 }
 
-// pass reads the file once. It returns nil when the consumer stopped.
+// pass reads the input once. It returns nil when the consumer stopped.
 func (s csvSource) pass(yield func(Transaction[string], error) bool) (err error) {
 	if err := s.format.validate(); err != nil {
 		return err
 	}
-	file, err := os.Open(s.path)
+	file, err := s.in.openPass()
 	if err != nil {
 		return err
 	}
+	name := s.in.name
 	stopped := false
 	defer func() {
 		cerr := file.Close()
 		if err == nil && !stopped && cerr != nil {
-			err = fmt.Errorf("read error on file %s: %w", s.path, cerr)
+			err = fmt.Errorf("read error on file %s: %w", name, cerr)
 		}
 	}()
 	br := bufio.NewReader(file)
@@ -146,9 +162,9 @@ func (s csvSource) pass(yield func(Transaction[string], error) bool) (err error)
 		}
 		if rerr != nil {
 			if perr, ok := errors.AsType[*csv.ParseError](rerr); ok {
-				return newDetailError(s.path+": "+perr.Error(), ErrSyntax, perr)
+				return newDetailError(name+": "+perr.Error(), ErrSyntax, perr)
 			}
-			return fmt.Errorf("read error on file %s: %w", s.path, rerr)
+			return fmt.Errorf("read error on file %s: %w", name, rerr)
 		}
 		if first && f.HasHeader {
 			continue
@@ -163,7 +179,7 @@ func (s csvSource) pass(yield func(Transaction[string], error) bool) (err error)
 			if wcol < 0 || wcol >= len(rec) {
 				line, _ := r.FieldPos(0)
 				return newDetailError(fmt.Sprintf("%s:%d: transaction weight expected (column %d)",
-					s.path, line, f.WeightColumn), ErrSyntax)
+					name, line, f.WeightColumn), ErrSyntax)
 			}
 			w, werr := s.parseWeight(r, rec[wcol], wcol)
 			if werr != nil {
@@ -182,14 +198,14 @@ func (s csvSource) pass(yield func(Transaction[string], error) bool) (err error)
 			if field == "" && !f.KeepEmptyFields {
 				continue
 			}
-			name, ok := intern[field]
+			item, ok := intern[field]
 			if !ok {
 				// Clone: field shares memory with the whole record; the
 				// item base retains the name for the rest of the run.
-				name = strings.Clone(field)
-				intern[name] = name
+				item = strings.Clone(field)
+				intern[item] = item
 			}
-			items = append(items, name)
+			items = append(items, item)
 		}
 		if !yield(Transaction[string]{Items: items, Weight: weight}, nil) {
 			stopped = true
@@ -204,16 +220,16 @@ func (s csvSource) parseWeight(r *csv.Reader, field string, col int) (int64, err
 	text := strings.TrimSpace(field)
 	if text == "" {
 		return 0, newDetailError(fmt.Sprintf("%s:%d:%d: transaction weight expected",
-			s.path, line, column), ErrSyntax)
+			s.in.name, line, column), ErrSyntax)
 	}
 	w, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
 		return 0, newDetailError(fmt.Sprintf("%s:%d:%d: invalid transaction weight %q",
-			s.path, line, column, field), ErrSyntax, err)
+			s.in.name, line, column, field), ErrSyntax, err)
 	}
 	if w < 0 {
 		return 0, newDetailError(fmt.Sprintf("%s:%d:%d: invalid transaction weight %q (must not be negative)",
-			s.path, line, column, field), ErrNegativeWeight)
+			s.in.name, line, column, field), ErrNegativeWeight)
 	}
 	return w, nil
 }

@@ -88,7 +88,7 @@ func runPublicBench[T comparable](d typedData[T], src Source[T], opt Options[T])
 var benchTargets = []struct {
 	name   string
 	target Target
-}{{"frequent", Frequent}, {"closed", Closed}, {"maximal", Maximal}}
+}{{"frequent", TargetFrequent}, {"closed", TargetClosed}, {"maximal", TargetMaximal}}
 
 func benchConfig(target Target) fpg.Config {
 	c := fpg.DefaultConfig()

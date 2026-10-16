@@ -639,3 +639,89 @@ func TestTooLarge(t *testing.T) {
 		})
 	}
 }
+
+// treeCountSink counts results and calls onResult for each.
+type treeCountSink struct {
+	n        int
+	onResult func(n int)
+}
+
+func (s *treeCountSink) ItemSet(report.ItemSet) error { s.n++; s.onResult(s.n); return nil }
+func (s *treeCountSink) Rule(report.Rule) error       { s.n++; s.onResult(s.n); return nil }
+
+// TestTreeCancelPhases cancels the rules path at the start of every
+// phase and while reporting, for rules and for item sets with a rule
+// measure: Mine must return context.Canceled without finishing the
+// phase, and only a bounded number of results may follow a cancellation
+// during reporting.
+func TestTreeCancelPhases(t *testing.T) {
+	t.Parallel()
+	txs := midDataset(t, 3000)
+	configs := map[string]Config{}
+	rules := DefaultConfig()
+	rules.Target, rules.SMin, rules.Conf = report.TargetRules, -60, 0
+	configs["rules"] = rules
+	sets := DefaultConfig()
+	sets.Target, sets.SMin, sets.Eval, sets.Thresh, sets.Prune = report.TargetClosed, -60, int(ruleval.Lift), 0, 0
+	configs["closed with lift"] = sets
+	for name, cfg := range configs {
+		for _, phase := range []Phase{PhaseTree, PhaseFilter, PhaseCloMax, PhaseReport} {
+			if cfg.Target == report.TargetRules && (phase == PhaseFilter || phase == PhaseCloMax) {
+				continue
+			}
+			t.Run(fmt.Sprintf("%s/%v", name, phase), func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				ib := tract.NewItemBase[string]()
+				m, err := New[string](cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := ib.Count(scanOf(txs)); err != nil {
+					t.Fatal(err)
+				}
+				if err := m.Data(ib, scanOf(txs)); err != nil {
+					t.Fatal(err)
+				}
+				rep, err := m.Reporter()
+				if err != nil {
+					t.Fatal(err)
+				}
+				const cancelAt = 1000
+				canceledAt := -1
+				sink := &treeCountSink{onResult: func(n int) {
+					if phase == PhaseReport && n == cancelAt {
+						cancel()
+						canceledAt = n
+					}
+				}}
+				rep.SetSink(sink)
+				finished := false
+				m.SetProgress(func(p Phase, done bool) {
+					switch {
+					case p == phase && !done && phase != PhaseReport:
+						cancel()
+					case p == phase && done:
+						finished = true
+					}
+				})
+				err = m.Mine(ctx)
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("got %v after %d results", err, sink.n)
+				}
+				if finished {
+					t.Error("the canceled phase finished")
+				}
+				switch {
+				case phase != PhaseReport && sink.n != 0:
+					t.Errorf("%d results reported", sink.n)
+				case phase == PhaseReport && canceledAt < 0:
+					t.Fatalf("only %d results; the test needs more", sink.n)
+				case phase == PhaseReport && sink.n-canceledAt > 256*m.Bag().MaxSize():
+					t.Errorf("%d results after the cancellation", sink.n-canceledAt)
+				}
+			})
+		}
+	}
+}

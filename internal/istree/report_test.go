@@ -2,6 +2,7 @@ package istree
 
 import (
 	"errors"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -452,5 +453,49 @@ func BenchmarkReport(b *testing.B) {
 			}
 			b.ReportMetric(float64(rep.Count())/float64(b.N), "records/op")
 		})
+	}
+}
+
+// TestReport_NoFilter checks that Eval.NoFilter reports the item sets and
+// rules of the unevaluated tree, with the measure's values.
+func TestReport_NoFilter(t *testing.T) {
+	t.Parallel()
+	total := 0
+	for seed := range uint64(40) {
+		txs := genTxs(t, seed+900, 7)
+		m := randMeasure(rand.New(rand.NewPCG(seed, 9)), false)
+		strict := Eval{Measure: m, Threshold: 1e300, NoFilter: true} // would filter everything
+		if m.Dir() < 0 {
+			strict.Threshold = -1e300
+		}
+		for _, isRules := range []bool{false, true} {
+			var plain, valued *collect
+			var d *dataset
+			if isRules {
+				c := ruleConfig{bodyMin: 2, smax: report.MaxSupp, zmax: report.MaxSize, order: 2}
+				plain, _ = runRules(t, txs, c, false)
+				c.eval = strict
+				valued, d = runRules(t, txs, c, false)
+			} else {
+				c := setConfig{target: report.TargetAll, smin: 2, zmax: report.MaxSize, prune: noPrune, order: 2}
+				plain, _ = runSets(t, txs, c, false)
+				c.eval = strict
+				valued, d = runSets(t, txs, c, false)
+			}
+			total += len(valued.ordered)
+			if len(plain.ordered) != len(valued.ordered) {
+				t.Fatalf("seed %d rules=%v %v: %d results without evaluation, %d with NoFilter",
+					seed, isRules, m, len(plain.ordered), len(valued.ordered))
+			}
+			fn := m.Func()
+			for _, r := range valued.rules {
+				if v := fn(r.Supp, r.BodySupp, r.HeadSupp, d.total); math.Float64bits(v) != math.Float64bits(r.Eval) {
+					t.Fatalf("seed %d %v: value %v, expected %v", seed, r, r.Eval, v)
+				}
+			}
+		}
+	}
+	if total == 0 {
+		t.Fatal("no results at all")
 	}
 }

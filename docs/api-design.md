@@ -37,23 +37,35 @@ func FromSlice[T comparable](txs []Transaction[T]) Source[T]  // in memory
 func FromItems[T comparable](txs [][]T) Source[T]             // weight 1 each
 func Generate[T comparable](n int, gen func(i int, buf []T) Transaction[T]) Source[T]
 func TableFile(path string, f TableFormat) Source[string]      // upstream format, reopened per pass
+func TableReader(open func() (io.ReadCloser, error), name string, f TableFormat) Source[string]
 func CSVFile(path string, f CSVFormat) Source[string]          // encoding/csv, reopened per pass
-func Spool(r io.Reader, dir string, read func(io.Reader) Source) ... // see below
+func CSVReader(open func() (io.ReadCloser, error), name string, f CSVFormat) Source[string]
+func SpoolTable(ctx context.Context, r io.Reader, dir string, f TableFormat) (Source[string], func() error, error)
+func SpoolCSV(ctx context.Context, r io.Reader, dir string, f CSVFormat) (Source[string], func() error, error)
 ```
 
 - **Errors.** A pass yields `(zero, err)` and stops at the first error;
   mining returns that error wrapped with context.
 - **Replay check.** Mining verifies that the second pass is consistent
-  with the first (record count, total weight) and fails with
-  `ErrNotReplayable` otherwise.
+  with the first (record count, total weight, no unknown items) and fails
+  with `ErrNotReplayable` otherwise. File sources (and reader sources whose
+  reader has a `Stat` method) also compare size and modification time at
+  the start of every pass with the first pass of the same mining run.
+- **Reopenable inputs.** `TableReader`/`CSVReader` take an `open`
+  function called once per pass (gzip, `fs.FS`, object storage, `[]byte`);
+  `TableFile`/`CSVFile` are these with `os.Open`. Open failures are
+  `cannot open file <name>: ...` wrapping the cause (`*fs.PathError`),
+  read failures `read error on file <name>: ...`.
 - **Non-replayable input** (`io.Reader`, stdin, network). Rejected by the
   typed constructors. `SpoolTable`/`SpoolCSV` copy such input to a
   temporary file once and return a `Source` plus a cleanup function; the
   caller decides that disk use is acceptable. Nothing is ever silently
-  buffered in memory.
+  buffered in memory. The copy checks `ctx` between 64 KiB chunks
+  (returning `ctx.Err()`); a nil reader is `ErrInvalidOptions`.
 - **Upstream table format.** `TableFormat` mirrors `-r -f -b -C -w`
   (record/field separators, blanks, comment characters, weight in the
-  last field). `DefaultTableFormat()` gives upstream's defaults.
+  last field). `DefaultTableFormat()` gives upstream's defaults; the zero
+  `TableFormat` means the same, any other value is literal.
 - **CSV.** RFC 4180 via `encoding/csv`: one record = one transaction;
   options `Comma`, `Comment`, `HasHeader` (skip first record),
   `WeightColumn` (index or -1), `TrimSpace`, `SkipEmptyFields` (default
@@ -63,7 +75,7 @@ func Spool(r io.Reader, dir string, read func(io.Reader) Source) ... // see belo
 ## Mining item sets
 
 ```go
-type Target int // Frequent (default), Closed, Maximal, Generators
+type Target int // TargetFrequent (default), TargetClosed, TargetMaximal, TargetGenerators
 
 type Support struct{ /* unexported */ }
 func Count(n int64) Support        // absolute weighted support
@@ -78,9 +90,23 @@ type Options[T comparable] struct {
     IncludeEmpty bool
     Border       []Support // per-size minimum support from MinSize (upstream -F)
     Items        []T       // restrict mining to these items (upstream -R selection)
-    Algorithm    Algorithm // Auto (=Complex, upstream default), Simple, Complex, SingleTree, TopDown
+    Algorithm    Algorithm // AlgorithmAuto (=AlgorithmComplex, upstream default), AlgorithmSimple,
+                           // AlgorithmComplex, AlgorithmSingleTree, AlgorithmTopDown
     Tuning       Tuning    // optimizations, all on by default (see below)
-    Evaluation   *Evaluation // optional measure filter (upstream -e/-a/-d/-i/-p)
+    Evaluation   *Evaluation // optional measure, values and filter (upstream -e/-a/-d/-i/-p)
+    PatternSpectrum bool
+    OnStart      func(Stats) error // called once before the first result
+}
+
+type Stats struct {
+    Transactions, TotalWeight, FrequentItems int64
+    MinSupport, MaxSupport                   int64 // resolved absolute thresholds
+}
+type Summary struct {
+    Stats
+    Reported uint64
+    BySize   []uint64
+    Spectrum []SpectrumCell
 }
 
 type Itemset[T comparable] struct {
@@ -101,8 +127,16 @@ func CollectItemsets[T comparable](ctx context.Context, src Source[T], opt Optio
   `ErrStop`-style early exit). `Itemsets` adapts it to an iterator:
   breaking out of the loop stops mining. Mining runs synchronously on the
   caller's goroutine — no goroutines, nothing to leak.
-- `Summary` has `Transactions`, `TotalWeight`, `Items` (frequent items),
-  `Reported`, `BySize []uint64`, and an optional pattern spectrum.
+- `OnStart` receives the `Stats` once before the first result (also when
+  nothing is reported): the total weight makes relative supports
+  streamable. Its error stops mining and is returned unchanged.
+- `Summary` embeds `Stats` and adds `Reported`, `BySize []uint64` and an
+  optional pattern spectrum. Counts describing the input are `int64` (like
+  weights and supports), counts of results `uint64` (like upstream's
+  reporter counters).
+- Cancellation is checked between transactions, at every recursion step
+  and every 256 nodes or counters of the item set tree; a few results may
+  still be delivered after the context is canceled.
 - `Tuning`: `NoPerfectExtensions`, `NoReorder`, `NoHeadUnionTail`,
   `ItemMachine int` (k-items machine size, 0 = upstream default 16,
   negative = off), `ItemOrder` (upstream `-q`). Zero value = upstream
@@ -119,6 +153,7 @@ type RuleOptions[T comparable] struct {
     Appearance      map[T]Appearance; DefaultAppearance Appearance
     Evaluation      *Evaluation
     Algorithm       Algorithm; Tuning Tuning
+    OnStart         func(Stats) error
 }
 type Rule[T comparable] struct {
     Body []T; Head T
@@ -139,11 +174,18 @@ type Measure int // public names for the 25 rule measures + LogSupportRatio
 type Evaluation struct {
     Measure     Measure
     Aggregate   Aggregation // First, Min, Max, Average (item sets only)
-    Threshold   float64     // fraction, e.g. 0.1 (upstream -d percent / 100)
+    Filter      bool        // filter by Threshold; false: values only
+    Threshold   float64     // fraction, e.g. 0.1 (upstream -d percent / 100); requires Filter
     InvalidateBelowExpected bool
-    PruneSize   *int        // upstream -p; nil: no pruning
+    PruneSize   *int        // upstream -p; nil: no pruning; requires Filter
 }
 ```
+
+Without `Filter` the measure is computed for every result (`Value`) and
+the results are those without an evaluation (internally: the item set
+tree's and the reporter's threshold tests are disabled). A non-zero
+`Threshold` or a `PruneSize` without `Filter` is rejected, as it would
+have no effect.
 
 ## Concurrency, ownership, determinism
 
@@ -162,8 +204,11 @@ type Evaluation struct {
 
 Sentinels: `ErrInvalidOptions` (wrapped with the field name),
 `ErrNotReplayable`, `ErrNegativeWeight`, `ErrWeightOverflow`,
-`ErrTooLarge`. Context cancellation returns `ctx.Err()`. A database without frequent
-items is not an error: nothing is reported and `Summary.Items` is 0 (the
+`ErrTooLarge`, `ErrSyntax`, `ErrInvalidItem` (an item whose dynamic type
+is not comparable, or that is not equal to itself such as NaN; checked
+only for item types that can hold interfaces or floats). Context
+cancellation returns `ctx.Err()`. A database without frequent items is
+not an error: nothing is reported and `Summary.FrequentItems` is 0 (the
 CLI keeps upstream's "no (frequent) items found" error).
 
 ## Go version
@@ -175,7 +220,9 @@ generic methods are not needed for this surface.
 
 1. `Fraction(f)` is converted after pass 1 with upstream's formula applied
    to `f` directly (`ceil(f·W·(1−ε))`, `floor(f·W·(1+ε))`) and passed as an
-   absolute count, because `100·f/100 ≠ f` for ~15 % of fractions.
+   absolute count, because `100·f/100 ≠ f` for ~15 % of fractions. All
+   absolute thresholds reach the miner as exact integers
+   (`fpg.Config.HasCounts`), never through the CLI's float notation.
    `Fraction(K/100)` equals CLI `-sK` exactly. Confidence and evaluation
    thresholds use a percentage `p` with `p/100 == f` when one exists,
    otherwise the neighbor on the permissive side.

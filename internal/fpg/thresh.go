@@ -58,6 +58,9 @@ type thresholds struct {
 // computeThresholds ports the threshold arithmetic of fpg_data and
 // fpg_report for the total transaction weight w.
 func computeThresholds(c *Config, w tract.Supp) thresholds {
+	if c.HasCounts {
+		return countThresholds(c)
+	}
 	smin := math.Ceil(minSuppValue(c.SMin, w))
 	var t thresholds
 	t.body = suppOf(smin)
@@ -72,5 +75,28 @@ func computeThresholds(c *Config, w tract.Supp) thresholds {
 	t.supp = max(t.supp, 1)
 	t.body = max(t.body, 1)
 	t.smax = suppOf(math.Floor(maxSuppValue(c.SMax, w)))
+	return t
+}
+
+// countThresholds derives the thresholds from the exact absolute supports
+// of Config.HasCounts: the same rules as computeThresholds, without the
+// float notation. For rules with the body support definition, the
+// minimum set support is the body minimum times the confidence (with
+// upstream's 1-DBL_EPSILON tolerance), computed from the body minimum
+// rounded down to a float64 and capped by the body minimum, so it never
+// exceeds the exact product.
+func countThresholds(c *Config) thresholds {
+	var t thresholds
+	t.body = max(c.MinCount, 1)
+	t.supp = t.body
+	if c.Target == report.TargetRules && c.Mode&ModeOrigSupp == 0 {
+		x := float64(t.body)
+		if x >= 0x1p63 || tract.Supp(x) > t.body {
+			x = math.Nextafter(x, 0)
+		}
+		x *= c.Conf / 100.0 * (1 - dblEpsilon)
+		t.supp = min(max(suppOf(math.Ceil(x)), 1), t.body)
+	}
+	t.smax = c.MaxCount
 	return t
 }

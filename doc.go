@@ -8,16 +8,25 @@
 //
 // # Data
 //
-// Items can be of any comparable type. A transaction database is a
-// [Source]: something that can be read several times, each pass yielding
-// the same transactions in the same order. Mining reads it twice and never
-// keeps the transactions themselves; it keeps the item dictionary, a
-// prefix tree of the (filtered) transactions and the FP-trees, so memory
-// grows with the distinct structure of the data rather than with its size.
-// [FromSlice], [FromItems] and [Generate] provide in-memory and generated
-// sources, [TableFile] streams upstream's text format, [CSVFile] streams
-// CSV, and [SpoolTable] and [SpoolCSV] turn a one-shot [io.Reader] into a
-// file-backed source.
+// Items can be of any comparable type; they are keys of a map. Items must
+// be strictly comparable at run time: an item of interface type (or a
+// struct or array containing one) whose dynamic value is not comparable,
+// such as a slice, and an item that is not equal to itself, such as a
+// floating-point NaN (also inside a struct, array or interface), are
+// rejected with [ErrInvalidItem] instead of panicking or never matching.
+// The checks cost nothing for item types without floats and interfaces.
+//
+// A transaction database is a [Source]: something that can be read
+// several times, each pass yielding the same transactions in the same
+// order. Mining reads it twice and never keeps the transactions
+// themselves; it keeps the item dictionary, a prefix tree of the
+// (filtered) transactions and the FP-trees, so memory grows with the
+// distinct structure of the data rather than with its size. [FromSlice],
+// [FromItems] and [Generate] provide in-memory and generated sources,
+// [TableFile] and [TableReader] stream upstream's text format from a file
+// or any reopenable input (compressed files, embedded data, object
+// storage), [CSVFile] and [CSVReader] stream CSV, and [SpoolTable] and
+// [SpoolCSV] turn a one-shot [io.Reader] into a file-backed source.
 //
 // # Mining
 //
@@ -28,6 +37,12 @@
 // association rules. Mining runs synchronously on the calling goroutine;
 // results are delivered one at a time; returning an error from the
 // callback, breaking out of the loop, or canceling the context stops it.
+// Cancellation is checked frequently but not before every result, so a
+// few results may still be delivered after the context is canceled.
+//
+// Options.OnStart and RuleOptions.OnStart receive the [Stats] of the
+// database (total weight, frequent items, resolved thresholds) before the
+// first result, so that, for example, relative supports can be streamed.
 //
 // The slices in reported values are reused by the library and only valid
 // during the callback or iteration step; Clone them to keep them. In
@@ -42,8 +57,10 @@
 // Supports are weighted counts (the sum of the weights of the transactions
 // containing a set). A [Support] threshold is either absolute ([Count]) or
 // relative to the total weight ([Fraction]), converted with upstream's
-// arithmetic. Confidences and evaluation thresholds are fractions or
-// values of the measure, not upstream's percentages.
+// arithmetic. Counts are exact over the whole int64 range. Confidences and
+// evaluation thresholds are fractions or values of the measure, not
+// upstream's percentages. An [Evaluation] computes a measure for every
+// result and filters by it only with Evaluation.Filter.
 //
 // # Concurrency
 //

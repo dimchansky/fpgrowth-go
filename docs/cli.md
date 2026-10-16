@@ -177,25 +177,25 @@ in percent are fractions in the library.
 
 | CLI | Library |
 | --- | --- |
-| `infile` | `TableFile(path, format)`; standard input: `SpoolTable(os.Stdin, dir, format)` |
+| `infile` | `TableFile(path, format)` (other inputs: `TableReader(open, name, format)`); standard input: `SpoolTable(ctx, os.Stdin, dir, format)` |
 | `outfile` | the callback or iterator; text formatting has no library equivalent |
-| `-ts`, `-tc`, `-tm`, `-tg` | `Options.Target`: `Frequent`, `Closed`, `Maximal`, `Generators` |
+| `-ts`, `-tc`, `-tm`, `-tg` | `Options.Target`: `TargetFrequent`, `TargetClosed`, `TargetMaximal`, `TargetGenerators` |
 | `-tr` | `RuleOptions` with `MineRules` / `Rules` / `CollectRules` |
 | `-m#` | `MinSize`; `-m0`: `Options.IncludeEmpty` |
 | `-n#` | `MaxSize` (0 means no limit in the library) |
 | `-s#` (positive) | `MinSupport: Fraction(s/100)` (`Fraction(k/100)` gives exactly the threshold of `-sk`) |
-| `-s-#` (negative) | `MinSupport: Count(n)` |
+| `-s-#` (negative) | `MinSupport: Count(n)` (exact for every `int64`; the CLI's float notation is exact up to 2^53) |
 | `-S#` | `MaxSupport`, same conversion; the zero value means no limit |
 | `-o` | `RuleOptions.OriginalSupport` |
 | `-c#` | `RuleOptions.MinConfidence = c/100` (library default 0: no confidence filter; CLI default 80) |
 | `-F#:#..` | `Options.Border` (`Fraction` for positive, `Count` for negative values) |
 | `-e#` | `Evaluation.Measure` (the letter of each `Measure` is in its doc comment); `-eb`: `LogSupportRatio` for item sets, `Imbalance` for rules; `-ex`: `Evaluation` nil |
 | `-a#` | `Evaluation.Aggregate`: `x` `AggregateFirst`, `m` `AggregateMin`, `n` `AggregateMax`, `a` `AggregateAverage` |
-| `-d#` | `Evaluation.Threshold = d/100` (library zero value 0; CLI default 10) |
+| `-d#` | `Evaluation.Filter = true` with `Evaluation.Threshold = d/100` (the CLI always filters, default 10; the library filters only with `Filter`, and without it computes the values only) |
 | `-i` | `Evaluation.InvalidateBelowExpected` |
-| `-p#` | `Evaluation.PruneSize` (pointer to the value; nil: no pruning) |
+| `-p#` | `Evaluation.PruneSize` (pointer to the value; nil: no pruning; requires `Filter`) |
 | `-q#` | `Tuning.ItemOrder`: `2` `ItemOrderSizeSumAscending` (= `ItemOrderDefault`), `1` `ItemOrderFrequencyAscending`, `0` `ItemOrderNone`, `-1` `ItemOrderFrequencyDescending`, `-2` `ItemOrderSizeSumDescending` |
-| `-A#` | `Algorithm`: `s` `Simple`, `c` `Complex` (= `Auto`), `d` `SingleTree`, `t` `TopDown` |
+| `-A#` | `Algorithm`: `s` `AlgorithmSimple`, `c` `AlgorithmComplex` (= `AlgorithmAuto`), `d` `AlgorithmSingleTree`, `t` `AlgorithmTopDown` |
 | `-x` | `Tuning.NoPerfectExtensions` |
 | `-l#` | `Tuning.ItemMachine`: `-lk` with `1 ≤ k ≤ 16` is `k`; `-l0` is a negative value; 0 in the library means the default 16; values above 16 are rejected |
 | `-j` | `Tuning.NoReorder` |
@@ -204,11 +204,12 @@ in percent are fractions in the library.
 | `-R#` (rules) | `RuleOptions.Appearance` and `RuleOptions.DefaultAppearance` (`AppearBoth`, `AppearBody`, `AppearHead`, `AppearNone`) |
 | `-P#` | `Options.PatternSpectrum`, result in `Summary.Spectrum` |
 | `-Z` | `Summary.BySize` (and `Summary.Reported`) |
+| progress messages (`[n item(s), m transaction(s)]`) | `Stats` via `Options.OnStart` / `RuleOptions.OnStart` and in `Summary` |
 | `-w` | `TableFormat.Weighted` |
 | `-r# -f# -b# -C#` | `TableFormat.RecordSeparators`, `FieldSeparators`, `Blanks`, `Comments` (literal bytes, no escape decoding); defaults from `DefaultTableFormat()` |
 | `-N -g -h -k -I -v` | output formatting only; no library equivalent |
 
-The library also reads CSV (`CSVFile`, `SpoolCSV`), which the CLI does not.
+The library also reads CSV (`CSVFile`, `CSVReader`, `SpoolCSV`), which the CLI does not. The zero `TableFormat` is `DefaultTableFormat()`.
 
 Differences between the CLI and the library beyond the units:
 
@@ -223,7 +224,9 @@ Differences between the CLI and the library beyond the units:
   are the same, the order of tied items (and so the result order) can
   differ from the CLI.
 - An empty database or one without frequent items is not an error in the
-  library (`Summary.Items` is 0); the CLI exits with status 15.
+  library (`Summary.FrequentItems` is 0); the CLI exits with status 15.
+- The library evaluates without filtering unless `Evaluation.Filter` is
+  set; a threshold without `Filter` is rejected.
 
 ## Deviations from upstream
 

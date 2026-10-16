@@ -53,7 +53,7 @@ func TestRulesEquivalenceCLI(t *testing.T) {
 		if r.IntN(2) == 0 {
 			m := Measure(1 + r.IntN(int(LogSupportRatio)-1))
 			d := thresholds[r.IntN(len(thresholds))]
-			opt.Evaluation = &Evaluation{Measure: m, Threshold: d / 100, InvalidateBelowExpected: r.IntN(4) == 0}
+			opt.Evaluation = &Evaluation{Measure: m, Filter: true, Threshold: d / 100, InvalidateBelowExpected: r.IntN(4) == 0}
 			cfg.Eval, cfg.Thresh, cfg.InvalidateBelowExpected = int(m), d, opt.Evaluation.InvalidateBelowExpected
 		}
 		want, _, werr := runInternal(t, c.txs, cfg, nil, nil)
@@ -62,7 +62,7 @@ func TestRulesEquivalenceCLI(t *testing.T) {
 			t.Fatal(gerr)
 		}
 		if errors.Is(werr, fpg.ErrNoItems) {
-			if len(got) != 0 || sum.Items != 0 {
+			if len(got) != 0 || sum.FrequentItems != 0 {
 				t.Fatalf("seed %d: CLI finds no items, API reports %d rules", seed, len(got))
 			}
 			continue
@@ -125,7 +125,7 @@ func TestRulesOracle(t *testing.T) {
 		}
 		if r.IntN(2) == 0 {
 			m := Measure(1 + r.IntN(int(LogSupportRatio)-1))
-			opt.Evaluation = &Evaluation{Measure: m, Threshold: []float64{0, 0.1, 0.5, 1, 2}[r.IntN(5)],
+			opt.Evaluation = &Evaluation{Measure: m, Filter: true, Threshold: []float64{0, 0.1, 0.5, 1, 2}[r.IntN(5)],
 				InvalidateBelowExpected: r.IntN(4) == 0}
 			rm := ruleval.Measure(m)
 			p.Eval = &oracle.Measure{Func: oracle.MeasureFunc(rm.Func()), Dir: oracle.Direction(rm.Dir()),
@@ -139,7 +139,7 @@ func TestRulesOracle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sum.Items == 0 {
+		if sum.FrequentItems == 0 {
 			if len(want) > 0 {
 				t.Fatalf("seed %d: no frequent items, oracle has %d rules", seed, len(want))
 			}
@@ -190,7 +190,7 @@ func TestRulesAppearanceEquivalence(t *testing.T) {
 				names = append(names, it)
 			}
 		}
-		cfg := cliConfig(report.TargetRules, Auto, Tuning{}, c.smin, c.smax, 1, fpg.MaxSize)
+		cfg := cliConfig(report.TargetRules, AlgorithmAuto, Tuning{}, c.smin, c.smax, 1, fpg.MaxSize)
 		cfg.Conf = 50
 		want, _, werr := runInternal(t, c.txs, cfg, nil, func(ib *tract.ItemBase[string]) error {
 			ib.SetDefaultAppearance(def.internal())
@@ -264,7 +264,7 @@ func TestRuleValues(t *testing.T) {
 	src := FromItems([][]string{{"a", "b"}, {"a", "b"}, {"a"}, {"b"}, {"c"}})
 	got, _, err := CollectRules(context.Background(), src, RuleOptions[string]{
 		MinSupport: Count(2), MinConfidence: 0.6, MinSize: 2,
-		Evaluation: &Evaluation{Measure: Lift, Threshold: 1.1},
+		Evaluation: &Evaluation{Measure: Lift, Filter: true, Threshold: 1.1},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -281,9 +281,110 @@ func TestRuleValues(t *testing.T) {
 	}
 	got, _, err = CollectRules(context.Background(), src, RuleOptions[string]{
 		MinSupport: Count(2), MinConfidence: 0.6, MinSize: 2,
-		Evaluation: &Evaluation{Measure: Lift, Threshold: 1.12},
+		Evaluation: &Evaluation{Measure: Lift, Filter: true, Threshold: 1.12},
 	})
 	if err != nil || len(got) != 0 {
 		t.Errorf("threshold above lift: %v %v", got, err)
 	}
+}
+
+// FuzzMineRules compares MineRules with the brute-force oracle for
+// fuzzed databases and random options: thresholds, sizes, the support
+// definition, appearances, and evaluations with and without filtering.
+func FuzzMineRules(f *testing.F) {
+	fuzzSeeds(f)
+	pubApp := []Appearance{AppearBoth, AppearBody, AppearHead, AppearNone}
+	oraApp := []oracle.Appearance{oracle.AppearBoth, oracle.AppearBody, oracle.AppearHead, oracle.AppearNone}
+	f.Fuzz(func(t *testing.T, word uint64, data []byte) {
+		txs := decodeFuzzTxs(data)
+		b := fuzzBits(word)
+		db, err := oracle.New(txs, oracle.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		total := db.Total()
+		var smin, smax float64 = 0, 100
+		var minSupp, maxSupp Support
+		if b.take(1) == 0 {
+			n := int64(1 + b.take(2))
+			smin, minSupp = float64(-n), Count(n)
+		} else {
+			k := 1 + b.take(6)%60
+			smin, minSupp = float64(k), Fraction(float64(k)/100)
+		}
+		switch b.take(2) {
+		case 1:
+			n := int64(1 + b.take(3))
+			smax, maxSupp = float64(-n), Count(n)
+		case 2:
+			k := 30 + b.take(6)
+			smax, maxSupp = float64(k), Fraction(float64(k)/100)
+		}
+		conf := confidences[b.take(3)%len(confidences)] / 100
+		opt := RuleOptions[string]{
+			MinSupport:      minSupp,
+			MaxSupport:      maxSupp,
+			MinConfidence:   conf,
+			MinSize:         b.take(2) % 3,
+			OriginalSupport: b.take(1) == 1,
+			Algorithm:       Algorithm(b.take(3) % 5),
+		}
+		p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(smin, total)), conf)
+		p.MaxSupp = oracle.AbsMaxSupp(smax, total)
+		p.OrigSupp = opt.OriginalSupport
+		p.MinSize = opt.MinSize
+		if b.take(1) == 1 {
+			opt.MaxSize = max(opt.MinSize, 1) + b.take(2)
+			p.MaxSize = opt.MaxSize
+		}
+		if b.take(1) == 1 {
+			k := b.take(2)
+			opt.DefaultAppearance, p.DefaultAppear = pubApp[k], oraApp[k]
+			opt.Appearance = map[string]Appearance{}
+			p.Appear = map[string]oracle.Appearance{}
+			for _, it := range db.Items() {
+				if b.take(1) == 1 {
+					k := b.take(2)
+					opt.Appearance[it], p.Appear[it] = pubApp[k], oraApp[k]
+				}
+			}
+		}
+		evalMode := b.take(2) // 0, 1: none, 2: values only, 3: filter
+		if evalMode >= 2 {
+			m := Measure(1 + b.take(5)%(int(LogSupportRatio)-1))
+			opt.Evaluation = &Evaluation{Measure: m, InvalidateBelowExpected: b.take(1) == 1}
+			if evalMode == 3 {
+				opt.Evaluation.Filter = true
+				opt.Evaluation.Threshold = []float64{0, 0.1, 0.5, 1, 2, -1, 0.01, 10}[b.take(3)]
+				rm := ruleval.Measure(m)
+				p.Eval = &oracle.Measure{Func: oracle.MeasureFunc(rm.Func()), Dir: oracle.Direction(rm.Dir()),
+					Threshold: opt.Evaluation.Threshold, InvalidateBelowExpected: opt.Evaluation.InvalidateBelowExpected}
+			}
+		}
+		got, sum, err := CollectRules(context.Background(), sourceOf(txs), opt)
+		if err != nil {
+			t.Fatalf("%+v: %v", opt, err)
+		}
+		if sum.Reported != uint64(len(got)) {
+			t.Fatalf("reported %d, got %d", sum.Reported, len(got))
+		}
+		want, err := db.Rules(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sum.FrequentItems == 0 {
+			if len(want) > 0 || len(got) > 0 {
+				t.Fatalf("no frequent items: oracle %d rules, got %d", len(want), len(got))
+			}
+			return
+		}
+		if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{IgnoreEval: evalMode != 3}); d != "" {
+			t.Fatalf("opt %+v eval %+v:\n%s", opt, opt.Evaluation, d)
+		}
+		for _, r := range got {
+			if opt.Evaluation == nil && !math.IsNaN(r.Value) {
+				t.Fatalf("%v: value without evaluation", r)
+			}
+		}
+	})
 }

@@ -126,17 +126,49 @@ type Tree struct {
 	zmax  int
 
 	// evaluation (ist_seteval)
-	eval      ruleval.Measure
-	fn        ruleval.Func
-	agg       Aggregation
-	isInvBxs  bool
-	dir       float64
-	thresh    float64 // dir * threshold
-	evNode    int32   // ist->node: node of the set to evaluate
-	evIndex   int32   // ist->index: counter of the set (-1: empty set)
-	buf       []tract.Item
-	cand      []tract.Item
-	childList []int32
+	eval       ruleval.Measure
+	fn         ruleval.Func
+	agg        Aggregation
+	isInvBxs   bool
+	dir        float64
+	thresh     float64 // dir * threshold
+	evNode     int32   // ist->node: node of the set to evaluate
+	evIndex    int32   // ist->index: counter of the set (-1: empty set)
+	isNoFilter bool    // compute evaluations without filtering (Eval.NoFilter)
+	buf        []tract.Item
+	cand       []tract.Item
+	childList  []int32
+
+	// cancellation (SetAbort)
+	abort func() error
+	ticks uint32
+}
+
+// abortEvery is the number of steps (nodes in Filter and CloMax, counters
+// in Report) between two calls of the abort function.
+const abortEvery = 256
+
+// SetAbort sets a function that the long-running methods Filter, CloMax
+// and Report call every abortEvery steps. A non-nil result stops the
+// method, which returns it; the tree is then in an unspecified state and
+// must not be used further. The function should be cheap (for example a
+// non-blocking receive on a done channel); nil (the default) disables the
+// checks. Between two calls the methods do a bounded amount of work, so at
+// most abortEvery counters' worth of item sets or rules are reported after
+// the function first returns an error.
+func (t *Tree) SetAbort(fn func() error) { t.abort = fn }
+
+// tick counts one step and calls the abort function every abortEvery
+// steps.
+func (t *Tree) tick() error {
+	if t.abort == nil {
+		return nil
+	}
+	t.ticks++
+	if t.ticks%abortEvery != 0 {
+		return nil
+	}
+	return t.abort()
 }
 
 // New is a port of ist_create(base, IST_REVERSE, smin, body, conf).

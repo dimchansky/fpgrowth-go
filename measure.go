@@ -154,14 +154,17 @@ func (a Aggregation) String() string {
 	return fmt.Sprintf("Aggregation(%d)", int(a))
 }
 
-// Evaluation filters item sets or rules by an evaluation measure
-// (upstream -e, -a, -d, -i, -p). The value of every reported item set or
-// rule is in its Value field.
+// Evaluation computes an evaluation measure for every reported item set
+// or rule (upstream -e, -a, -i) and, with Filter, filters by it (upstream
+// -d, -p). The value is in the Value field of the result.
 //
-// A rule passes unless its value is worse than Threshold. An item set
-// passes if its aggregated value is at least as good as Threshold; with
-// a rule measure, closed, maximal and generator targets report the sets
-// of that target that pass (upstream semantics). NaN values of rules pass.
+// Without Filter (the zero value) nothing is filtered: the results are
+// those without an Evaluation, with values. With Filter, a rule passes
+// unless its value is worse than Threshold (so NaN values of rules pass);
+// an item set passes if its aggregated value is at least as good as
+// Threshold (so NaN values fail); with a rule measure, closed, maximal and
+// generator targets report the sets of that target that pass (upstream
+// semantics).
 type Evaluation struct {
 	// Measure is the evaluation measure. Required.
 	Measure Measure
@@ -169,10 +172,16 @@ type Evaluation struct {
 	// rule measure. It must be AggregateFirst for rules and for
 	// LogSupportRatio.
 	Aggregate Aggregation
+	// Filter enables filtering by Threshold. Note that a zero Threshold
+	// filters everything for the p-value measures, whose values are
+	// positive and must not be above it.
+	Filter bool
 	// Threshold is the threshold in units of the measure: a fraction for
 	// confidence-like measures (0.1, not upstream's percentage 10), a
-	// p-value for the p-value measures, and so on. The zero value is a
-	// threshold of 0. NaN is invalid.
+	// p-value for the p-value measures, and so on; a minimum or a maximum
+	// as Measure.HigherIsBetter tells. It requires Filter (a non-zero
+	// Threshold without Filter is invalid, as it would have no effect).
+	// NaN is invalid.
 	Threshold float64
 	// InvalidateBelowExpected (upstream -i) gives a rule the measure's
 	// worst value unless its support is above the support expected if
@@ -182,7 +191,7 @@ type Evaluation struct {
 	// evaluation: 0 prunes backward, a negative value -k prunes weakly
 	// forward and a positive value k prunes strongly forward, from item
 	// set size |k| on (see upstream's -p help). nil disables pruning.
-	// Item sets with a rule measure only.
+	// Item sets with a rule measure only; requires Filter.
 	PruneSize *int
 }
 
@@ -195,6 +204,8 @@ func (e *Evaluation) validate(forRules bool) error {
 		return invalid("Evaluation.Measure", "LogSupportRatio is an item set measure; use Imbalance for rules")
 	case e.Threshold != e.Threshold:
 		return invalid("Evaluation.Threshold", "NaN")
+	case !e.Filter && e.Threshold != 0:
+		return invalid("Evaluation.Threshold", "%g without Filter has no effect", e.Threshold)
 	case e.Aggregate < AggregateFirst || e.Aggregate > AggregateAverage:
 		return invalid("Evaluation.Aggregate", "%v is not an aggregation mode", e.Aggregate)
 	case e.Aggregate != AggregateFirst && (forRules || e.Measure == LogSupportRatio):
@@ -205,6 +216,8 @@ func (e *Evaluation) validate(forRules bool) error {
 		return invalid("Evaluation.PruneSize", "applies to item sets with a rule measure only")
 	case e.PruneSize != nil && (*e.PruneSize <= fpg.NoPrune || *e.PruneSize > fpg.MaxSize):
 		return invalid("Evaluation.PruneSize", "%d out of range", *e.PruneSize)
+	case !e.Filter && e.PruneSize != nil:
+		return invalid("Evaluation.PruneSize", "requires Filter")
 	}
 	return nil
 }
@@ -219,6 +232,7 @@ func (e *Evaluation) apply(cfg *fpg.Config) {
 		dir = +1
 	}
 	cfg.Thresh = percentOf(e.Threshold, dir)
+	cfg.EvalNoFilter = !e.Filter
 	cfg.Prune = fpg.NoPrune
 	if e.PruneSize != nil {
 		cfg.Prune = *e.PruneSize

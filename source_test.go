@@ -2,6 +2,8 @@ package fpgrowth
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -17,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
+	"time"
 )
 
 // readPass collects one pass of src (items cloned).
@@ -108,7 +112,7 @@ func TestTableFile(t *testing.T) {
 		t.Errorf("weighted: %s", txString(got))
 	}
 	sets, _, err := CollectItemsets(context.Background(), TableFile("testdata/basket.txt", DefaultTableFormat()),
-		Options[string]{MinSupport: Fraction(0.6), Target: Closed})
+		Options[string]{MinSupport: Fraction(0.6), Target: TargetClosed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +149,170 @@ func TestTableFileErrors(t *testing.T) {
 	_, err = MineItemsets(context.Background(), TableFile(write("bad2", "a\nb x\n"), wf), Options[string]{MinSupport: Count(1)}, nil)
 	if !errors.Is(err, ErrSyntax) || !strings.Contains(err.Error(), "pass 1") {
 		t.Errorf("mining: %v", err)
+	}
+}
+
+// TestTableReader checks reader-backed table sources: an fs.FS, gzip,
+// the zero format, and the open errors.
+func TestTableReader(t *testing.T) {
+	t.Parallel()
+	data := "# comment\na b\nb c\n\na b c\n"
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	if _, err := zw.Write([]byte(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{"db.txt": {Data: []byte(data)}, "db.txt.gz": {Data: gz.Bytes()}}
+	want := `["a" "b"]:1;["b" "c"]:1;[]:1;["a" "b" "c"]:1;`
+	sources := map[string]Source[string]{
+		"fs": TableReader(func() (io.ReadCloser, error) { return fsys.Open("db.txt") }, "db.txt", DefaultTableFormat()),
+		"gzip": TableReader(func() (io.ReadCloser, error) {
+			f, err := fsys.Open("db.txt.gz")
+			if err != nil {
+				return nil, err
+			}
+			zr, err := gzip.NewReader(f)
+			if err != nil {
+				_ = f.Close()
+				return nil, err
+			}
+			return readCloser{zr, f}, nil
+		}, "db.txt.gz", DefaultTableFormat()),
+		"zero format": TableReader(func() (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(data)), nil
+		}, "memory", TableFormat{}),
+	}
+	for name, src := range sources {
+		got, err := readPass(src)
+		if err != nil || txString(got) != want {
+			t.Errorf("%s: %s %v", name, txString(got), err)
+		}
+		sets, _, err := CollectItemsets(context.Background(), src, Options[string]{MinSupport: Count(2)})
+		if err != nil || len(sets) != 5 {
+			t.Errorf("%s: mining %v %v", name, sets, err)
+		}
+	}
+	errGone := errors.New("gone")
+	_, err := readPass(TableReader(func() (io.ReadCloser, error) { return nil, errGone }, "remote", TableFormat{}))
+	if !errors.Is(err, errGone) || err.Error() != "cannot open file remote: gone" {
+		t.Errorf("open error: %v", err)
+	}
+	_, err = readPass(TableReader(func() (io.ReadCloser, error) { return nil, nil }, "remote", TableFormat{}))
+	if err == nil {
+		t.Error("nil reader without error accepted")
+	}
+	_, err = MineItemsets(context.Background(), TableReader(nil, "x", TableFormat{}), Options[string]{MinSupport: Count(1)}, nil)
+	if !errors.Is(err, ErrInvalidOptions) {
+		t.Errorf("nil open: %v", err)
+	}
+	// a field cleared on purpose is taken literally: no comments
+	noComments := DefaultTableFormat()
+	noComments.Comments = ""
+	got, err := readPass(TableReader(func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("#a b\n")), nil
+	}, "memory", noComments))
+	if err != nil || txString(got) != `["#a" "b"]:1;` {
+		t.Errorf("no comments: %s %v", txString(got), err)
+	}
+}
+
+// readCloser closes a decompressing reader and its file.
+type readCloser struct {
+	io.ReadCloser
+	file io.Closer
+}
+
+func (r readCloser) Close() error { return errors.Join(r.ReadCloser.Close(), r.file.Close()) }
+
+// TestWeightedEmptyLine pins upstream's behavior: with weights, an empty
+// line is a syntax error, without weights an empty transaction.
+func TestWeightedEmptyLine(t *testing.T) {
+	t.Parallel()
+	open := func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("a 2\n\nb 1\n")), nil }
+	wf := DefaultTableFormat()
+	wf.Weighted = true
+	if _, err := readPass(TableReader(open, "w", wf)); !errors.Is(err, ErrSyntax) ||
+		!strings.Contains(err.Error(), "transaction weight expected") {
+		t.Errorf("weighted: %v", err)
+	}
+	got, err := readPass(TableReader(open, "u", DefaultTableFormat()))
+	if err != nil || len(got) != 3 || len(got[1].Items) != 0 {
+		t.Errorf("unweighted: %s %v", txString(got), err)
+	}
+}
+
+// TestOpenErrors checks that both file sources report a missing file the
+// same way: naming the file and wrapping the *fs.PathError.
+func TestOpenErrors(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "missing.txt")
+	for name, src := range map[string]Source[string]{
+		"table": TableFile(path, DefaultTableFormat()),
+		"csv":   CSVFile(path, CSVFormat{}),
+	} {
+		_, err := readPass(src)
+		pe, ok := errors.AsType[*fs.PathError](err)
+		if !ok || !errors.Is(err, fs.ErrNotExist) || pe.Path != path ||
+			!strings.HasPrefix(err.Error(), "cannot open file "+path+": ") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// TestReplayCheck checks that file sources detect a file that changes
+// between the passes of a mining run (size or modification time), and
+// that separate runs do not share the check.
+func TestReplayCheck(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "db.txt")
+	write := func(data string, mtime time.Time) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name  string
+		data  string // written before the second pass
+		mtime time.Time
+		ok    bool
+	}{
+		{"unchanged", "a b\nb\n", t0, true},
+		{"same size, new time", "a c\nb\n", t0.Add(time.Second), false},
+		{"new size, same time", "a b\nb\nb\n", t0, false},
+	}
+	for _, tt := range tests {
+		for _, kind := range []string{"table", "csv"} {
+			write("a b\nb\n", t0)
+			calls := 0
+			open := func() (io.ReadCloser, error) {
+				if calls++; calls == 2 {
+					write(tt.data, tt.mtime)
+				}
+				return openFile(path)()
+			}
+			src := TableReader(open, path, DefaultTableFormat())
+			if kind == "csv" {
+				src = CSVReader(open, path, CSVFormat{Comma: ' '})
+			}
+			_, err := MineItemsets(context.Background(), src, Options[string]{MinSupport: Count(1)}, nil)
+			if tt.ok != (err == nil) || !tt.ok && (!errors.Is(err, ErrNotReplayable) ||
+				!strings.Contains(err.Error(), "changed between passes")) {
+				t.Errorf("%s/%s: %v", tt.name, kind, err)
+			}
+			// a new run starts a new check
+			if _, err := MineItemsets(context.Background(), src, Options[string]{MinSupport: Count(1)}, nil); err != nil {
+				t.Errorf("%s/%s: second run: %v", tt.name, kind, err)
+			}
+		}
 	}
 }
 
@@ -350,7 +518,7 @@ func (r *errReader) Read(p []byte) (int, error) {
 func TestSpool(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	src, cleanup, err := SpoolTable(strings.NewReader("a b\nb c\na b c\n"), dir, DefaultTableFormat())
+	src, cleanup, err := SpoolTable(context.Background(), strings.NewReader("a b\nb c\na b c\n"), dir, DefaultTableFormat())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +526,7 @@ func TestSpool(t *testing.T) {
 	if err != nil || len(sets) != 5 {
 		t.Fatalf("table: %v %v", sets, err)
 	}
-	csrc, ccleanup, err := SpoolCSV(strings.NewReader("w,i\n2,a\n1,\"b,c\"\n"), dir, CSVFormat{HasHeader: true, WeightColumn: 1})
+	csrc, ccleanup, err := SpoolCSV(context.Background(), strings.NewReader("w,i\n2,a\n1,\"b,c\"\n"), dir, CSVFormat{HasHeader: true, WeightColumn: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,19 +549,44 @@ func TestSpool(t *testing.T) {
 		t.Errorf("source after cleanup: %v", err)
 	}
 	errBroken := errors.New("broken pipe")
-	if s, c, err := SpoolCSV(&errReader{n: 100000, err: errBroken}, dir, CSVFormat{}); !errors.Is(err, errBroken) || s != nil || c != nil {
+	if s, c, err := SpoolCSV(context.Background(), &errReader{n: 100000, err: errBroken}, dir, CSVFormat{}); !errors.Is(err, errBroken) || s != nil || c != nil {
 		t.Errorf("failing reader: %v", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("spool files left after error: %v", entries)
 	}
-	if _, _, err := SpoolTable(strings.NewReader("a"), filepath.Join(dir, "no", "such"), DefaultTableFormat()); err == nil {
+	if _, _, err := SpoolTable(context.Background(), strings.NewReader("a"), filepath.Join(dir, "no", "such"), DefaultTableFormat()); err == nil {
 		t.Error("expected error for a missing directory")
 	}
-	if _, _, err := SpoolTable(nil, dir, DefaultTableFormat()); err == nil {
-		t.Error("expected error for a nil reader")
+	if _, _, err := SpoolTable(context.Background(), nil, dir, DefaultTableFormat()); !errors.Is(err, ErrInvalidOptions) {
+		t.Errorf("nil reader: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if s, c, err := SpoolCSV(ctx, strings.NewReader("a"), dir, CSVFormat{}); err != context.Canceled || s != nil || c != nil {
+		t.Errorf("canceled before: %v", err)
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	reads := 0
+	r := readerFunc(func(p []byte) (int, error) {
+		if reads++; reads == 3 {
+			cancel()
+		}
+		return copy(p, "a b\n"), nil // endless
+	})
+	if s, c, err := SpoolTable(ctx, r, dir, DefaultTableFormat()); err != context.Canceled || s != nil || c != nil || reads != 3 {
+		t.Errorf("canceled while copying: %v after %d reads", err, reads)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("spool files left after cancellation: %v", entries)
 	}
 }
+
+// readerFunc adapts a function to io.Reader.
+type readerFunc func(p []byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 
 // genReader produces a deterministic transaction file of about size
 // bytes, comma-separated, lazily (nothing is held in memory). Item i0 is
@@ -460,7 +653,8 @@ func (h *heapProbe[T]) Transactions() iter.Seq2[Transaction[T], error] {
 
 // TestLargeFileStreaming mines a generated file of about 50 MB (20 MB
 // with -short or -race) through TableFile, CSVFile and SpoolCSV and checks that the
-// heap stays below 8 MB.
+// heap stays below 8 MB while the passes read the file, while mining
+// reports results and after mining.
 func TestLargeFileStreaming(t *testing.T) {
 	size := 50 << 20
 	if testing.Short() || raceEnabled {
@@ -498,22 +692,36 @@ func TestLargeFileStreaming(t *testing.T) {
 		probe.sample()
 		base := probe.peak
 		probe.peak = 0
-		sets, sum, err := CollectItemsets(context.Background(), probe,
-			Options[string]{MinSupport: Fraction(0.3)})
+		var sets []Itemset[string]
+		var mining heapProbe[string] // heap while the trees exist
+		sum, err := MineItemsets(context.Background(), probe, Options[string]{MinSupport: Fraction(0.3)},
+			func(s Itemset[string]) error {
+				mining.sample()
+				sets = append(sets, s.Clone())
+				return nil
+			})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		probe.sample()
+		var after heapProbe[string] // heap after mining, before a GC
+		after.sample()
 		got := fmt.Sprint(sets, sum.Transactions)
 		if want == "" {
 			want = got
 		} else if got != want {
 			t.Errorf("%s: results differ: %s vs %s", name, got, want)
 		}
-		t.Logf("%s: file %.1f MB, %d transactions, heap peak %.1f MB (baseline %.1f MB), %d sets",
-			name, float64(fileSize)/(1<<20), sum.Transactions, float64(probe.peak)/(1<<20), float64(base)/(1<<20), len(sets))
-		if probe.peak > limit {
-			t.Errorf("%s: heap peak %d bytes exceeds %d", name, probe.peak, limit)
+		t.Logf("%s: file %.1f MB, %d transactions, heap peak while reading %.1f MB, while mining %.1f MB, "+
+			"after %.1f MB (baseline %.1f MB), %d sets", name, float64(fileSize)/(1<<20), sum.Transactions,
+			float64(probe.peak)/(1<<20), float64(mining.peak)/(1<<20), float64(after.peak)/(1<<20),
+			float64(base)/(1<<20), len(sets))
+		if len(sets) == 0 || mining.peak == 0 {
+			t.Fatalf("%s: no item sets, no samples while mining", name)
+		}
+		for phase, peak := range map[string]uint64{"reading": probe.peak, "mining": mining.peak, "after mining": after.peak} {
+			if peak > limit {
+				t.Errorf("%s: heap %d bytes %s exceeds %d", name, peak, phase, limit)
+			}
 		}
 	}
 	check("table", TableFile(path, DefaultTableFormat()))
@@ -521,7 +729,7 @@ func TestLargeFileStreaming(t *testing.T) {
 	runtime.GC()
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
-	src, cleanup, err := SpoolCSV(newGenReader(size), dir, CSVFormat{})
+	src, cleanup, err := SpoolCSV(context.Background(), newGenReader(size), dir, CSVFormat{})
 	if err != nil {
 		t.Fatal(err)
 	}

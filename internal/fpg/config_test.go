@@ -32,6 +32,9 @@ func TestConfigValidate(t *testing.T) {
 		{"negative algo", func(c *Config) { c.Algo = -1 }},
 		{"mode bits", func(c *Config) { c.Mode |= 0x1f }},
 		{"pack negative", func(c *Config) { c.Pack = -1 }},
+		{"negative min count", func(c *Config) { c.HasCounts, c.MinCount = true, -1 }},
+		{"negative max count", func(c *Config) { c.HasCounts, c.MaxCount = true, -1 }},
+		{"prune without filter", func(c *Config) { c.EvalNoFilter, c.Prune = true, 0 }},
 	}
 	for _, tt := range tests {
 		c := DefaultConfig()

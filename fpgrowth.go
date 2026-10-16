@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"reflect"
 	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
@@ -33,18 +34,42 @@ func (s Itemset[T]) Clone() Itemset[T] {
 	return s
 }
 
-// Summary describes a mining run.
-type Summary struct {
+// Stats describes the database of a mining run and the support
+// thresholds resolved for it. Mining passes it to Options.OnStart or
+// RuleOptions.OnStart before the first result, when it is known (after
+// the first pass, and after the second one if there are frequent items),
+// and returns it as part of the Summary.
+//
+// Counts that describe the input (transactions, items) are int64 like
+// Transaction.Weight and the supports; counts of results are uint64 (see
+// Summary).
+type Stats struct {
 	// Transactions is the number of transactions of one pass, including
 	// empty ones and those with weight 0.
-	Transactions int
+	Transactions int64
 	// TotalWeight is the total transaction weight, the support of the
-	// empty set.
+	// empty set. Relative supports are Support / TotalWeight.
 	TotalWeight int64
-	// Items is the number of frequent items (after the item restriction
-	// of Options.Items or the appearances of RuleOptions). If it is 0,
-	// nothing was mined and nothing was reported.
-	Items int
+	// FrequentItems is the number of frequent items (after the item
+	// restriction of Options.Items or the appearances of RuleOptions). For
+	// rules, an item is frequent if it reaches the minimum support of body
+	// and head together, which is MinSupport times MinConfidence unless
+	// OriginalSupport is set. If FrequentItems is 0, nothing is mined and
+	// nothing is reported.
+	FrequentItems int64
+	// MinSupport is the absolute minimum support that MinSupport resolved
+	// to for TotalWeight; at least 1. For rules it applies to the support
+	// that RuleOptions.MinSupport applies to.
+	MinSupport int64
+	// MaxSupport is the absolute maximum support that MaxSupport resolved
+	// to; math.MaxInt64 if no maximum is set.
+	MaxSupport int64
+}
+
+// Summary describes a mining run: the Stats of its database and counts of
+// the reported results.
+type Summary struct {
+	Stats
 	// Reported is the number of reported item sets or rules. After an
 	// early stop it includes the one at which mining stopped.
 	Reported uint64
@@ -77,7 +102,17 @@ var errStop = errors.New("fpgrowth: iteration stopped")
 // BySize), which is faster. If ctx is canceled, mining stops and
 // MineItemsets returns ctx.Err(). Errors of src are returned wrapped with
 // the pass in which they occurred. A database without frequent items is
-// not an error: nothing is reported and Summary.Items is 0.
+// not an error: nothing is reported and Summary.FrequentItems is 0.
+//
+// Cancellation is checked between transactions while reading and
+// frequently, but not before every result, while mining: fn may still be
+// called for a few results (at most a few hundred item sets of the
+// current subtree) after ctx is canceled; MineItemsets then returns
+// ctx.Err() all the same.
+//
+// If opt.OnStart is set, it is called once before the first result (also
+// if nothing is reported), with the Stats of the database; its error
+// stops mining and is returned unchanged.
 //
 // MineItemsets is safe for concurrent use if src supports concurrent
 // passes. The Summary is valid also when an error is returned (as far as
@@ -92,6 +127,9 @@ func MineItemsets[T comparable](ctx context.Context, src Source[T], opt Options[
 	}
 	ib := tract.NewItemBase[T]()
 	if len(opt.Items) > 0 {
+		if err := checkItems("Items", opt.Items); err != nil {
+			return Summary{}, err
+		}
 		if err := ib.Select(opt.Items...); err != nil {
 			return Summary{}, mapInternal(err)
 		}
@@ -182,9 +220,9 @@ type resultSink[T comparable] interface {
 }
 
 // mine runs the pipeline shared by item sets and rules: pass 1 (count),
-// thresholds, pass 2 (bag), reporter set-up, mining. hook, if not nil, is
-// called for every transaction of pass 1 before it is counted. A nil sink
-// only counts.
+// thresholds, pass 2 (bag), OnStart, reporter set-up, mining. hook, if not
+// nil, is called for every transaction of pass 1 before it is counted. A
+// nil sink only counts.
 func mine[T comparable](
 	ctx context.Context,
 	src Source[T],
@@ -196,26 +234,40 @@ func mine[T comparable](
 	if err := ctx.Err(); err != nil {
 		return Summary{}, err
 	}
-	sc := &scanner[T]{ctx: ctx, src: src, hook: hook}
+	if rs, ok := src.(runSource[T]); ok {
+		src = rs.forRun() // per-run replay checks of file sources
+	}
+	sc := newScanner(ctx, src, hook)
 	if err := ib.Count(sc.scan); err != nil {
 		return Summary{}, sc.failure(err)
 	}
-	sum := Summary{Transactions: ib.Records(), TotalWeight: int64(ib.TotalWeight())}
-	if ib.Len() == 0 || ib.Records() == 0 {
-		return sum, nil
+	var sum Summary
+	sum.Transactions = int64(ib.Records())
+	sum.TotalWeight = int64(ib.TotalWeight())
+	border := p.setThresholds(&sum.Stats)
+	start := func() error {
+		if p.onStart == nil {
+			return nil
+		}
+		return p.onStart(sum.Stats)
 	}
-	border := p.setThresholds(sum.TotalWeight)
+	if ib.Len() == 0 || ib.Records() == 0 {
+		return sum, start()
+	}
 	m, err := fpg.New[T](p.cfg)
 	if err != nil {
 		return sum, mapInternal(err) // excluded by validation
 	}
 	if err := m.Data(ib, sc.scan); err != nil {
 		if errors.Is(err, fpg.ErrNoItems) {
-			return sum, nil
+			return sum, start()
 		}
 		return sum, sc.failure(err)
 	}
-	sum.Items = ib.Len()
+	sum.FrequentItems = int64(ib.Len())
+	if err := start(); err != nil {
+		return sum, err // OnStart's error, unchanged
+	}
 	rep, err := m.Reporter()
 	if err != nil {
 		return sum, mapInternal(err) // excluded by the call order
@@ -257,12 +309,14 @@ func mine[T comparable](
 }
 
 // scanner adapts a Source to the internal scan function, counting the
-// passes, checking weights, replay consistency and cancellation.
+// passes, checking weights, items, replay consistency and cancellation.
 type scanner[T comparable] struct {
 	ctx  context.Context
 	src  Source[T]
 	hook func(items []T) error
 	pass int
+	// item checks needed for T (see itemKinds)
+	isDynamic, mayBeNaN bool
 	// transactions and total weight of pass 1
 	n1  int
 	w1  int64
@@ -271,6 +325,12 @@ type scanner[T comparable] struct {
 
 // checkEvery is the number of transactions between cancellation checks.
 const checkEvery = 1024
+
+func newScanner[T comparable](ctx context.Context, src Source[T], hook func([]T) error) *scanner[T] {
+	s := &scanner[T]{ctx: ctx, src: src, hook: hook}
+	s.isDynamic, s.mayBeNaN = itemKinds(reflect.TypeFor[T]())
+	return s
+}
 
 func (s *scanner[T]) fail(err error) error {
 	if s.err == nil {
@@ -316,6 +376,14 @@ func (s *scanner[T]) scan(yield func(items []T, w tract.Supp) bool) error {
 			return s.fail(newDetailError(fmt.Sprintf("%s: pass %d has more than the %d transactions of pass 1",
 				ErrNotReplayable, pass, s.n1), ErrNotReplayable))
 		}
+		if s.isDynamic || s.mayBeNaN {
+			for _, it := range tx.Items {
+				if msg := itemProblem(it, s.isDynamic); msg != "" {
+					return s.fail(newDetailError(fmt.Sprintf("%s: transaction %d (pass %d): %s",
+						ErrInvalidItem, n, pass, msg), ErrInvalidItem))
+				}
+			}
+		}
 		if done != nil && n%checkEvery == 0 {
 			select {
 			case <-done:
@@ -338,6 +406,55 @@ func (s *scanner[T]) scan(yield func(items []T, w tract.Supp) bool) error {
 		return s.fail(newDetailError(fmt.Sprintf(
 			"%s: pass %d has %d transactions of total weight %d, pass 1 had %d of total weight %d",
 			ErrNotReplayable, pass, n, w, s.n1, s.w1), ErrNotReplayable))
+	}
+	return nil
+}
+
+// itemKinds tells which run-time checks items of type t need: dynamic if
+// a value may hold an interface whose dynamic type is not comparable
+// (comparing or hashing it panics), mayBeNaN if a value may contain a
+// floating-point NaN, which is not equal to itself.
+func itemKinds(t reflect.Type) (dynamic, mayBeNaN bool) {
+	switch t.Kind() {
+	case reflect.Interface:
+		return true, true
+	case reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
+		return false, true
+	case reflect.Array:
+		return itemKinds(t.Elem())
+	case reflect.Struct:
+		for i := range t.NumField() {
+			d, n := itemKinds(t.Field(i).Type)
+			dynamic, mayBeNaN = dynamic || d, mayBeNaN || n
+		}
+	}
+	return dynamic, mayBeNaN
+}
+
+// itemProblem describes why it cannot be an item, or returns "". dynamic
+// is the first result of itemKinds for its type.
+func itemProblem[T comparable](it T, dynamic bool) string {
+	if dynamic {
+		if v := reflect.ValueOf(any(it)); v.IsValid() && !v.Comparable() {
+			return fmt.Sprintf("item of type %s is not comparable", v.Type())
+		}
+	}
+	if it != it {
+		return fmt.Sprintf("item %v is not equal to itself (NaN)", it)
+	}
+	return ""
+}
+
+// checkItems checks the items of an option field.
+func checkItems[T comparable](field string, items []T) error {
+	dynamic, mayBeNaN := itemKinds(reflect.TypeFor[T]())
+	if !dynamic && !mayBeNaN {
+		return nil
+	}
+	for i, it := range items {
+		if msg := itemProblem(it, dynamic); msg != "" {
+			return invalid(field, "item %d: %s", i, msg)
+		}
 	}
 	return nil
 }

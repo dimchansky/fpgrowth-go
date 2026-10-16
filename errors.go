@@ -26,8 +26,13 @@ var (
 	// ErrTooLarge reports a database or result structure that exceeds an
 	// implementation limit (2^31-1 tree nodes or items).
 	ErrTooLarge = errors.New("fpgrowth: database too large")
-	// ErrSyntax reports malformed input of a TableFile or CSVFile source.
+	// ErrSyntax reports malformed input of a table or CSV source.
 	ErrSyntax = errors.New("fpgrowth: syntax error")
+	// ErrInvalidItem reports an item that cannot be mined: a value whose
+	// dynamic type is not comparable (for example a slice in an item of
+	// interface type), or a value that is not equal to itself (a NaN, also
+	// inside a struct, array or interface).
+	ErrInvalidItem = errors.New("fpgrowth: invalid item")
 )
 
 // detailError is an error with its own message that matches several

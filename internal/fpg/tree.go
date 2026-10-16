@@ -123,21 +123,27 @@ func (m *Miner[T]) mineTree(ctx context.Context) error {
 	if isRuleEval(c.Eval) {
 		measure = ruleval.Measure(c.Eval)
 	}
+	ist.SetAbort(tm.aborted)
 	ist.SetEval(istree.Eval{
 		Measure:    measure,
 		Agg:        istree.Aggregation(c.Agg),
 		Invalidate: c.InvalidateBelowExpected,
 		Threshold:  c.Thresh / 100.0,
+		NoFilter:   c.EvalNoFilter,
 	})
-	prune := measure != ruleval.None && c.Prune > NoPrune
+	prune := measure != ruleval.None && c.Prune > NoPrune && !c.EvalNoFilter
 	if prune {
 		m.step(PhaseFilter, false)
-		ist.Filter(c.Prune)
+		if err := ist.Filter(c.Prune); err != nil {
+			return err
+		}
 		m.step(PhaseFilter, true)
 	}
 	if c.Target&(report.TargetClosed|report.TargetMaximal|report.TargetGenerators) != 0 {
 		m.step(PhaseCloMax, false)
-		ist.CloMax(c.Target, prune)
+		if err := ist.CloMax(c.Target, prune); err != nil {
+			return err
+		}
 		m.step(PhaseCloMax, true)
 	}
 	if err := tm.aborted(); err != nil {
@@ -155,6 +161,10 @@ func (m *Miner[T]) mineTree(ctx context.Context) error {
 	m.step(PhaseReport, true)
 	return nil
 }
+
+// fillCheckEvery is the number of transactions between cancellation
+// checks while fillTree builds the FP-tree.
+const fillCheckEvery = 4096
 
 // fillTree is a port of fpg_tree: it builds a simple FP-tree of the
 // frequent items (no perfect extension pruning, no 16-items machine) and
@@ -185,7 +195,13 @@ func (m *miner) fillTree(ist *istree.Tree) error {
 		t.heads[i] = fpHead{item: tract.Item(item), supp: f[item], list: nilIdx}
 	}
 	buf := make([]int32, k)
+	nt := 0
 	for items, w := range m.bag.Backward() {
+		if nt++; nt%fillCheckEvery == 0 {
+			if err := m.aborted(); err != nil {
+				return err
+			}
+		}
 		n := 0
 		for _, p := range items {
 			// packed entries cannot occur: the rules path never packs

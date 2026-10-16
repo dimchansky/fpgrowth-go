@@ -20,41 +20,42 @@ type Target int
 
 // Item set targets.
 const (
-	// Frequent reports all frequent item sets (upstream -ts, default).
-	Frequent Target = iota
-	// Closed reports closed item sets: frequent sets without a superset of
-	// the same support (-tc).
-	Closed
-	// Maximal reports maximal item sets: frequent sets without a frequent
-	// superset (-tm).
-	Maximal
-	// Generators reports generators (free or key item sets): frequent sets
-	// without a subset of the same support (-tg).
-	Generators
+	// TargetFrequent reports all frequent item sets (upstream -ts,
+	// default).
+	TargetFrequent Target = iota
+	// TargetClosed reports closed item sets: frequent sets without a
+	// superset of the same support (-tc).
+	TargetClosed
+	// TargetMaximal reports maximal item sets: frequent sets without a
+	// frequent superset (-tm).
+	TargetMaximal
+	// TargetGenerators reports generators (free or key item sets):
+	// frequent sets without a subset of the same support (-tg).
+	TargetGenerators
 )
 
 // String returns the name of the constant.
 func (t Target) String() string {
 	switch t {
-	case Frequent:
-		return "Frequent"
-	case Closed:
-		return "Closed"
-	case Maximal:
-		return "Maximal"
-	case Generators:
-		return "Generators"
+	case TargetFrequent:
+		return "TargetFrequent"
+	case TargetClosed:
+		return "TargetClosed"
+	case TargetMaximal:
+		return "TargetMaximal"
+	case TargetGenerators:
+		return "TargetGenerators"
 	}
 	return fmt.Sprintf("Target(%d)", int(t))
 }
 
 func (t Target) internal() report.Target {
 	switch t {
-	case Closed:
+	case TargetClosed:
 		return report.TargetClosed
-	case Maximal:
+	case TargetMaximal:
 		return report.TargetMaximal
-	case Generators:
+	case TargetGenerators:
 		return report.TargetGenerators
 	}
 	return report.TargetAll
@@ -67,45 +68,46 @@ type Algorithm int
 
 // FP-growth variants.
 const (
-	// Auto lets the library choose; currently Complex (upstream default).
-	Auto Algorithm = iota
-	// Simple uses simple tree nodes (-As).
-	Simple
-	// Complex uses complex tree nodes with item reordering (-Ac).
-	Complex
-	// SingleTree processes a single prefix tree top-down (-Ad).
-	SingleTree
-	// TopDown processes the prefix trees top-down (-At). It does not use
-	// the k-items machine (Tuning.ItemMachine).
-	TopDown
+	// AlgorithmAuto lets the library choose; currently AlgorithmComplex
+	// (upstream default).
+	AlgorithmAuto Algorithm = iota
+	// AlgorithmSimple uses simple tree nodes (-As).
+	AlgorithmSimple
+	// AlgorithmComplex uses complex tree nodes with item reordering (-Ac).
+	AlgorithmComplex
+	// AlgorithmSingleTree processes a single prefix tree top-down (-Ad).
+	AlgorithmSingleTree
+	// AlgorithmTopDown processes the prefix trees top-down (-At). It does
+	// not use the k-items machine (Tuning.ItemMachine).
+	AlgorithmTopDown
 )
 
 // String returns the name of the constant.
 func (a Algorithm) String() string {
 	switch a {
-	case Auto:
-		return "Auto"
-	case Simple:
-		return "Simple"
-	case Complex:
-		return "Complex"
-	case SingleTree:
-		return "SingleTree"
-	case TopDown:
-		return "TopDown"
+	case AlgorithmAuto:
+		return "AlgorithmAuto"
+	case AlgorithmSimple:
+		return "AlgorithmSimple"
+	case AlgorithmComplex:
+		return "AlgorithmComplex"
+	case AlgorithmSingleTree:
+		return "AlgorithmSingleTree"
+	case AlgorithmTopDown:
+		return "AlgorithmTopDown"
 	}
 	return fmt.Sprintf("Algorithm(%d)", int(a))
 }
 
 func (a Algorithm) internal() fpg.Algorithm {
 	switch a {
-	case Simple:
+	case AlgorithmSimple:
 		return fpg.AlgoSimple
-	case Complex:
+	case AlgorithmComplex:
 		return fpg.AlgoComplex
-	case SingleTree:
+	case AlgorithmSingleTree:
 		return fpg.AlgoSingle
-	case TopDown:
+	case AlgorithmTopDown:
 		return fpg.AlgoTopDown
 	}
 	return fpg.AlgoAuto
@@ -221,7 +223,8 @@ type Support struct {
 
 // Count returns the absolute support n: the sum of the weights of the
 // transactions that contain an item set. n must not be negative. A
-// minimum support below 1 acts as 1.
+// minimum support below 1 acts as 1. Counts are exact over the whole
+// int64 range; both bounds are inclusive.
 func Count(n int64) Support { return Support{kind: supportCount, count: n} }
 
 // Fraction returns a support of f times the total transaction weight W,
@@ -230,6 +233,9 @@ func Count(n int64) Support { return Support{kind: supportCount, count: n} }
 // thresholds, this tolerates the representation error of decimal
 // fractions, so Fraction(0.3) of W = 10 is exactly 3. Fraction(k/100)
 // gives exactly the thresholds of the command line options -sk and -Sk.
+// The tolerance is relative: for a total weight beyond 2^53 it is more
+// than one (Fraction(1) of W = 2^60+1 is a minimum of W-256); use Count
+// for exact bounds.
 func Fraction(f float64) Support { return Support{kind: supportFraction, frac: f} }
 
 // IsZero reports whether s is the zero value (not set).
@@ -299,27 +305,6 @@ func suppFromFloat(x float64) int64 {
 		return math.MaxInt64
 	}
 	return int64(x)
-}
-
-// minSuppArg returns the upstream -s argument (negative: absolute) that
-// makes fpg compute the absolute minimum support n: the smallest float64
-// >= n, so the minimum is never below n (exact up to 2^53).
-func minSuppArg(n int64) float64 {
-	x := float64(n)
-	if x < 0x1p63 && int64(x) < n {
-		x = math.Nextafter(x, math.Inf(1))
-	}
-	return -x
-}
-
-// maxSuppArg returns the upstream -S argument for the absolute maximum
-// support n: the largest float64 <= n, so the maximum is never above n.
-func maxSuppArg(n int64) float64 {
-	x := float64(n)
-	if x >= 0x1p63 || int64(x) > n {
-		x = math.Nextafter(x, math.Inf(-1))
-	}
-	return -x
 }
 
 // percentOf converts a fraction to the percentage p that the internal
@@ -394,6 +379,11 @@ type Options[T comparable] struct {
 	Evaluation *Evaluation
 	// PatternSpectrum fills Summary.Spectrum.
 	PatternSpectrum bool
+	// OnStart, if not nil, is called once before the first item set is
+	// reported (also if none is), with the Stats of the database: the
+	// total weight for relative supports, the resolved thresholds. Its
+	// error stops mining and is returned unchanged.
+	OnStart func(Stats) error
 }
 
 // sizes validates and resolves the size range (zmin, zmax).
@@ -431,17 +421,18 @@ type plan struct {
 	border     []Support
 	spectrum   bool
 	hasEval    bool
+	onStart    func(Stats) error
 }
 
-// setThresholds fills the support thresholds of p.cfg for the total
-// weight w and returns the absolute border.
-func (p *plan) setThresholds(w int64) []tract.Supp {
-	p.cfg.SMin = minSuppArg(p.minSupport.minAbs(w))
-	if p.maxSupport.IsZero() {
-		p.cfg.SMax = 100 // upstream default: 100% of the total weight
-	} else {
-		p.cfg.SMax = maxSuppArg(p.maxSupport.maxAbs(w))
-	}
+// setThresholds resolves the support thresholds for st.TotalWeight, stores
+// them in st and, as exact absolute supports, in p.cfg, and returns the
+// absolute border.
+func (p *plan) setThresholds(st *Stats) []tract.Supp {
+	w := st.TotalWeight
+	st.MinSupport = max(p.minSupport.minAbs(w), 1)
+	st.MaxSupport = p.maxSupport.maxAbs(w)
+	p.cfg.HasCounts = true
+	p.cfg.MinCount, p.cfg.MaxCount = tract.Supp(st.MinSupport), tract.Supp(st.MaxSupport)
 	if len(p.border) == 0 {
 		return nil
 	}
@@ -468,10 +459,10 @@ func (o *Options[T]) plan() (*plan, error) {
 			return nil, err
 		}
 	}
-	if o.Target < Frequent || o.Target > Generators {
+	if o.Target < TargetFrequent || o.Target > TargetGenerators {
 		return nil, invalid("Target", "invalid value %d", int(o.Target))
 	}
-	if o.Algorithm < Auto || o.Algorithm > TopDown {
+	if o.Algorithm < AlgorithmAuto || o.Algorithm > AlgorithmTopDown {
 		return nil, invalid("Algorithm", "invalid value %d", int(o.Algorithm))
 	}
 	if err := o.Tuning.validate(); err != nil {
@@ -501,5 +492,6 @@ func (o *Options[T]) plan() (*plan, error) {
 		border:     o.Border,
 		spectrum:   o.PatternSpectrum,
 		hasEval:    o.Evaluation != nil,
+		onStart:    o.OnStart,
 	}, nil
 }

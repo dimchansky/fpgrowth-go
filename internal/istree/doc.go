@@ -32,12 +32,17 @@
 //	                if m > 0 { rec(i) }
 //	                t.Up()
 //	            }
+//	t.SetAbort(abort)                      // optional cancellation check
 //	t.SetEval(eval)                        // before Filter (B2)
-//	if measure set && prune > ITEM_MIN { t.Filter(prune) }
-//	if closed/maximal/generators { t.CloMax(target, measure set && prune > ITEM_MIN) }
+//	if measure set && prune > ITEM_MIN { err = t.Filter(prune) }
+//	if closed/maximal/generators { err = t.CloMax(target, measure set && prune > ITEM_MIN) }
 //	t.Init()
-//	t.Report(reporter, target)
+//	err = t.Report(reporter, target)
 //
+// Filter, CloMax and Report return only the error of the abort function
+// (and Report the sink's error); they check it every few hundred nodes or
+// counters, so cancellation is prompt also for trees with millions of
+// sets.
 // Here supp(i) is the support of the current set extended by item i in the
 // conditional FP-tree, smin is fpgrowth's set minimum support (fpg->supp)
 // and items are the recoded codes. The reporter must be configured with
