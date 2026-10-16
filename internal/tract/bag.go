@@ -213,7 +213,7 @@ func (bb *bagBuilder) child(v int32, c Item) int32 {
 		ch := bag.rootChild[c]
 		if ch == 0 {
 			ch = int32(len(bag.nodes)) // add checked the capacity
-			bag.nodes = append(bag.nodes, node{item: c, wgt: -1})
+			bag.nodes = append(growNodes(bag.nodes), node{item: c, wgt: -1})
 			bag.rootChild[c] = ch
 		}
 		return ch
@@ -251,10 +251,23 @@ func (bb *bagBuilder) child(v int32, c Item) int32 {
 func (bb *bagBuilder) link(v int32, c Item) int32 {
 	bag := bb.bag
 	ch := int32(len(bag.nodes)) // add checked the capacity
-	bag.nodes = append(bag.nodes, node{item: c, sibling: bag.nodes[v].child, wgt: -1})
+	bag.nodes = append(growNodes(bag.nodes), node{item: c, sibling: bag.nodes[v].child, wgt: -1})
 	bag.nodes[v].child = ch
 	bag.nodes[v].nchild++
 	return ch
+}
+
+// growNodes returns nodes with room for one more node, doubling the
+// capacity when it must grow. append grows large slices by only a
+// quarter, which copied every node about five times while building a
+// prefix tree of hundreds of thousands of nodes. (The tree is not
+// presized from the item occurrences of pass 1: a bag of few distinct
+// transactions must stay small however long the input is.)
+func growNodes(nodes []node) []node {
+	if len(nodes) < cap(nodes) {
+		return nodes
+	}
+	return slices.Grow(nodes, len(nodes))
 }
 
 // childKey is the index map key of the child of v for item c.
