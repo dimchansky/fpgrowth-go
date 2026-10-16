@@ -23,6 +23,7 @@ Status: **decided** (policy fixed, implementation pending) or
 | M5 | Closed/maximal targets with `-n` can report non-closed/non-maximal sets (core B5) | Closure is always computed; results equal the brute-force definition | decided |
 | M6 | Negative weights corrupt supports and crash the 16-items machine (core B7, tract) | Negative weights are rejected with an error | decided |
 | M7 | Supports and weight sums are 32-bit `int`; overflow is undefined behavior (tract, cli) | 64-bit supports; total-weight overflow is an error | decided |
+| M9 | Maximal target with `-x` and the 16-items machine (`-As`/`-Ad`) loses maximal sets, e.g. a single transaction `a` gives no output (reference-build bug 3) | Maximal sets reported in all variants | decided |
 | M8 | Out-of-range floating-point thresholds are converted to `int` with undefined behavior (core B9) | Explicit clamping | decided |
 
 ## Rules and evaluation
