@@ -3,6 +3,7 @@ package istree
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
@@ -466,7 +467,7 @@ func (t *Tree) children(ni int32) (bool, error) {
 	nd.chcnt = n
 	nd.chFirst = first
 	base := len(t.chn)
-	t.chn = append(t.chn, make([]int32, n)...)
+	t.chn = append(grow(t.chn, int(n)), make([]int32, n)...)
 	slots := t.chn[base:]
 	if nd.offset >= 0 {
 		for i := range slots {
@@ -573,13 +574,13 @@ func (t *Tree) newChild(ni int32, index int32) (int32, error) {
 		c.offset = -1
 		c.size = m
 		c.ids = int32(len(t.ids))
-		t.cnts = append(t.cnts, make([]tract.Supp, m)...)
-		t.ids = append(t.ids, cand...)
+		t.cnts = append(grow(t.cnts, int(m)), make([]tract.Supp, m)...)
+		t.ids = append(grow(t.ids, int(m)), cand...)
 	} else {
 		c.offset = int32(cand[0])
 		c.size = n
 		base := len(t.cnts)
-		t.cnts = append(t.cnts, make([]tract.Supp, n)...)
+		t.cnts = append(grow(t.cnts, int(n)), make([]tract.Supp, n)...)
 		cs := t.cnts[base:]
 		for i := range cs {
 			cs[i] = skip
@@ -588,8 +589,20 @@ func (t *Tree) newChild(ni int32, index int32) (int32, error) {
 			cs[int32(k)-c.offset] = 0
 		}
 	}
-	t.nodes = append(t.nodes, c)
+	t.nodes = append(grow(t.nodes, 1), c)
 	return int32(len(t.nodes) - 1), nil
+}
+
+// grow returns s with room for n more elements, doubling the capacity
+// when it must grow. The arenas of a Tree only grow, to millions of
+// entries on large rule runs, and append's growth by a quarter for large
+// slices copies every entry several times (the sparse rules benchmark
+// with lift allocated 114 MB per run, 49 MB with doubling).
+func grow[E any](s []E, n int) []E {
+	if cap(s)-len(s) >= n {
+		return s
+	}
+	return slices.Grow(s, max(n, len(s)))
 }
 
 // makelvls is a port of makelvls()/reclvls(): it rebuilds the per-level
