@@ -1,8 +1,11 @@
-# Benchmarks (Stage 3 baseline)
+# Benchmarks (Stage 3)
 
-**Status: baseline, before any optimization.** Every number below was
-measured on commit `c16c2f5` (end of Stage 2) plus the new benchmark files
-only; no production code was changed. The numbers describe one machine
+**Status: baseline and optimization pass.** The sections from
+[Environment](#environment) to [Optimization candidates](#optimization-candidates)
+are the baseline: measured on commit `c16c2f5` (end of Stage 2) plus the
+new benchmark files only, before any optimization (the M5 rows were
+re-measured on `3e5d372`, see there). [After optimization](#after-optimization)
+records every optimization attempt and the state after them. The numbers describe one machine
 under the load stated below; they are not general performance claims.
 Re-run the commands in [Reproducing](#reproducing) before comparing a
 later state against this one, on the same machine and toolchain.
@@ -17,6 +20,7 @@ Contents:
 - [Go benchmark results](#go-benchmark-results)
 - [Profiles](#profiles)
 - [Optimization candidates](#optimization-candidates)
+- [After optimization](#after-optimization)
 - [Reproducing](#reproducing)
 - [Appendix: full results](#appendix-full-results)
 
@@ -181,14 +185,19 @@ Observations (from these measurements only):
   long data (87–97 vs 342–344 MB), more on sparse data (24 vs 12 MB,
   where the Go runtime's own footprint dominates), on `sparse-large`
   (139–154 vs 77–78 MB) and on rules (38–70 vs 12–22 MB).
-- **Size-limited closed/maximal sets are the largest gap.** Outside the
-  comparison script (3 runs each, `dense.tab -s2 -n3`, identical counts):
-  frequent C 0.45 s / Go 0.67 s (1.5×), closed C 1.95 s / Go 4.54 s
-  (2.3×), maximal C 1.10 s / Go 2.73 s (2.5×). In-process,
-  `MaxSize/dense/s=2/closed/n=3` takes 4.39 s vs 0.60 s for frequent
-  sets. This is the closed/maximal size-limit cost listed for Stage 3 in
-  the README (deviation M5); it is being worked on separately and is not
-  ranked below.
+- **Size-limited closed/maximal sets (M5).** At `c16c2f5` the search
+  explored the whole closed lattice beyond the size limit, which made
+  this the largest gap (`dense.tab -s2 -n3`, 3 runs: closed C 1.95 s /
+  Go 4.54 s, maximal C 1.10 s / Go 2.73 s; `MaxSize/dense/s=2/closed/n=3`
+  4.39 s). Since `3e5d372` the search is size-limited with a complete
+  extension check ([M5 investigation](m5-investigation.md)); re-measured
+  there (CLI, `/dev/null`, medians of 5 interleaved runs): frequent
+  C 444 / Go 641 ms, closed C 1917 / Go 752 ms, maximal C 1055 /
+  Go 954 ms, i.e. Go is faster than C for closed/maximal on dense data;
+  in process `MaxSize/dense/s=2/closed/n=3` 731 ms vs 609 ms for
+  frequent sets (n = 6). On sparse data the check costs Go up to 2.6× C
+  (`sparse.tab -tc -s0.05 -n3`: C 43 ms, Go 113 ms). Numbers after the
+  optimization pass: [M5](#m5-size-limited-closedmaximal).
 
 ### Algorithm-only comparison
 
@@ -279,7 +288,7 @@ setup). Function names are in `internal/fpg` unless stated.
 | dense rules `-n4` | `relink` (tree.go, rules path) **73.4** / 73.7 |
 | sparse rules + lift | `relink` 9.8; `istree.Tree.newChild` 9.2 / 22.9; `istree.Tree.getsupp` 6.4 / 14.4; `istree.Tree.child` 6.1; `recTree` cum 38.2 |
 | sparse-large, memory source | `csCondSupp` 20.9; `maps.memHashAES` 8.0 + `mapaccess2_faststr` cum 10.9; `mine16` 6.2; `tract.bagBuilder.child` cum 11.8; `tract.ItemBase.countRecord` cum 8.3 |
-| dense closed `s=2 -n3` (M5) | `report.cmTree.add` 26.3 / 31.2; `csCondSupp` 16.7; `mine16` 11.1 / 62.6; `closedMaximal.update` cum 32.6 |
+| dense closed `s=2 -n3` (M5) | limited search + extension check (`3e5d372`): `projCmplx` 20.1 / 66.9; `csCondSupp` 19.5; `extChecker.scanCover` 13.6; `addCmplx` 11.0 / 17.8; `extChecker.bitCover` 8.9; `csArena.get` 4.4. (Full exploration at `c16c2f5`: `report.cmTree.add` 26.3 / 31.2; `csCondSupp` 16.7; `mine16` 11.1 / 62.6; `closedMaximal.update` cum 32.6) |
 
 Line-level evidence (`pprof -list`, dense frequent):
 
@@ -375,12 +384,254 @@ results or their order.
 | 7 | **Item set tree growth** for rules (`istree.newChild` / `children` appends) | 2.51 GB alloc_space (78 %) on sparse rules + lift; Go RSS 3× C on rules (70 vs 21 MB) | lower B/op and RSS for rules; some CPU via `madvise` | `SuiteRules`, compare.sh `sparse-r*` |
 | 8 | **CSV source allocations** (`encoding/csv` record per line; `ReuseRecord`) | 442k allocs/op vs 41.7k for the table reader on the same data; same speed | allocations only; small time effect | `SuiteSources/*/csv-file`, `SuiteReadOnly/*/csv-file` |
 | 9 | **Top-down variant on sparse data** | `SuiteVariants/sparse/.../topdown` 81.9 ms vs 27.8–34.5 ms for the others; C `-At` was not measured on sparse data | variant-specific; check against C first (may be inherent to the algorithm) | add an `-At` sparse row to `configs.txt` |
-| — | Size-limited closed/maximal (M5) | 4.39 s vs 0.60 s frequent; Go/C 2.3–2.5× | handled separately (not ranked) | `SuiteMaxSize` |
+| — | Size-limited closed/maximal (M5) | full exploration at `c16c2f5`: 4.39 s vs 0.60 s frequent, Go/C 2.3–2.5×; limited search with extension check since `3e5d372`: 731 ms vs 609 ms, faster than C on dense data, up to 2.6× C on sparse data (per-set check) | sparse data: the per-set check cost (incremental covers) | `SuiteMaxSize`, `fpg BenchmarkCloMaxLimited`, CLI `sparse.tab -tc -s0.05 -n3` |
 
 Not candidates on this evidence: GC tuning (GC ≤ 1 % of CPU), allocation
 counts on the result path (constant, 200–400 per run), the public API
 layer (callback/iterator within noise of the internal pipeline), and
 read syscalls (see the caveat above).
+
+## After optimization
+
+Measured on the working tree after the optimization pass ("final")
+against commit `3e5d372` ("base": the baseline code of this report plus
+the size-limited closed/maximal search with the complete extension check
+of [M5](m5-investigation.md)). Same machine, toolchain and build flags as
+in [Environment](#environment). Outputs are unchanged: CLI golden tests,
+`reference/difftest` (byte-identical to the C reference) and the fuzzers
+pass, and every benchmark below reports the same result counts before
+and after.
+
+Method: for every candidate the test binaries of the state before and
+after the change were built once (`go test -c`) and run alternately,
+one `-test.count 1 -test.benchmem` run each, 6 to 10 times
+(`old; new; old; new; ...`), so that drifting load affects both alike;
+`benchstat` (legacy format, Mann-Whitney U test) decides. A change was
+kept only with a significant gain (p < 0.05) on its target benchmarks
+and no significant loss elsewhere. Load averages during the final
+base-vs-final suite run: 108 (1 min) at its start (a short foreign load
+spike), 3–5 afterwards; the C comparison ran at load 2.6–5.5.
+
+### Attempts
+
+Deltas are time/op unless stated (before → after the change); n is the
+number of runs per side; "~" = not significant. Each step was measured
+against the state before it, so the rows do not add up exactly.
+
+| # | Change | Files | Result | Key numbers |
+| --- | --- | --- | --- | --- |
+| 1 | Complex-variant hot loops: one pointer per node in the walks (`csCondSupp`, `mine16`, `projCmplx`, `projReord`), `*int32` link instead of the `csLink` get/set pair in `addCmplx`/`addReord` (`csInsert`), branch-free 16-items bit table in `mine16` | `internal/fpg/complex.go`, `mine.go` | **kept** | dense `s=5` frequent −6.8 %, closed −5.4 %, long `s=2.5` frequent −4.8 %, closed −6.2 % (all p = 0.000, n = 10) |
+| 1b | Software-pipelined load of the next list node in `csCondSupp` | `complex.go` | rejected | dense −2.6 % (p = 0.24), long −2.3 % (p = 0.052), n = 6 |
+| 1c | `relink` (rules path) with one pointer per node | `tree.go` | rejected | dense rules 177 → 178 ms ~ (p = 0.065), lift +0.9 % (p = 0.036), n = 10 |
+| 1d | Header entries 24 → 16 bytes (`fpHead`, `csHead`: `supp` first) | `simple.go`, `complex.go` (struct order only) | **kept** | dense rules −6.7 % / lift −5.1 % (p = 0.000), sparse closed −3.1 % (p = 0.021), dense closed −1.0 % (p = 0.004), n = 10 |
+| 2 | Bag prefix-tree nodes grow by doubling (`growNodes`) instead of `append`'s 1.25× | `internal/tract/bag.go` | **kept** | `BuildBag` items=100 −9.0 %, items=2000 −7.8 % (p = 0.000); B/op 29.4 → 11.0 MB, 47.6 → 27.0 MB (n = 10) |
+| 2' | (first version) presize the bag from the item occurrences of pass 1 | `tract/itembase.go`, `bag.go` | rejected | as fast (−8 / −14 %) but reserves memory per occurrence: `TestLargeFileStreaming` (heap < 8 MB for a 20 MB file of few distinct transactions) fails |
+| 3 | FP-tree arenas presized from the bag's node count (×1.5 with projections) instead of 2 × extent (`treePresize`); top-down keeps the extent estimate | `internal/fpg/arena.go`, `complex.go`, `simple.go`, `single.go`, `tree.go` | **kept** | B/op −20 % (long) to −44 % (dense); time ~ except sparse variants −2.4 to −4.7 % (p ≤ 0.002), n = 8. With top-down included its B/op rose 28–30 % (its reversed tree outgrows the estimate) |
+| 4 | Bag child-list sort on packed `uint64` keys with `slices.Sort` | `tract/bag.go` | rejected | `BuildBag` ~ (p = 0.12 / 0.36), sparse targets ~ (n = 10) |
+| 5 | Path recording: `csCondSupp` stores each list node's ancestor ids and weight (`projPaths`); the second pass of the projection (`mine16`, `projCmplx`, `projReord`) reads that buffer instead of walking the tree again | `internal/fpg/complex.go`, `mine.go` | **kept** | dense `s=5` frequent −16.6 %, closed −13.8 % (p = 0.000, n = 8); long `s=3` −22 to −24 % (p = 0.000), long `s=2.5` ~ (n = 10); B/op +11–13 % on dense (buffers) |
+| 6a | Number formatting: integral digits with `uint64` division instead of the `math.Mod`/`Floor` loop (exact below 2^53; at most 11 digits are formatted there) | `internal/isrout/numout.go` | **kept** | `AppendNum` −14.7 %, `WriterItemSet " (%S)"` −7.2 %, `WriterRule " (%X, %C)"` −18.5 % (p = 0.000, n = 10); 20 M random values byte-identical to the old code |
+| 6b | Number formatting: magnitude by a linear scan (`powIndex`) instead of `bisect` | `numout.go` | **kept** | `AppendNum` −7.5 %, item sets −3.0 %, rules −3.3 / −3.8 % (p ≤ 0.001, n = 10); differential check identical |
+| 7 | Item set tree arenas grow by doubling (`grow`) | `internal/istree/istree.go` | **kept** | sparse rules −8.4 %, sparse rules + lift −7.9 % (p = 0.000), dense rules ~; B/op −48 % / −57 % (n = 10) |
+| 8 | CSV per-record allocations | — | not applicable | `csv.go` already sets `ReuseRecord`; the remaining allocation is `encoding/csv`'s one string per record. Removing it needs an own CSV parser, not justified (CSV reads as fast as the table format) |
+| 9 | Top-down: link pointers in `addTopDown`/`tdMerge` (no closure) | `fpg/topdown.go` | rejected | dense ~ (p = 0.083 / 0.63), sparse ~ (p = 0.19), n = 10. C's `-At` is also about twice its `-Ac` on sparse data (mine 0.04 vs 0.02 s): the gap of the variant is algorithmic |
+| 10 | M5 extension check with incremental covers: the cover of a reported set is the cover of the reporter's prefix (perfect extensions are in every cover transaction), cached per depth, one AND per new prefix item (`checkPath`); compact cover form | `internal/fpg/extcheck.go`, `mine.go`, `extcheck_test.go` (brute-force hook also checks `checkPath`) | **kept** | CLI in process on `sparse.tab`: `-tc -s0.02 -n3` −16.3 %, `-tm -s0.02 -n3` −8.3 %, `-tc -s0.05 -n2` −5.4 % (p = 0.000, n = 10); dense `CloMaxLimited` ~ to −1.9 % |
+| 11 | `cmTree.add` sibling scan split by direction | `internal/report/clomax.go` | rejected | `-tc -s0.02 -n3` ~ (p = 0.075), unlimited `-tc -s0.05` +1.0 % (p = 0.007), n = 10 |
+| 12 | Path recording for the simple variant (`fpCondSupp` shared by `projSimple` and `projSmp16`, packed entries recorded) | `internal/fpg/simple.go` (and the `projPaths` doc in `complex.go`) | **kept** | dense `s=10` simple −12.4 %, simple+fim16 −14.6 %, closed −12.4 / −10.2 %, maximal −15.1 / −12.4 %; sparse −8.6 / −5.1 % (p = 0.000, n = 10) |
+| 13 | `projReord`: bit set of the path's new indices and `addCmplx` instead of `add_reord`'s flag scan | `complex.go`, `mine.go` | rejected | dense `s=5` +6.4 % (p = 0.000), long `s=2.5` −4.0 %, n = 8 |
+| 14 | Table tokenizer: one append per field, locals in the scan loop | `internal/tabread/tokenizer.go` | rejected | `ReaderNext`, `Scan` ~ (p = 0.08–0.6), n = 10 |
+| 15 | Cheaper item dictionary lookups (candidate 5) | — | not done | see [Remaining gaps](#remaining-gaps) |
+
+File sets of the kept changes: 1 + 5 + 12 (`internal/fpg/complex.go`,
+`internal/fpg/mine.go`, `internal/fpg/simple.go`; 12 builds on 5's
+`projPaths`), 1d (struct field order in `simple.go` and `complex.go`),
+2 (`internal/tract/bag.go`), 3 (`internal/fpg/arena.go` and the
+`treePresize` call sites in `complex.go`, `simple.go`, `single.go`,
+`tree.go`), 6a + 6b (`internal/isrout/numout.go`), 7
+(`internal/istree/istree.go`), 10 (`internal/fpg/extcheck.go`,
+`internal/fpg/extcheck_test.go`, the `checkPath` hook in
+`internal/fpg/mine.go`).
+
+### Go benchmarks: base vs final
+
+`BenchmarkSuite*`, alternating runs, n = 6 per side. Over all 96 suite
+benchmarks the geometric mean of time/op is **−11 %** (benchstat's
+non-significant deltas counted as 0). Selected rows:
+
+| Benchmark | base | final | delta | B/op base → final |
+| --- | ---: | ---: | ---: | --- |
+| Targets/sparse/s=0.1/frequent | 31.7 ms | 28.4 ms | −10.3 % | 27.8 → 17.3 MB |
+| Targets/dense/s=5/frequent | 549 ms | 421 ms | −23.3 % | 72.5 → 42.3 MB |
+| Targets/dense/s=5/closed | 736 ms | 587 ms | −20.2 % | 77.9 → 47.7 MB |
+| Targets/dense/s=5/maximal | 649 ms | 495 ms | −23.8 % | 74.3 → 44.1 MB |
+| Targets/long/s=3/frequent | 219 ms | 165 ms | −24.5 % | 129 → 90 MB |
+| Targets/long/s=2.5/frequent | 703 ms | 678 ms | −3.5 % | 129 → 90 MB |
+| MaxSize/dense/s=2/closed/n=3 | 731 ms | 575 ms | −21.4 % | 76.6 → 46.4 MB |
+| MaxSize/dense/s=2/closed/n=5 | 3.65 s | 2.53 s | −30.8 % | 85.9 → 72.9 MB |
+| MaxSize/dense/s=2/maximal/n=5 | 2.72 s | 2.10 s | −22.7 % | 84.0 → 71.0 MB |
+| Variants/dense/s=10/frequent/simple+fim16 | 180 ms | 150 ms | −16.7 % | 63.5 → 37.5 MB |
+| Variants/dense/s=10/frequent/single | 255 ms | 252 ms | ~ | 49.9 → 31.7 MB |
+| Variants/sparse/s=0.1/frequent/topdown | 78.3 ms | 77.8 ms | ~ | 24.1 → 19.8 MB |
+| Rules/sparse/s=0.05/c=50/lift | 117 ms | 109 ms | −6.7 % | 126 → 54 MB |
+| Rules/dense/s=10/c=90/n=4 | 186 ms | 173 ms | −7.0 % | 53.3 → 33.4 MB |
+| Sources/sparse-large/s=0.05/memory-string | 371 ms | 349 ms | −6.0 % | 269 → 129 MB |
+| Sources/sparse-large/s=0.05/table-file | 575 ms | 546 ms | −5.2 % | 275 → 134 MB |
+| ReadOnly/sparse-large/table-file | 144 ms | 147 ms | ~ | 10.3 → 10.3 MB |
+| Consume/dense/s=5/frequent/internal-nosink | 525 ms | 409 ms | −22.1 % | 72.5 → 42.2 MB |
+
+All time deltas shown are significant (p ≤ 0.041) unless marked "~".
+Not significant over all 96: the single variant on frequent sets, the
+top-down variant (except maximal, −1.5 %), two simple-variant rows with
+a large spread, and `ReadOnly/*` (except long/table-file, −1.3 %); no
+benchmark got significantly slower. B/op drops by 15–57 % on the
+mining benchmarks (6–30 % when collecting results into slices);
+allocations per run grow by 20–140 (the path buffers and doubling growth
+steps), still independent of the number of results.
+
+Internal and CLI benchmarks (n = 6): `tract BuildBag` −10.9 % / −7.0 %
+(`CountRecode` ~); `isrout AppendNum` −22.0 %, `WriterItemSet " (%S)"`
+−10.7 %, `" (%a,%S,%e)"` −9.4 %, `WriterRule " (%X, %C)"` −21.4 %,
+five-code rule −7.8 % (formats without numbers ~); `tabread` ~;
+`BenchmarkCLI` −3.3 to −8.9 % (11 of 12 rows significant);
+`fpg CloMaxLimited` −13 to −22 % for n2/n3 (n1 −7 % or ~).
+
+### Go vs C after optimization
+
+`reference/bench/compare.sh -n 5 -w 1` (same 32 configurations, 1 warmup
++ 5 interleaved runs per program, configuration and mode); all 96 rows
+matched. Headline (medians); "before" is the Go/C ratio of the
+[baseline table](#go-vs-c) (both ratios come from interleaved runs; the
+absolute "before → after" Go times compare two runs of the script on
+different days and are only indicative):
+
+| Config | Options | Patterns | C wall ms (count) | Go wall ms (count) | Go/C wall (count / file) | Go/C count before | Go wall ms count before → after | C / Go CPU ms (file) | C / Go max RSS MB (count) | Go/C instructions (count) |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- | --- | --- | ---: |
+| sparse-s | `-s0.1` | 27,703 | 26.0 | 48.9 | 1.88 / 1.85 | 1.94 | 54.9 → 48.9 | 20 / 40 | 12.3 / 22.2 | 3.41 |
+| sparse-c | `-tc -s0.1` | 26,775 | 29.5 | 54.7 | 1.86 / 1.79 | 1.95 | 61.5 → 54.7 | 20 / 50 | 13.4 / 22.3 | 3.20 |
+| sparse-r-lift | `-tr -s0.05 -c50 -el -d150` | 130,194 | 77.2 | 131.5 | 1.70 / 1.54 | 1.81 | 143.7 → 131.5 | 90 / 160 | 21.5 / 52.5 | 2.29 |
+| large-s | `-s0.05` (sparse-large) | 37,505 | 308.7 | 573.3 | 1.86 / 1.93 | 2.16 | 714.9 → 573.3 | 270 / 550 | 77.0 / 106.6 | 3.93 |
+| large-m | `-tm -s0.05` | 11,838 | 272.3 | 550.1 | 2.02 / 1.92 | 2.13 | 603.6 → 550.1 | 270 / 540 | 77.2 / 103.6 | 3.94 |
+| dense-s | `-s5` | 1,294,276 | 357.5 | 439.9 | 1.23 / 1.32 | 1.59 | 588.4 → 439.9 | 440 / 590 | 99.8 / 42.9 | 2.16 |
+| dense-c | `-tc -s5` | 342,016 | 467.5 | 619.5 | 1.33 / 1.32 | 1.60 | 804.2 → 619.5 | 480 / 650 | 107.7 / 46.1 | 2.09 |
+| dense-m | `-tm -s5` | 48,051 | 418.5 | 547.6 | 1.31 / 1.20 | 1.62 | 710.9 → 547.6 | 420 / 530 | 106.8 / 45.7 | 2.09 |
+| dense-g | `-tg -s10` | 194,385 | 152.9 | 241.9 | 1.58 / 1.61 | 1.73 | 271.2 → 241.9 | 140 / 250 | 76.6 / 76.3 | 2.41 |
+| dense-r | `-tr -s10 -c90 -n4` | 41,425 | 120.0 | 214.3 | 1.79 / 1.76 | 1.85 | 234.9 → 214.3 | 120 / 220 | 12.8 / 38.4 | 2.63 |
+| long-s | `-s2.5` | 34,285 | 644.2 | 723.4 | 1.12 / 1.14 | 1.15 | 792.3 → 723.4 | 630 / 730 | 341.8 / 86.5 | 2.35 |
+| long-c | `-tc -s2.5` | 34,285 | 584.0 | 690.0 | 1.18 / 1.22 | 1.21 | 756.2 → 690.0 | 560 / 690 | 344.1 / 86.6 | 2.43 |
+| weighted-s | `-w -s0.2` | 10,343 | 25.4 | 50.5 | 1.99 / 1.93 | 2.02 | 49.9 → 50.5 | 20 / 40 | 11.4 / 22.1 | 3.44 |
+
+Across all 32 configurations: Go/C wall time geometric mean **1.60**
+(count mode; range 1.12–2.08; baseline 1.72, 1.15–2.16), **1.61**
+(`/dev/null`; 1.14–1.96; baseline 1.75), **1.60** (file; 1.14–2.03;
+baseline 1.73). The Go binary executes 2.1–3.9× the instructions of the
+C binary (baseline 2.0–4.0×); on `long` the ratio rose from 1.99 to 2.35
+while the time fell: path recording adds a store per ancestor, but the
+second pass of a projection then reads a sequential buffer instead of
+chasing parent pointers again.
+
+Variants (dense, `-s10`, count mode, median wall ms; baseline Go/C in
+brackets):
+
+| Variant | C frequent | Go frequent | Go/C (before) | C closed | Go closed | Go/C (before) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `-As -l0` (simple) | 134.2 | 212.6 | 1.58 (1.79) | 172.1 | 280.9 | 1.63 (1.74) |
+| `-As` (simple + fim16) | 109.8 | 170.2 | 1.55 (1.77) | 163.6 | 244.3 | 1.49 (1.64) |
+| `-Ac -j` (complex) | 122.8 | 187.8 | 1.53 (1.78) | 152.7 | 235.3 | 1.54 (1.73) |
+| `-Ac` (complex + reorder, default) | 122.0 | 191.4 | 1.57 (1.69) | 168.1 | 258.4 | 1.54 (1.68) |
+| `-Ad` (single) | 164.9 | 268.5 | 1.63 (1.67) | 163.0 | 244.4 | 1.50 (1.65) |
+| `-At` (top-down) | 201.4 | 298.0 | 1.48 (1.45) | 240.3 | 334.8 | 1.39 (1.45) |
+
+Output formatting, (`/dev/null` − count) / patterns: Go 110 ns
+(baseline 125) vs C 55 ns on dense-s; Go 127 ns vs C 60 ns on
+dense-s-As. RSS: Go below C on dense (43–46 vs 100–108 MB) and long
+(87 vs 342–344 MB), above on sparse (22 vs 12 MB), sparse-large (104–107
+vs 77 MB; baseline 139–154) and rules (30–53 vs 12–22 MB; baseline
+38–70).
+
+The runner's "mine s" column (appendix) sums every phase line of the
+programs' logs that matches "finding", "writing" or "filtering ...". For
+Go that includes "filtering, sorting and recoding items", which is pass 2
+(the input is read again and the bag built), while C only recodes there;
+the column therefore overstates Go's mining time on input-heavy data
+(sparse-large: 0.42 s, of which about 0.2 s is pass 2).
+
+### M5: size-limited closed/maximal
+
+CLI, output to `/dev/null`, median wall ms of 5 runs after 1 warmup, the
+three programs interleaved (C native, Go base `3e5d372`, Go final). C's
+counts differ where its size limit reports non-closed/non-maximal sets
+(deviation M5, bug B5); Go's counts are the oracle-verified ones.
+
+| Config | C | Go base | Go final | sets C / base / final |
+| --- | ---: | ---: | ---: | --- |
+| `dense.tab -s2 -n3` (frequent) | 444.0 | 640.6 | 521.4 | 54755 / 54755 / 54755 |
+| `dense.tab -tc -s2 -n3` | 1917.4 | 752.1 | 626.5 | 54755 / 54755 / 54755 |
+| `dense.tab -tm -s2 -n3` | 1054.9 | 953.8 | 804.8 | 11189 / 11189 / 11189 |
+| `dense.tab -tc -s2 -n5` | 2759.1 | 3764.2 | 2603.5 | 1010561 / 1010561 / 1010561 |
+| `sparse.tab -tc -s0.05 -n2` | 36.4 | 72.5 | 69.0 | 13957 / 13957 / 13957 |
+| `sparse.tab -tc -s0.05 -n3` | 42.7 | 113.0 | 96.0 | 37087 / 37072 / 37072 |
+| `sparse.tab -tm -s0.05 -n3` | 37.9 | 94.1 | 85.6 | 11487 / 11412 / 11412 |
+| `sparse.tab -tc -s0.02 -n3` | 93.4 | 215.8 | 177.6 | 100116 / 99227 / 99227 |
+| `sparse.tab -tc -s0.05` (no limit) | 48.4 | 87.5 | 82.5 | 65811 / 65811 / 65811 |
+
+On dense data the limited search is faster than C (C searches one level
+deeper and its 16-items machine is unlimited). On sparse data the
+complete extension check still costs Go 1.9–2.3× C (C performs no
+check and reports extra sets; without a limit the ratio is 1.7); incremental covers cut the check cost (16 %
+on `-tc -s0.02 -n3`), the rest is the cover scans (`scanCover`) and the
+repository (`cmTree.add`).
+
+### Profiles after optimization
+
+CPU profiles of the final code (3 s each; flat % / cum %, package
+`internal/fpg` unless stated):
+
+| Workload | Top functions |
+| --- | --- |
+| dense frequent `s=5` | `csCondSupp` 40.3 / 41.6 (now also records the paths); `addReord` 17.8 / 21.9; `mine16` 5.9 / 19.4; `projReord` 5.3 / 88.4; public `setSink.ItemSet` 4.1 |
+| sparse frequent `s=0.1` | `csCondSupp` 17.7; `slices.insertionSortOrdered` 5.0 (record sort in pass 2); `mapaccess2_faststr` 9.3 cum; `addReord` 4.0 / 5.0; `tract.bagBuilder.child` 3.7 / 13.7 |
+| dense closed `s=5` | `csCondSupp` 39.4 / 40.3; `report.cmTree.add` 10.9 / 12.1; `addCmplx` 10.3 / 11.5; `mine16` 5.5 / 29.4 |
+| long frequent `s=2.5` | `csCondSupp` **61.9** / 62.8; `addReord` 12.3 / 19.1; `csArena.alloc` 6.5 |
+| dense rules `-n4` | `relink` **74.5** / 76.0 |
+| sparse rules + lift | `relink` 15.2; `istree.Tree.newChild` 10.6 / 29.8; `istree.Tree.child` 8.9; `istree.Tree.getsupp` 5.0 / 17.9; `runtime.madvise` 5.3 (baseline 13) |
+| sparse-large, memory source | `csCondSupp` 22.6 / 24.1; `maps.memHashAES` 5.7; `tract.bagBuilder.link` 5.2, `child` 12.6 cum |
+| dense closed `s=2 -n3` (M5) | `csCondSupp` 23.8 / 24.5; `addCmplx` 20.7 / 25.7; `extChecker.scanCover` 16.0; `projCmplx` 12.9 / 66.8; `extChecker.extend` 4.1 (base `3e5d372`: `projCmplx` 20.1 / 66.9, `csCondSupp` 19.5, `scanCover` 13.6, `addCmplx` 11.0, `bitCover` 8.9) |
+
+GC stays negligible (`GODEBUG=gctrace=1`: 0 % on dense frequent and on
+sparse rules with lift).
+
+### Remaining gaps
+
+- **Reading the input twice** is now the largest Go-specific cost on
+  sparse and large inputs. On sparse-large the CLI spends 0.14 s in
+  pass 1 and 0.23 s in pass 2 (re-parse plus bag) against C's 0.08 s
+  read and 0.01 s recode, while mining itself is on par (Go 0.16 s, C
+  0.17 s). Every item occurrence is hashed twice per pass (the reader's
+  intern map and `ItemBase.codes`: `mapaccess2_faststr` 26 % cum and
+  `memHashAES` 14 % flat in the read-only table profile). Fixing it
+  needs the reader to hand dense integer ids to a slice-indexed item
+  base (an internal re-architecture across `tabread`, `tract`,
+  `fpg.Mine`, the root sources and the CLI; candidate 5, not done).
+  Keeping raw transactions in memory instead of a second pass would
+  contradict the documented streaming design (`docs/architecture.md`,
+  `TestLargeFileStreaming`).
+- **Small inputs** (sparse, weighted: Go/C 1.7–2.0) are dominated by the
+  same two passes plus fixed start-up (Go 21 M vs C 13 M instructions on
+  a two-line file).
+- **Rules** (dense-r 1.79): `relink` does exactly upstream's work
+  (7,274 relinks, 2.75 M list nodes, 15.2 M ancestor steps in both
+  programs, counted with instrumented copies) and is bound by the
+  dependent loads and the mispredicted `h.list == anc` exit; bounds
+  checks and 24-byte index arithmetic remain (1c showed no gain).
+- **Output** costs Go about twice as much per pattern (110–127 vs
+  55–60 ns): the line is rebuilt per set and the info format is parsed
+  per call; C appends only the changed suffix of the item list.
+- **Top-down** (Go/C 1.39–1.48) is algorithmic (C's top-down is slow on
+  sparse data, too).
+- **Pointer chasing**: `csCondSupp` (40–62 % of the complex variant) is
+  latency-bound on scattered header lists; C's nodes are larger (48
+  bytes), so the per-node memory traffic is not the difference.
+  Structure-of-arrays nodes would make the ancestor walk denser but the
+  list walk sparser and were not attempted.
 
 ## Reproducing
 
@@ -523,7 +774,11 @@ program's own mining phase time from its log (10 ms resolution).
 ### Go suite, all rows
 
 `benchstat` over 6 runs (± = maximum relative deviation). MB/s is the
-input file size per op for file sources.
+input file size per op for file sources. The `MaxSize` rows were
+re-measured on `3e5d372` (size-limited closed/maximal search with the
+extension check; base side of the final base-vs-final run, n = 6); at
+`c16c2f5` (full exploration) closed took 4.39 s (n=3) / 4.43 s (n=5)
+and 157 MB, maximal 2.65 s / 2.66 s.
 
 | benchmark | time/op | B/op | allocs/op | results | MB/s |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -555,12 +810,12 @@ input file size per op for file sources.
 | Targets/weighted/s=0.2/closed | 25.9ms ± 0% | 27.9MB ± 0% | 315 ± 0% | 10.3k ± 0% |  |
 | Targets/weighted/s=0.2/maximal | 25.1ms ± 1% | 27.8MB ± 0% | 311 ± 0% | 3.29k ± 0% |  |
 | Targets/weighted/s=0.2/generators | 26.2ms ± 8% | 29.2MB ± 0% | 265 ± 0% | 10.3k ± 0% |  |
-| MaxSize/dense/s=2/frequent/n=3 | 601ms ± 3% | 72.5MB ± 0% | 246 ± 0% | 54.8k ± 0% |  |
-| MaxSize/dense/s=2/frequent/n=5 | 1.24s ± 1% | 72.6MB ± 0% | 288 ± 0% | 1.09M ± 0% |  |
-| MaxSize/dense/s=2/closed/n=3 | 4.39s ± 1% | 157MB ± 0% | 420 ± 0% | 54.8k ± 0% |  |
-| MaxSize/dense/s=2/closed/n=5 | 4.43s ± 1% | 157MB ± 0% | 421 ± 0% | 1.01M ± 0% |  |
-| MaxSize/dense/s=2/maximal/n=3 | 2.65s ± 1% | 73.7MB ± 0% | 365 ± 0% | 11.2k ± 0% |  |
-| MaxSize/dense/s=2/maximal/n=5 | 2.66s ± 3% | 73.7MB ± 0% | 366 ± 0% | 45.5k ± 0% |  |
+| MaxSize/dense/s=2/frequent/n=3 (`3e5d372`) | 609ms ± 7% | 72.5MB ± 0% | 246 ± 0% | 54.8k ± 0% |  |
+| MaxSize/dense/s=2/frequent/n=5 (`3e5d372`) | 1.25s ± 1% | 72.6MB ± 0% | 288 ± 0% | 1.09M ± 0% |  |
+| MaxSize/dense/s=2/closed/n=3 (`3e5d372`) | 731ms ± 7% | 76.6MB ± 0% | 312 ± 0% | 54.8k ± 0% |  |
+| MaxSize/dense/s=2/closed/n=5 (`3e5d372`) | 3.65s ± 2% | 85.9MB ± 0% | 375 ± 0% | 1.01M ± 0% |  |
+| MaxSize/dense/s=2/maximal/n=3 (`3e5d372`) | 922ms ± 3% | 76.6MB ± 0% | 312 ± 0% | 11.2k ± 0% |  |
+| MaxSize/dense/s=2/maximal/n=5 (`3e5d372`) | 2.72s ± 1% | 84.0MB ± 0% | 374 ± 0% | 45.5k ± 0% |  |
 | Variants/dense/s=10/frequent/simple | 239ms ± 5% | 62.8MB ± 0% | 301 ± 0% | 1.05M ± 0% |  |
 | Variants/dense/s=10/frequent/simple+fim16 | 186ms ± 1% | 63.5MB ± 0% | 256 ± 0% | 1.05M ± 0% |  |
 | Variants/dense/s=10/frequent/complex | 211ms ± 5% | 72.5MB ± 0% | 212 ± 0% | 1.05M ± 0% |  |
@@ -623,3 +878,109 @@ input file size per op for file sources.
 | Consume/dense/s=10/c=90/n=4/rules/iterator | 192ms ± 1% | 53.3MB ± 0% | 278 ± 0% | 41.4k ± 0% |  |
 | Consume/dense/s=10/c=90/n=4/rules/collect | 202ms ± 8% | 72.1MB ± 0% | 41.7k ± 0% | 41.4k ± 0% |  |
 | Consume/dense/s=10/c=90/n=4/rules/internal-nosink | 195ms ± 1% | 53.3MB ± 0% | 254 ± 0% | 41.4k ± 0% |  |
+
+### Go vs C after optimization, all rows
+
+`reference/bench/compare.sh -n 5 -w 1` on the final code (load averages
+5.5 at the start, 2.6 at the end). Medians of 5 runs after 1 warmup;
+wall ms with (min–max). See [the note on the "mine s"
+column](#go-vs-c-after-optimization).
+
+| config | mode | patterns | C wall ms (min-max) | Go wall ms (min-max) | Go/C wall | C user+sys ms | Go user+sys ms | C maxRSS MB | Go maxRSS MB | C mine s | Go mine s | Go/C instr |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sparse-s | count | 27703 | 26.0 (25.8-26.4) | 48.9 (48.8-49.1) | 1.88 | 20 | 40 | 12.3 | 22.2 | 0.01 | 0.03 | 3.41 |
+| sparse-s | devnull | 27703 | 29.0 (27.9-31.7) | 52.6 (51.4-57.6) | 1.81 | 20 | 40 | 12.3 | 22.0 | 0.01 | 0.04 | 3.18 |
+| sparse-s | file | 27703 | 28.0 (27.7-30.5) | 51.7 (51.5-52.0) | 1.85 | 20 | 40 | 12.3 | 22.0 | 0.01 | 0.04 | 3.17 |
+| sparse-c | count | 26775 | 29.5 (29.2-34.1) | 54.7 (54.6-56.4) | 1.86 | 20 | 40 | 13.4 | 22.3 | 0.02 | 0.04 | 3.20 |
+| sparse-c | devnull | 26775 | 31.0 (30.8-31.6) | 57.5 (56.6-57.7) | 1.86 | 20 | 50 | 13.5 | 22.4 | 0.02 | 0.04 | 3.03 |
+| sparse-c | file | 26775 | 32.5 (31.2-35.9) | 58.1 (57.2-58.3) | 1.79 | 20 | 50 | 13.4 | 22.4 | 0.02 | 0.04 | 3.02 |
+| sparse-m | count | 8468 | 27.8 (27.6-28.1) | 52.0 (51.6-52.5) | 1.87 | 20 | 40 | 13.4 | 22.4 | 0.01 | 0.04 | 3.27 |
+| sparse-m | devnull | 8468 | 28.6 (28.5-29.7) | 53.6 (52.8-55.2) | 1.88 | 20 | 40 | 13.4 | 22.6 | 0.02 | 0.04 | 3.20 |
+| sparse-m | file | 8468 | 28.8 (28.6-29.5) | 53.2 (53.1-53.6) | 1.85 | 20 | 40 | 13.4 | 22.3 | 0.01 | 0.04 | 3.19 |
+| sparse-g | count | 26853 | 32.4 (29.1-34.9) | 55.7 (52.4-58.0) | 1.72 | 20 | 40 | 22.3 | 23.2 | 0.02 | 0.04 | 3.02 |
+| sparse-g | devnull | 26853 | 32.1 (31.3-34.9) | 55.0 (54.9-62.9) | 1.71 | 20 | 40 | 22.3 | 23.4 | 0.02 | 0.04 | 2.88 |
+| sparse-g | file | 26853 | 33.6 (31.3-34.0) | 58.2 (54.9-59.4) | 1.73 | 20 | 50 | 22.3 | 24.1 | 0.02 | 0.04 | 2.86 |
+| sparse-r | count | 52149 | 36.2 (35.0-37.8) | 69.4 (67.5-71.4) | 1.92 | 30 | 60 | 12.1 | 30.4 | 0.02 | 0.06 | 2.72 |
+| sparse-r | devnull | 52149 | 41.5 (41.2-44.3) | 74.8 (74.4-76.5) | 1.80 | 30 | 60 | 12.1 | 32.1 | 0.03 | 0.06 | 2.44 |
+| sparse-r | file | 52149 | 42.7 (42.1-45.9) | 75.8 (75.1-77.7) | 1.78 | 30 | 60 | 12.1 | 30.1 | 0.03 | 0.06 | 2.43 |
+| sparse-r-lift | count | 130194 | 77.2 (76.4-84.5) | 131.5 (129.5-140.4) | 1.70 | 60 | 120 | 21.5 | 52.5 | 0.06 | 0.11 | 2.29 |
+| sparse-r-lift | devnull | 130194 | 92.1 (91.2-102.7) | 147.6 (145.4-162.8) | 1.60 | 80 | 130 | 21.5 | 52.6 | 0.08 | 0.13 | 2.08 |
+| sparse-r-lift | file | 130194 | 106.5 (105.0-107.8) | 164.3 (163.5-169.1) | 1.54 | 90 | 160 | 21.5 | 52.7 | 0.09 | 0.14 | 2.07 |
+| large-s | count | 37505 | 308.7 (285.5-375.9) | 573.3 (543.3-856.6) | 1.86 | 300 | 570 | 77.0 | 106.6 | 0.18 | 0.42 | 3.93 |
+| large-s | devnull | 37505 | 287.5 (277.4-296.5) | 556.0 (534.0-618.6) | 1.93 | 280 | 550 | 76.6 | 106.5 | 0.17 | 0.41 | 3.89 |
+| large-s | file | 37505 | 286.4 (280.9-296.5) | 552.3 (546.1-553.2) | 1.93 | 270 | 550 | 76.6 | 106.6 | 0.17 | 0.40 | 3.88 |
+| large-c | count | 37504 | 276.7 (273.5-306.5) | 576.0 (547.9-598.1) | 2.08 | 260 | 570 | 77.2 | 106.2 | 0.16 | 0.43 | 3.91 |
+| large-c | devnull | 37504 | 285.6 (279.0-299.5) | 553.3 (548.0-588.7) | 1.94 | 270 | 550 | 77.3 | 106.4 | 0.17 | 0.41 | 3.86 |
+| large-c | file | 37504 | 293.7 (277.6-321.7) | 589.7 (542.7-594.1) | 2.01 | 270 | 590 | 77.2 | 106.8 | 0.18 | 0.42 | 3.86 |
+| large-m | count | 11838 | 272.3 (268.5-297.0) | 550.1 (527.9-565.5) | 2.02 | 250 | 550 | 77.2 | 103.6 | 0.16 | 0.41 | 3.94 |
+| large-m | devnull | 11838 | 281.3 (275.0-322.5) | 551.2 (536.7-602.2) | 1.96 | 270 | 550 | 77.2 | 105.0 | 0.17 | 0.40 | 3.92 |
+| large-m | file | 11838 | 284.0 (272.6-294.2) | 544.9 (534.9-559.2) | 1.92 | 270 | 540 | 77.2 | 106.5 | 0.17 | 0.40 | 3.91 |
+| dense-s | count | 1294276 | 357.5 (351.5-363.7) | 439.9 (437.6-447.1) | 1.23 | 340 | 430 | 99.8 | 42.9 | 0.33 | 0.41 | 2.16 |
+| dense-s | devnull | 1294276 | 428.1 (424.7-439.4) | 582.8 (579.2-586.6) | 1.36 | 420 | 570 | 99.8 | 42.7 | 0.40 | 0.55 | 2.08 |
+| dense-s | file | 1294276 | 467.8 (439.4-494.7) | 618.3 (602.3-673.8) | 1.32 | 440 | 590 | 99.8 | 43.3 | 0.42 | 0.58 | 2.06 |
+| dense-c | count | 342016 | 467.5 (462.0-472.7) | 619.5 (616.9-629.4) | 1.33 | 460 | 600 | 107.7 | 46.1 | 0.44 | 0.59 | 2.09 |
+| dense-c | devnull | 342016 | 492.6 (489.5-498.2) | 652.9 (649.6-670.7) | 1.33 | 480 | 640 | 107.8 | 45.9 | 0.46 | 0.62 | 2.06 |
+| dense-c | file | 342016 | 496.2 (493.1-537.0) | 655.5 (653.9-670.6) | 1.32 | 480 | 650 | 107.7 | 46.1 | 0.47 | 0.62 | 2.05 |
+| dense-m | count | 48051 | 418.5 (414.3-443.6) | 547.6 (534.1-579.7) | 1.31 | 400 | 530 | 106.8 | 45.7 | 0.39 | 0.52 | 2.09 |
+| dense-m | devnull | 48051 | 419.7 (415.4-432.6) | 536.9 (535.3-546.0) | 1.28 | 410 | 520 | 106.8 | 46.0 | 0.39 | 0.51 | 2.08 |
+| dense-m | file | 48051 | 451.1 (421.0-464.2) | 542.3 (536.2-677.7) | 1.20 | 420 | 530 | 106.8 | 45.9 | 0.41 | 0.51 | 2.08 |
+| dense-g | count | 194385 | 152.9 (146.5-161.5) | 241.9 (236.1-247.9) | 1.58 | 140 | 220 | 76.6 | 76.3 | 0.12 | 0.21 | 2.41 |
+| dense-g | devnull | 194385 | 160.9 (158.6-168.6) | 256.3 (254.2-275.3) | 1.59 | 140 | 250 | 76.6 | 76.8 | 0.13 | 0.22 | 2.31 |
+| dense-g | file | 194385 | 161.3 (160.6-170.3) | 260.5 (257.4-265.8) | 1.61 | 140 | 250 | 76.6 | 77.0 | 0.13 | 0.23 | 2.30 |
+| dense-r | count | 41425 | 120.0 (119.7-121.9) | 214.3 (212.1-218.3) | 1.79 | 110 | 200 | 12.8 | 38.4 | 0.09 | 0.18 | 2.63 |
+| dense-r | devnull | 41425 | 127.9 (124.5-142.5) | 222.2 (218.7-234.4) | 1.74 | 120 | 210 | 12.9 | 38.2 | 0.11 | 0.19 | 2.53 |
+| dense-r | file | 41425 | 134.4 (124.6-138.1) | 236.7 (221.5-255.2) | 1.76 | 120 | 220 | 12.9 | 38.6 | 0.11 | 0.21 | 2.53 |
+| dense-r-lift | count | 55985 | 131.3 (124.4-155.2) | 229.1 (220.0-235.2) | 1.74 | 120 | 220 | 13.0 | 38.6 | 0.10 | 0.19 | 2.60 |
+| dense-r-lift | devnull | 55985 | 148.5 (140.0-155.1) | 255.1 (247.5-255.3) | 1.72 | 140 | 240 | 13.0 | 38.5 | 0.12 | 0.23 | 2.48 |
+| dense-r-lift | file | 55985 | 133.8 (131.8-135.0) | 229.7 (226.5-235.4) | 1.72 | 120 | 220 | 13.0 | 38.4 | 0.11 | 0.20 | 2.47 |
+| dense-s-As-l0 | count | 1050282 | 134.2 (133.7-150.8) | 212.6 (211.2-215.4) | 1.58 | 120 | 200 | 39.1 | 40.2 | 0.11 | 0.18 | 2.70 |
+| dense-s-As-l0 | devnull | 1050282 | 192.0 (190.3-194.0) | 331.3 (330.3-345.2) | 1.73 | 180 | 320 | 39.1 | 40.1 | 0.16 | 0.30 | 2.36 |
+| dense-s-As-l0 | file | 1050282 | 205.9 (200.0-217.3) | 349.3 (340.9-391.5) | 1.70 | 190 | 330 | 39.1 | 40.1 | 0.17 | 0.32 | 2.31 |
+| dense-s-As | count | 1050282 | 109.8 (109.0-113.4) | 170.2 (169.3-171.7) | 1.55 | 100 | 160 | 37.0 | 40.1 | 0.08 | 0.14 | 2.71 |
+| dense-s-As | devnull | 1050282 | 172.4 (167.2-182.1) | 303.4 (299.5-304.3) | 1.76 | 160 | 290 | 37.0 | 40.4 | 0.14 | 0.27 | 2.33 |
+| dense-s-As | file | 1050282 | 196.7 (185.8-205.7) | 315.9 (310.8-342.5) | 1.61 | 170 | 300 | 37.0 | 40.2 | 0.16 | 0.28 | 2.29 |
+| dense-s-Ac-j | count | 1050282 | 122.8 (121.6-124.9) | 187.8 (187.2-192.0) | 1.53 | 110 | 180 | 60.7 | 43.0 | 0.10 | 0.16 | 2.76 |
+| dense-s-Ac-j | devnull | 1050282 | 178.9 (177.4-183.1) | 305.8 (305.3-307.0) | 1.71 | 160 | 290 | 60.8 | 43.0 | 0.15 | 0.27 | 2.34 |
+| dense-s-Ac-j | file | 1050282 | 193.9 (192.9-218.6) | 341.7 (327.1-363.3) | 1.76 | 180 | 320 | 60.7 | 43.1 | 0.16 | 0.31 | 2.30 |
+| dense-s-Ac | count | 1050282 | 122.0 (115.9-133.4) | 191.4 (181.3-204.2) | 1.57 | 110 | 180 | 54.5 | 42.5 | 0.09 | 0.16 | 2.89 |
+| dense-s-Ac | devnull | 1050282 | 172.6 (170.9-179.5) | 300.7 (298.8-307.4) | 1.74 | 160 | 290 | 54.5 | 42.7 | 0.14 | 0.27 | 2.39 |
+| dense-s-Ac | file | 1050282 | 183.5 (179.8-233.0) | 312.4 (308.4-316.4) | 1.70 | 170 | 300 | 54.5 | 42.8 | 0.15 | 0.28 | 2.34 |
+| dense-s-Ad | count | 1050282 | 164.9 (162.7-172.7) | 268.5 (266.6-271.4) | 1.63 | 150 | 260 | 12.3 | 38.2 | 0.14 | 0.24 | 2.58 |
+| dense-s-Ad | devnull | 1050282 | 224.1 (219.7-245.1) | 392.9 (384.6-412.3) | 1.75 | 210 | 380 | 12.4 | 38.3 | 0.20 | 0.36 | 2.32 |
+| dense-s-Ad | file | 1050282 | 229.7 (228.1-233.4) | 394.3 (391.8-409.0) | 1.72 | 210 | 380 | 12.3 | 38.2 | 0.20 | 0.36 | 2.28 |
+| dense-s-At | count | 1050282 | 201.4 (198.4-204.7) | 298.0 (282.6-304.3) | 1.48 | 180 | 280 | 84.1 | 47.1 | 0.17 | 0.27 | 2.19 |
+| dense-s-At | devnull | 1050282 | 257.1 (254.9-259.6) | 407.2 (403.9-414.6) | 1.58 | 240 | 390 | 84.2 | 47.1 | 0.23 | 0.37 | 2.11 |
+| dense-s-At | file | 1050282 | 267.7 (266.9-284.2) | 420.2 (413.8-432.1) | 1.57 | 250 | 400 | 84.1 | 47.0 | 0.24 | 0.39 | 2.08 |
+| dense-c-As-l0 | count | 132841 | 172.1 (165.2-183.0) | 280.9 (257.3-291.5) | 1.63 | 160 | 260 | 40.2 | 42.4 | 0.14 | 0.25 | 2.56 |
+| dense-c-As-l0 | devnull | 132841 | 194.1 (176.1-212.4) | 305.2 (270.5-382.7) | 1.57 | 180 | 280 | 40.3 | 42.6 | 0.16 | 0.28 | 2.48 |
+| dense-c-As-l0 | file | 132841 | 177.6 (173.9-215.6) | 274.5 (269.0-277.2) | 1.55 | 160 | 260 | 40.2 | 42.4 | 0.15 | 0.24 | 2.48 |
+| dense-c-As | count | 132841 | 163.6 (161.0-165.1) | 244.3 (242.3-263.3) | 1.49 | 150 | 230 | 38.5 | 42.9 | 0.13 | 0.21 | 2.42 |
+| dense-c-As | devnull | 132841 | 174.1 (173.4-181.1) | 260.1 (259.6-271.9) | 1.49 | 160 | 250 | 38.5 | 43.0 | 0.15 | 0.23 | 2.36 |
+| dense-c-As | file | 132841 | 173.1 (172.1-179.8) | 258.6 (255.7-261.3) | 1.49 | 160 | 240 | 38.5 | 43.0 | 0.14 | 0.22 | 2.35 |
+| dense-c-Ac-j | count | 132841 | 152.7 (152.3-155.2) | 235.3 (233.5-236.0) | 1.54 | 140 | 220 | 62.2 | 44.2 | 0.12 | 0.20 | 2.56 |
+| dense-c-Ac-j | devnull | 132841 | 163.9 (161.3-174.4) | 251.2 (248.6-259.1) | 1.53 | 150 | 240 | 62.2 | 44.0 | 0.14 | 0.22 | 2.47 |
+| dense-c-Ac-j | file | 132841 | 173.9 (163.7-185.5) | 273.8 (252.8-292.0) | 1.57 | 160 | 260 | 62.2 | 44.2 | 0.14 | 0.25 | 2.47 |
+| dense-c-Ac | count | 132841 | 168.1 (163.8-192.9) | 258.4 (254.9-293.2) | 1.54 | 150 | 240 | 62.3 | 44.1 | 0.14 | 0.23 | 2.56 |
+| dense-c-Ac | devnull | 132841 | 170.8 (163.9-200.4) | 259.2 (256.4-274.5) | 1.52 | 150 | 250 | 62.3 | 44.1 | 0.14 | 0.23 | 2.47 |
+| dense-c-Ac | file | 132841 | 168.2 (163.1-178.4) | 252.2 (249.2-270.7) | 1.50 | 150 | 240 | 62.2 | 44.0 | 0.14 | 0.22 | 2.46 |
+| dense-c-Ad | count | 132841 | 163.0 (162.6-180.5) | 244.4 (242.1-264.1) | 1.50 | 150 | 230 | 38.5 | 42.8 | 0.13 | 0.21 | 2.42 |
+| dense-c-Ad | devnull | 132841 | 171.3 (170.7-173.6) | 257.6 (255.8-262.7) | 1.50 | 160 | 240 | 38.5 | 43.1 | 0.14 | 0.23 | 2.36 |
+| dense-c-Ad | file | 132841 | 174.9 (171.2-183.4) | 259.3 (257.0-264.8) | 1.48 | 160 | 240 | 38.5 | 42.9 | 0.15 | 0.23 | 2.35 |
+| dense-c-At | count | 132841 | 240.3 (231.7-257.5) | 334.8 (334.3-351.4) | 1.39 | 220 | 320 | 85.2 | 47.6 | 0.21 | 0.30 | 2.15 |
+| dense-c-At | devnull | 132841 | 242.4 (239.1-284.9) | 344.9 (342.6-385.7) | 1.42 | 220 | 330 | 85.2 | 47.3 | 0.21 | 0.31 | 2.12 |
+| dense-c-At | file | 132841 | 243.1 (239.8-252.0) | 347.5 (344.0-361.1) | 1.43 | 230 | 330 | 85.2 | 47.6 | 0.21 | 0.32 | 2.12 |
+| long-s | count | 34285 | 644.2 (641.1-664.5) | 723.4 (720.4-738.4) | 1.12 | 630 | 720 | 341.8 | 86.5 | 0.61 | 0.68 | 2.35 |
+| long-s | devnull | 34285 | 671.8 (633.1-733.0) | 763.0 (737.3-896.0) | 1.14 | 650 | 750 | 341.8 | 86.6 | 0.63 | 0.72 | 2.34 |
+| long-s | file | 34285 | 645.1 (637.5-656.4) | 738.3 (729.1-745.9) | 1.14 | 630 | 730 | 341.8 | 86.6 | 0.61 | 0.70 | 2.34 |
+| long-c | count | 34285 | 584.0 (566.4-624.8) | 690.0 (688.1-720.6) | 1.18 | 570 | 680 | 344.1 | 86.6 | 0.55 | 0.65 | 2.43 |
+| long-c | devnull | 34285 | 585.4 (566.0-608.5) | 690.0 (686.3-713.0) | 1.18 | 570 | 680 | 344.1 | 86.5 | 0.55 | 0.65 | 2.40 |
+| long-c | file | 34285 | 572.1 (564.6-642.8) | 696.9 (696.3-705.6) | 1.22 | 560 | 690 | 344.2 | 86.6 | 0.54 | 0.66 | 2.40 |
+| long-m | count | 33885 | 585.2 (575.8-609.9) | 692.4 (682.9-742.1) | 1.18 | 570 | 690 | 344.1 | 86.8 | 0.55 | 0.65 | 2.42 |
+| long-m | devnull | 33885 | 593.9 (567.8-739.3) | 694.4 (688.9-697.2) | 1.17 | 570 | 690 | 344.1 | 86.4 | 0.56 | 0.66 | 2.40 |
+| long-m | file | 33885 | 580.7 (574.5-591.7) | 690.4 (685.8-728.1) | 1.19 | 570 | 680 | 344.1 | 86.4 | 0.55 | 0.65 | 2.41 |
+| weighted-s | count | 10343 | 25.4 (23.8-25.9) | 50.5 (49.5-50.7) | 1.99 | 10 | 40 | 11.4 | 22.1 | 0.01 | 0.03 | 3.44 |
+| weighted-s | devnull | 10343 | 26.7 (25.0-29.5) | 51.6 (50.4-52.3) | 1.93 | 20 | 40 | 11.4 | 21.7 | 0.01 | 0.03 | 3.33 |
+| weighted-s | file | 10343 | 27.2 (26.4-29.9) | 52.6 (51.4-104.1) | 1.93 | 20 | 40 | 11.4 | 22.1 | 0.01 | 0.03 | 3.29 |
+| weighted-c | count | 10323 | 26.9 (26.5-30.8) | 52.4 (50.8-54.1) | 1.95 | 20 | 40 | 12.1 | 22.1 | 0.01 | 0.03 | 3.36 |
+| weighted-c | devnull | 10323 | 24.7 (24.5-25.0) | 48.4 (48.1-52.3) | 1.96 | 10 | 40 | 11.9 | 22.2 | 0.01 | 0.03 | 3.28 |
+| weighted-c | file | 10323 | 26.2 (24.2-28.8) | 53.2 (48.8-53.6) | 2.03 | 10 | 40 | 11.9 | 22.2 | 0.01 | 0.03 | 3.25 |
