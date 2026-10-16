@@ -48,6 +48,23 @@ func bisect(key float64, a []float64) int {
 	return l
 }
 
+// powIndex returns the index mantout derives from dbl_bisect(num, pows):
+// the number of elements of pows that are at most num, plus one if num
+// exceeds them all. The values formatted here are mostly between 0.01
+// and 100, so a linear scan from the small end needs a few predictable
+// comparisons where the binary search needs six unpredictable ones.
+func powIndex(num float64) int {
+	for i, p := range pows {
+		if p > num {
+			return i
+		}
+	}
+	if num == pows[len(pows)-1] {
+		return len(pows)
+	}
+	return len(pows) + 1
+}
+
 // parseDigits is a port of getsd: up to two decimal digits at the start
 // of s give the number of significant digits (default 6, at most 32). It
 // returns the digits and the number of bytes consumed.
@@ -78,10 +95,7 @@ func isDigit(c byte) bool { return '0' <= c && c <= '9' }
 // part is rounded up (half to odd). This is intentionally preserved
 // (docs/differences.md O8).
 func appendMant(dst []byte, num float64, digits, ints int) ([]byte, int) {
-	i := bisect(num, pows[:])
-	if i >= len(pows) || pows[i] == num {
-		i++
-	}
+	i := powIndex(num)
 	n := digits - (i - 2) // number of decimals
 	x := math.Floor(num)
 	y := num - x
@@ -142,12 +156,15 @@ func appendMant(dst []byte, num float64, digits, ints int) ([]byte, int) {
 			e++
 		}
 	}
+	// The integral digits: report.c divides with fmod and floor. x is
+	// integral and below 2^53 (appendNum formats at most 11 significant
+	// digits here, so x <= 10^11), where the integer conversion is exact
+	// and gives the same digits without fmod's slow software loop.
 	s := d
-	for {
+	for u := uint64(x); ; {
 		s--
-		buf[s] = byte(int(math.Mod(x, 10)) + '0')
-		x = math.Floor(x / 10)
-		if !(x > 0) {
+		buf[s] = byte(u%10) + '0'
+		if u /= 10; u == 0 {
 			break
 		}
 	}
