@@ -87,9 +87,12 @@ type RuleOptions[T comparable] struct {
 	// DefaultAppearance is the appearance of items not in Appearance.
 	// With AppearNone, only the items of Appearance are mined.
 	DefaultAppearance Appearance
-	// Evaluation, if not nil, filters the rules by an evaluation measure
-	// and fills Rule.Value. LogSupportRatio, aggregation and pruning are
-	// not available for rules.
+	// Evaluation, if not nil, computes an evaluation measure for every
+	// reported rule and puts it into Rule.Value; with Evaluation.Filter it
+	// also filters the rules by Evaluation.Threshold. Without Filter (the
+	// zero value) no rule is removed. nil leaves Value NaN.
+	// LogSupportRatio, aggregation and pruning are not available for
+	// rules.
 	Evaluation *Evaluation
 	// Algorithm selects the FP-growth variant.
 	Algorithm Algorithm
@@ -195,8 +198,11 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 // calls fn for each of them, in upstream's order. It behaves like
 // MineItemsets: synchronous, two passes over src, fn's and OnStart's
 // errors returned unchanged, ctx.Err() on cancellation, a nil fn only
-// counts. As with MineItemsets, fn may still be called for a few rules
-// (at most those of a few hundred item sets) after ctx is canceled.
+// counts. As with MineItemsets, cancellation is checked frequently but
+// not before every rule (every 256 item set tree counters, and every 4096
+// tables of a Fisher test): fn may still be called for the rules of up to
+// 256 item sets after ctx is canceled, and a canceled run always returns
+// ctx.Err().
 func MineRules[T comparable](ctx context.Context, src Source[T], opt RuleOptions[T], fn func(Rule[T]) error) (Summary, error) {
 	p, err := opt.plan()
 	if err != nil {

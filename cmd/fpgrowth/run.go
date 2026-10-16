@@ -593,6 +593,10 @@ func (r *runner) runMiner(m *fpg.Miner[string], rep *report.Reporter, outName st
 	}
 	err := m.Mine(r.ctx)
 	switch {
+	case err == nil && r.ctx.Err() != nil:
+		// interrupted after the miner's last check: the output may be
+		// incomplete
+		return errorf(exitInterrupt, "interrupted")
 	case err == nil:
 	case errors.Is(err, context.Canceled):
 		return errorf(exitInterrupt, "interrupted")

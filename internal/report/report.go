@@ -87,7 +87,7 @@ type Reporter struct {
 	ldps   []float64    // binary logarithms of the item probabilities
 
 	cm   *closedMaximal
-	err  error // latched repository error (ErrTooLarge), see Err
+	err  error // latched error (ErrTooLarge or the abort error), see Err
 	gen  *generatorTable
 	sto  tract.Supp   // maximum superset support for storing a set
 	iset []tract.Item // scratch: repository set / generator key
@@ -105,7 +105,16 @@ type Reporter struct {
 
 	binom []uint64     // scratch: binomial coefficients (count-only mode)
 	body  []tract.Item // scratch: rule body
+
+	abort func() error // cancellation check (SetAbort)
+	ticks uint32       // steps since the start (see tick)
 }
+
+// AbortEvery is the number of reporter steps between two calls of the
+// abort function (SetAbort). A step is a call of Add or Report or one set
+// of a perfect-extension hypercube visited while it is expanded. It is a
+// power of two.
+const AbortEvery = 1024
 
 // New is a port of isr_create: it returns a reporter for item codes
 // 0..numItems-1 with upstream's defaults (all frequent item sets, sizes
@@ -257,6 +266,40 @@ func (r *Reporter) Spectrum() *Spectrum { return r.psp }
 // computes the counts of perfect-extension hypercubes arithmetically.
 func (r *Reporter) SetSink(s Sink) { r.sink = s }
 
+// SetAbort sets a cancellation check: every AbortEvery steps (calls of
+// Add and Report, and sets visited while a perfect-extension hypercube is
+// expanded) the reporter calls fn. A non-nil result is latched like a
+// repository error: Report returns it, Add returns false from then on,
+// so that every miner recursion unwinds, and Err reports it after mining.
+// fn should be cheap (a non-blocking receive on a done channel); nil (the
+// default) disables the checks. This bounds the work after a cancellation
+// also where a miner does not return to a recursion entry for a long
+// time: a hypercube of 2^k sets, or a burst of the 16-items machine.
+// The checks do not allocate.
+func (r *Reporter) SetAbort(fn func() error) { r.abort = fn }
+
+// tick counts one step and calls the abort function every AbortEvery
+// steps; it returns the latched error, if any. The fast path is small
+// enough to be inlined.
+func (r *Reporter) tick() error {
+	r.ticks++
+	if r.ticks%AbortEvery != 0 {
+		return nil
+	}
+	return r.checkAbort()
+}
+
+// checkAbort calls the abort function and latches its error.
+func (r *Reporter) checkAbort() error {
+	if r.abort == nil || r.err != nil {
+		return r.err
+	}
+	if err := r.abort(); err != nil {
+		r.err = err
+	}
+	return r.err
+}
+
 // Setup is a port of isr_setup: it finalizes the configuration (the size
 // limit for Xable) and empties the current item set. Call it after the
 // configuration and before mining.
@@ -281,13 +324,13 @@ func (r *Reporter) updateXmax() {
 // same support) or if the extended set is not a generator. The caller must
 // then skip the subtree, the report and the removal.
 //
-// If the closed/maximal repository cannot grow (ErrTooLarge), Add latches
-// the error and returns false; the next Report returns it, and Err
-// reports it after mining. Once an error is latched, Add always returns
-// false.
+// If the closed/maximal repository cannot grow (ErrTooLarge) or the abort
+// function fails (SetAbort), Add latches the error and returns false; the
+// next Report returns it, and Err reports it after mining. Once an error
+// is latched, Add always returns false.
 func (r *Reporter) Add(item tract.Item, supp tract.Supp) bool {
 	switch {
-	case r.err != nil:
+	case r.err != nil || r.tick() != nil:
 		return false
 	case r.cm != nil:
 		ok, err := r.cm.add(item, supp)
@@ -388,9 +431,10 @@ func (r *Reporter) Tail(items []tract.Item) bool {
 }
 
 // Err returns the error latched by Add, Tail or Report when the
-// closed/maximal repository outgrew its int32 node indices (ErrTooLarge),
-// or nil. Once set, the reporter's results are incomplete and every
-// Report returns the error; a miner should stop and return it.
+// closed/maximal repository outgrew its int32 node indices (ErrTooLarge)
+// or the abort function failed (SetAbort), or nil. Once set, the
+// reporter's results are incomplete and every Report returns the error;
+// a miner should stop and return it.
 func (r *Reporter) Err() error { return r.err }
 
 // Len is a port of isr_cnt: the number of items in the current set.
@@ -469,10 +513,13 @@ func (r *Reporter) ReportEval(eval float64) error {
 // border and the evaluation before it is counted and sent to the sink.
 //
 // Report returns the first error returned by the sink, or the latched
-// repository error (see Err).
+// repository or abort error (see Err, SetAbort).
 func (r *Reporter) Report() error {
 	if r.err != nil {
 		return r.err
+	}
+	if err := r.tick(); err != nil {
+		return err
 	}
 	n := len(r.pexs)
 	s := r.supps[r.cnt]
@@ -602,7 +649,14 @@ func (r *Reporter) countOnly(n int, s tract.Supp) {
 // expand is a port of report(): it reports the current set and, depth
 // first, its extensions by the perfect extensions pexs[next:], supersets
 // before the set itself and the oldest remaining extension first.
+//
+// Every visited set is a step of the abort check (SetAbort), so a
+// cancellation stops the expansion of a large hypercube after at most
+// AbortEvery sets.
 func (r *Reporter) expand(next int) error {
+	if err := r.tick(); err != nil {
+		return err
+	}
 	n := len(r.pexs)
 	for j := next; j < n; j++ {
 		r.items[r.cnt] = r.pexs[j]

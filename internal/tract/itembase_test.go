@@ -2,6 +2,7 @@ package tract
 
 import (
 	"errors"
+	"maps"
 	"math"
 	"slices"
 	"testing"
@@ -101,6 +102,65 @@ func TestItemBase_Count(t *testing.T) {
 	if b.Records() != 5 || b.TotalWeight() != 7 || b.Len() != 4 || b.Frequency(0) != 4 {
 		t.Errorf("after second pass: Records %d, TotalWeight %d, Len %d, Frequency(a) %d, want 5, 7, 4, 4",
 			b.Records(), b.TotalWeight(), b.Len(), b.Frequency(0))
+	}
+}
+
+// TestItemBase_SetCheck checks that the item check runs once per
+// distinct registered item, at every occurrence of an ignored item, for
+// unknown items of pass 2, and that its error stops the pass wrapped with
+// the record number.
+func TestItemBase_SetCheck(t *testing.T) {
+	t.Parallel()
+	checked := map[string]int{}
+	errBad := errors.New("bad item")
+	check := func(id string) error {
+		checked[id]++
+		if id == "bad" {
+			return errBad
+		}
+		return nil
+	}
+	b := NewItemBase[string]()
+	b.SetCheck(check)
+	if err := b.Count(strScan(srec(1, "a", "b"), srec(1, "b", "a", "a"), srec(1, "c"))); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]int{"a": 1, "b": 1, "c": 1}; !maps.Equal(checked, want) {
+		t.Errorf("checks %v, want %v", checked, want)
+	}
+	err := b.Count(strScan(srec(1, "a"), srec(1, "bad")))
+	if !errors.Is(err, errBad) || err.Error() != "record 5: bad item" {
+		t.Errorf("Count: %v", err)
+	}
+
+	// ignored items (Select) are checked at every occurrence
+	clear(checked)
+	b = NewItemBase[string]()
+	b.SetCheck(check)
+	if err := b.Select("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Count(strScan(srec(1, "a", "x"), srec(1, "x"))); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]int{"x": 2}; !maps.Equal(checked, want) {
+		t.Errorf("checks with a selection %v, want %v", checked, want)
+	}
+
+	// pass 2: an unknown item is checked before it is skipped or reported
+	// as not replayable
+	b.Recode(1, 0)
+	if _, err := b.BuildBag(strScan(srec(1, "a", "bad"), srec(1, "x")), 0); !errors.Is(err, errBad) {
+		t.Errorf("BuildBag with a selection: %v", err)
+	}
+	b = NewItemBase[string]()
+	if err := b.Count(strScan(srec(1, "a"))); err != nil {
+		t.Fatal(err)
+	}
+	b.Recode(1, 0)
+	b.SetCheck(check)
+	if _, err := b.BuildBag(strScan(srec(1, "bad")), 0); !errors.Is(err, errBad) || errors.Is(err, ErrNotReplayable) {
+		t.Errorf("BuildBag: %v", err)
 	}
 }
 

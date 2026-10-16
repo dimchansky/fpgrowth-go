@@ -98,7 +98,8 @@ func CSVFile(path string, f CSVFormat) Source[string] {
 // TableReader does for the table format: every pass calls open, streams
 // the reader and closes it; open must return the same data every time;
 // name identifies the input in error messages (see CSVFile). Inputs with a
-// Stat method (like *os.File) are checked for changes between passes.
+// Stat method (like *os.File) are checked for changes between passes by
+// size and modification time, with the limits described at TableFile.
 func CSVReader(open func() (io.ReadCloser, error), name string, f CSVFormat) Source[string] {
 	return csvSource{in: opener{open: open, name: name}, format: f}
 }

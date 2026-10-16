@@ -56,6 +56,7 @@ type ItemBase[T comparable] struct {
 	records   int           // number of records counted
 	isRecoded bool          // Recode has been called
 	buf       []Item        // scratch: items of the current record
+	check     func(T) error // validation of unknown identifiers (SetCheck)
 }
 
 // NewItemBase returns an empty item base in which every new item may
@@ -111,6 +112,21 @@ func (b *ItemBase[T]) AddAppearance(id T, app Appearance) error {
 	_, err := b.add(id, app)
 	return err
 }
+
+// SetCheck sets a function that validates item identifiers read by Count
+// and BuildBag that are not registered in the item base: it is called
+// for every occurrence of an unknown identifier before it is registered
+// (Count) or reported as not replayable (BuildBag), also when it is then
+// ignored because the default appearance is AppearNone. A registered
+// identifier is not checked again, so the cost is one call per distinct
+// item plus one per occurrence of an ignored item. A non-nil result stops
+// the pass with that error, wrapped with the record number. Identifiers
+// registered by Select and AddAppearance are not checked; the caller
+// validates them. nil (the default) disables the check.
+//
+// The check cannot catch interface values whose dynamic type is not
+// comparable: the map lookup that precedes it panics.
+func (b *ItemBase[T]) SetCheck(fn func(T) error) { b.check = fn }
 
 // add appends a new item with zero counters.
 func (b *ItemBase[T]) add(id T, app Appearance) (Item, error) {
@@ -173,6 +189,11 @@ func (b *ItemBase[T]) countRecord(ids []T, w Supp) error {
 	for _, id := range ids {
 		i, known := b.codes[id]
 		if !known {
+			if b.check != nil {
+				if err := b.check(id); err != nil {
+					return fmt.Errorf("record %d: %w", rec, err)
+				}
+			}
 			if b.defApp == AppearNone { // ignore new items
 				continue
 			}

@@ -1,10 +1,13 @@
 package ruleval
 
 import (
+	"errors"
 	"math"
 	"math/big"
+	"math/rand/v2"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
@@ -468,6 +471,78 @@ func TestFisherInvalidTables(t *testing.T) {
 	for _, tb := range [][4]tract.Supp{{0, 8, 8, 10}, {5, 3, 4, 10}, {-1, 3, 4, 10}, {3, 3, 4, 2}, {2, 3, 4, 0}} {
 		for _, m := range []Measure{FisherProb, FisherChi2, FisherInfo, FisherSupport} {
 			Eval(m, tb[0], tb[1], tb[2], tb[3])
+		}
+	}
+}
+
+// TestAbortFuncMatches checks that the abortable variants of the Fisher
+// measures compute bit-identical values with a nil abort function and
+// with one that never fails, over the upstream fixture tables and random
+// tables (including ones with more than fisherAbortEvery tables), and
+// that the other measures have no abortable variant.
+func TestAbortFuncMatches(t *testing.T) {
+	t.Parallel()
+	never := func() error { return nil }
+	type table struct{ supp, body, head, base tract.Supp }
+	var tables []table
+	for _, r := range loadUpstreamRows(t) {
+		if r.has[FisherProb] && r.has[FisherChi2] && r.has[FisherInfo] && r.has[FisherSupport] { // cheap ones only
+			tables = append(tables, table{r.supp, r.body, r.head, r.base})
+		}
+	}
+	rng := rand.New(rand.NewPCG(7, 11))
+	for range 300 {
+		base := tract.Supp(rng.Int64N(40_000) + 1)
+		body := rng.Int64N(int64(base) + 1)
+		head := rng.Int64N(int64(base) + 1)
+		lo := max(0, body+head-int64(base))
+		supp := lo + rng.Int64N(min(body, head)-lo+1)
+		tables = append(tables, table{tract.Supp(supp), tract.Supp(body), tract.Supp(head), base})
+	}
+	for m := range NumMeasures {
+		afn := m.AbortFunc()
+		isFisher := m >= FisherProb && m <= FisherSupport
+		if (afn != nil) != isFisher {
+			t.Fatalf("%v: AbortFunc nil = %v", m, afn == nil)
+		}
+		if afn == nil {
+			continue
+		}
+		fn := m.Func()
+		for _, tb := range tables {
+			want := fn(tb.supp, tb.body, tb.head, tb.base)
+			for _, abort := range []func() error{nil, never} {
+				got, err := afn(tb.supp, tb.body, tb.head, tb.base, abort)
+				if err != nil || math.Float64bits(got) != math.Float64bits(want) {
+					t.Fatalf("%v%v: %v, %v; want %v", m, tb, got, err, want)
+				}
+			}
+		}
+	}
+}
+
+// TestAbortFuncStops checks that a failing abort function stops a Fisher
+// evaluation over 5·10^7 tables (seconds without the check) after
+// fisherAbortEvery tables, returning its error and NaN.
+func TestAbortFuncStops(t *testing.T) {
+	t.Parallel()
+	errStop := errors.New("stop")
+	for _, m := range []Measure{FisherProb, FisherChi2, FisherInfo, FisherSupport} {
+		calls := 0
+		abort := func() error {
+			calls++
+			if calls == 3 {
+				return errStop
+			}
+			return nil
+		}
+		start := time.Now()
+		v, err := m.AbortFunc()(30_000_000, 50_000_000, 50_000_000, 100_000_000, abort)
+		if !errors.Is(err, errStop) || !math.IsNaN(v) || calls != 3 {
+			t.Errorf("%v: %v, %v after %d abort calls", m, v, err, calls)
+		}
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("%v: stopped after %v", m, d)
 		}
 	}
 }

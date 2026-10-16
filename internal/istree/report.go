@@ -1,6 +1,8 @@
 package istree
 
 import (
+	"math"
+
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -55,9 +57,9 @@ func (t *Tree) SetEval(e Eval) {
 		m = ruleval.None
 	}
 	t.eval = m
-	t.fn = nil
+	t.fn, t.afn = nil, nil
 	if m != ruleval.None {
-		t.fn = m.Func()
+		t.fn, t.afn = m.Func(), m.AbortFunc()
 	}
 	t.agg = AggFirst
 	if e.Agg > AggFirst && e.Agg <= AggAvg {
@@ -82,10 +84,24 @@ func (t *Tree) worst() float64 {
 	return 0
 }
 
-// value computes the measure of one rule with the -i invalidation.
+// value computes the measure of one rule with the -i invalidation. With
+// an abort function (SetAbort), a measure of non-constant cost is
+// evaluated by its abortable variant; an abort error is latched in t.err
+// (returned by the next tick) and the value is NaN. Callers check t.err
+// after evaluating.
 func (t *Tree) value(supp, body, head, base tract.Supp) float64 {
 	if !t.isInvBxs || float64(supp)*float64(base) > float64(head)*float64(body) {
-		return t.fn(supp, body, head, base)
+		if t.afn == nil || t.abort == nil {
+			return t.fn(supp, body, head, base)
+		}
+		if t.err != nil {
+			return math.NaN()
+		}
+		v, err := t.afn(supp, body, head, base, t.abort)
+		if err != nil {
+			t.err = err
+		}
+		return v
 	}
 	return t.worst()
 }
@@ -200,6 +216,9 @@ func (t *Tree) Report(rep *report.Reporter, target report.Target) error {
 func (t *Tree) isets(rep *report.Reporter, ni int32, supp tract.Supp) error {
 	if !isSkip(supp) {
 		v := t.evaluate(t.evNode, t.evIndex)
+		if t.err != nil {
+			return t.err
+		}
 		if t.passes(v) {
 			if err := rep.ReportEval(v); err != nil {
 				return err
@@ -228,6 +247,9 @@ func (t *Tree) isets(rep *report.Reporter, ni int32, supp tract.Supp) error {
 			}
 		} else if !isSkip(raw) {
 			v := t.evaluate(ni, i)
+			if t.err != nil {
+				return t.err
+			}
 			if t.passes(v) {
 				if err := rep.ReportEval(v); err != nil {
 					return err
@@ -344,6 +366,9 @@ func (t *Tree) rule(rep *report.Reporter, head tract.Item, supp, body, base trac
 	var val float64
 	if t.fn != nil {
 		val = t.value(supp, body, hs, base)
+		if t.err != nil {
+			return t.err
+		}
 		if !t.isNoFilter && t.dir*val < t.thresh {
 			return nil
 		}

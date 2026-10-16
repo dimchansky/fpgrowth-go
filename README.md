@@ -154,7 +154,11 @@ factor, chi² and G-test values and p-values, Fisher's exact test, ...) for
 rules and, aggregated over the rules `S \ {h} -> h`, for item sets; the
 binary logarithm of the support ratio for item sets; the values alone or,
 with `Evaluation.Filter`, thresholds and evaluation-based pruning;
-"invalidate below expected support".
+"invalidate below expected support". Every measure costs constant time per
+evaluated rule except the four Fisher measures, which take
+O(min(body, head)) time per rule (body and head supports): with body and
+head supports of 5·10^7 one evaluation takes about 0.7 to 4.4 seconds
+(Apple M1 Max). These sums check for cancellation every 4096 tables.
 
 **Rules** carry the support of body ∪ head, body support, head support,
 confidence, lift and the evaluation value. `OriginalSupport` (`-o`) makes
@@ -402,7 +406,13 @@ pruning for that case.
 File sources open the file on every pass, stream it and close it; the file
 is never loaded into memory as a whole. The file must not change between
 the two passes: mining compares its size and modification time and
-reports a change as `ErrNotReplayable`.
+reports a change as `ErrNotReplayable`; every source also compares the
+transaction count and total weight of the passes. The metadata check is
+conservative (a touched but unchanged file is rejected) and limited: it
+applies to `TableFile`, `CSVFile`, and `TableReader`/`CSVReader` whose
+reader has a `Stat` method (like `*os.File`), only when that source is
+passed to mining directly (not wrapped in another `Source`), and it is
+skipped when `Stat` fails.
 
 `TableFile` reads upstream's flexible text format. The file `baskets.txt`
 of this example is:
@@ -671,12 +681,19 @@ true 5
 ### Cancellation
 
 Mining checks the context every 1024 transactions of a pass, at every
-recursion step, and every few hundred item sets while the item set tree
-of rules and rule-based evaluations is filtered and reported; it returns
-`ctx.Err()` when it is canceled. Results found since the last check may
-still be delivered after the cancellation (for rules, at most those of a
-few hundred item sets). `SpoolTable` and `SpoolCSV` check the context
-between chunks.
+recursion step, every 1024 steps of the item set reporter (so the
+expansion of a large perfect-extension hypercube, up to 2^k sets for k
+items that occur in all transactions, and the bursts of the k-items
+machine stop promptly too), every 256 item sets while the item set tree
+of rules and rule-based evaluations is filtered and reported, and every
+4096 tables while a Fisher measure is evaluated. It returns `ctx.Err()`
+whenever the context was canceled, also if mining finished after the last
+check. Results found since the last check may still be delivered after
+the cancellation: up to about 1024 item sets, or the rules of up to 256
+item sets. In measurements (`TestCancelBursts`, `TestCancelFisher`,
+Apple M1 Max) mining returned within 2 ms of the cancellation, also on
+26 identical items (2^26 sets) and with Fisher evaluations over 5·10^7
+tables. `SpoolTable` and `SpoolCSV` check the context between chunks.
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -705,7 +722,10 @@ panics. Test them with `errors.Is`: `ErrInvalidOptions` (the message names
 the field), `ErrNotReplayable`, `ErrNegativeWeight`, `ErrWeightOverflow`,
 `ErrTooLarge`, `ErrSyntax` (malformed table or CSV input) and
 `ErrInvalidItem` (an item that is not comparable at run time, such as a
-slice in an `any` item, or not equal to itself, such as NaN). A database
+slice in an `any` item, or not equal to itself, such as NaN; checked only
+for item types that can hold such values, once per distinct item, plus at
+every occurrence of an item ignored by `Options.Items` or
+`RuleOptions.DefaultAppearance`). A database
 without frequent items is not an error: nothing is reported and
 `Summary.FrequentItems` is 0.
 
@@ -848,15 +868,19 @@ configure it: record separators (default newline, CLI `-r`), field
 separators (default space, tab and comma, `-f`), blanks dropped around
 fields (default space, tab and carriage return, so CRLF files work, `-b`)
 and comment characters that start a comment record when they are the first
-byte of a record (default `#`, `-C`). Empty lines are empty transactions
-(they count toward the number of transactions and the total weight).
+byte of a record (default `#`, `-C`). Without weights, empty lines are
+empty transactions (they count toward the number of transactions and the
+total weight); with weights an empty line is a syntax error ("transaction
+weight expected"), as upstream, and a record with only a weight is an
+empty transaction.
 Repeated items in a transaction count once. Bytes are not interpreted as
 UTF-8; an item ends at its first NUL byte. With weights (`Weighted`, CLI
 `-w`) the last field of every record is an integer weight in C syntax
 (decimal, `0x` hex or `0` octal, optional sign), optionally enclosed in
 `()`, `[]` or `{}`. The CLI decodes escape sequences such as `\t` in `-r -f
--b -C`; `TableFormat` holds literal bytes. The zero `TableFormat` has no
-special bytes at all; start from `DefaultTableFormat()`.
+-b -C`; `TableFormat` holds literal bytes. The zero `TableFormat` means
+`DefaultTableFormat()`; any other value is taken literally, so start from
+`DefaultTableFormat()` and replace what differs.
 
 **CSV** (`CSVFile`, `SpoolCSV`, library only): RFC 4180 through
 `encoding/csv`. Every record is a transaction and every field an item;
@@ -922,6 +946,31 @@ transaction records. A test (`TestLargeFileStreaming`) mines a 50 MB
 generated table file and a CSV file of the same data with a heap peak
 below 8 MB; that bound holds for that data, not in general. Nothing in this
 library is constant-memory.
+
+High-cardinality data is the opposite case: when almost every transaction
+is distinct after filtering, little is shared between transactions, the
+transaction bag and the FP-tree hold a node for a large fraction of all
+item occurrences, and **peak memory can be several times the size of the
+input file**. Measured on a generated table file
+(183 MB: 4,000,000 transactions of 4 to 16 items drawn from a Zipf(1.1)
+distribution over 20,000 items; `TableFile`, `MinSupport: Count(5000)`,
+916 frequent items, `MaxSize: 3`, count only; Go 1.27.2, Apple M1 Max):
+
+| Quantity | Measured |
+| --- | --- |
+| distinct transactions after filtering | 3,812,253 |
+| transaction bag nodes (distinct prefixes) | 14,337,115 |
+| live heap after both passes (item dictionary and bag) | 387 MB: about 28 B per bag node, 107 B per distinct transaction |
+| peak heap (sampled every millisecond), default GC | 1,249 MB (6.8 × the file size); maximum RSS 1.62 GB |
+| peak heap with `GOMEMLIMIT=700MiB` | 900 MB (4.9 ×); maximum RSS 1.17 GB; run time 13.3 s instead of 12.6 s |
+
+The peak is reached while the FP-tree is built next to the bag: its node
+arena is sized from the bag's total number of item occurrences (here
+27 million, capped at 2^24 nodes initially). Setting `GOMEMLIMIT` makes
+the garbage collector work harder near the limit and lowers the peak, but
+not below the live data: with a limit below about 0.9 GB this run still
+needed 0.9 GB. Budget memory for the distinct structure of the data, not
+for the number of records, and measure on a sample of your data.
 
 Structures that grow with the output:
 

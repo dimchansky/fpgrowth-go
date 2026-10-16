@@ -60,6 +60,29 @@ func (t *fisherTable) cells(x tract.Supp) [4]int64 {
 	return c
 }
 
+// fisherAbortEvery is the number of tables summed between two calls of
+// the abort function of the abortable Fisher measures (AbortFunc). A
+// power of two.
+const fisherAbortEvery = 4096
+
+// stepper counts the tables of a Fisher sum and calls the abort function
+// every fisherAbortEvery tables. A nil abort function disables it.
+type stepper struct {
+	abort func() error
+	n     uint32
+}
+
+func (s *stepper) step() error {
+	if s.abort == nil {
+		return nil
+	}
+	s.n++
+	if s.n%fisherAbortEvery != 0 {
+		return nil
+	}
+	return s.abort()
+}
+
 // clampUnit clamps a probability to [0, 1].
 //
 // Deviation from upstream: upstream returns the Fisher sums unclamped. The
@@ -87,20 +110,31 @@ func clampUnit(p float64) float64 {
 // (fisherTable.cmpWeight). The probabilities that are summed and the
 // summation order are upstream's.
 func reFetProb(supp, body, head, base tract.Supp) float64 {
+	v, _ := fetProb(supp, body, head, base, nil)
+	return v
+}
+
+// fetProb is reFetProb with an abort check every fisherAbortEvery tables
+// (see AbortFunc); with a nil abort it computes exactly reFetProb.
+func fetProb(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
-		return 1
+		return 1, nil
 	}
+	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
 	ps := t.logProb(t.supp)
 	tol := fisherLogProbTol(base)
 	var sum float64
 	for x := tract.Supp(0); x <= t.body; x++ {
+		if err := st.step(); err != nil {
+			return math.NaN(), err
+		}
 		p := t.logProb(x)
 		if t.probAtMost(x, p, ps, tol) {
 			sum += math.Exp(p)
 		}
 	}
-	return clampUnit(sum)
+	return clampUnit(sum), nil
 }
 
 // fisherLogProbTol bounds the absolute error of the difference of two
@@ -184,9 +218,17 @@ func cmpRangeProducts(l, a1, a2, c1, c2 int64) int {
 // either the more extreme tables or 1 minus the less extreme ones,
 // whichever range is shorter. The result is clamped to [0, 1] (clampUnit).
 func reFetChi2(supp, body, head, base tract.Supp) float64 {
+	v, _ := fetChi2(supp, body, head, base, nil)
+	return v
+}
+
+// fetChi2 is reFetChi2 with an abort check every fisherAbortEvery tables
+// (see AbortFunc); with a nil abort it computes exactly reFetChi2.
+func fetChi2(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
-		return 1
+		return 1, nil
 	}
+	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
 	s := t.supp
 	exs := float64(t.head) * float64(t.body) / float64(t.base) // expected support
@@ -207,17 +249,26 @@ func reFetChi2(supp, body, head, base tract.Supp) float64 {
 	if n-s-4 < s+t.body-n { // fewer less extreme tables
 		sum = 1
 		for s++; s < n; s++ {
+			if err := st.step(); err != nil {
+				return math.NaN(), err
+			}
 			sum -= math.Exp(t.logProb(s))
 		}
-		return clampUnit(sum)
+		return clampUnit(sum), nil
 	}
 	for ; s >= 0; s-- { // fewer more extreme tables
+		if err := st.step(); err != nil {
+			return math.NaN(), err
+		}
 		sum += math.Exp(t.logProb(s))
 	}
 	for s = n; s <= t.body; s++ {
+		if err := st.step(); err != nil {
+			return math.NaN(), err
+		}
 		sum += math.Exp(t.logProb(s))
 	}
-	return clampUnit(sum)
+	return clampUnit(sum), nil
 }
 
 // reFetSupp ports re_fetsupp: Fisher's exact test, one-sided by support.
@@ -225,23 +276,37 @@ func reFetChi2(supp, body, head, base tract.Supp) float64 {
 // normalized table), or computes 1 minus the lower tail when that is
 // shorter. The result is clamped to [0, 1] (clampUnit).
 func reFetSupp(supp, body, head, base tract.Supp) float64 {
+	v, _ := fetSupp(supp, body, head, base, nil)
+	return v
+}
+
+// fetSupp is reFetSupp with an abort check every fisherAbortEvery tables
+// (see AbortFunc); with a nil abort it computes exactly reFetSupp.
+func fetSupp(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
-		return 1
+		return 1, nil
 	}
+	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
 	s := t.supp
 	var sum float64
 	if s <= t.body-s { // fewer lesser support values
 		sum = 1
 		for s--; s >= 0; s-- {
+			if err := st.step(); err != nil {
+				return math.NaN(), err
+			}
 			sum -= math.Exp(t.logProb(s))
 		}
-		return clampUnit(sum)
+		return clampUnit(sum), nil
 	}
 	for ; s <= t.body; s++ { // fewer greater support values
+		if err := st.step(); err != nil {
+			return math.NaN(), err
+		}
 		sum += math.Exp(t.logProb(s))
 	}
-	return clampUnit(sum)
+	return clampUnit(sum), nil
 }
 
 // reFetInfo ports re_fetinfo: Fisher's exact test, two-sided by
@@ -258,19 +323,30 @@ func reFetSupp(supp, body, head, base tract.Supp) float64 {
 // only tables that differ by more than a bound on the rounding error
 // (fisherInfoTol); the rest are compared exactly (cmpXLogX).
 func reFetInfo(supp, body, head, base tract.Supp) float64 {
+	v, _ := fetInfo(supp, body, head, base, nil)
+	return v
+}
+
+// fetInfo is reFetInfo with an abort check every fisherAbortEvery tables
+// (see AbortFunc); with a nil abort it computes exactly reFetInfo.
+func fetInfo(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
-		return 1
+		return 1, nil
 	}
+	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
 	is := infoRaw(t.supp, t.body, t.head, t.base)
 	tol := fisherInfoTol(base)
 	var sum float64
 	for x := tract.Supp(0); x <= t.body; x++ {
+		if err := st.step(); err != nil {
+			return math.NaN(), err
+		}
 		if t.infoAtLeast(x, infoRaw(x, t.body, t.head, t.base), is, tol) {
 			sum += math.Exp(t.logProb(x))
 		}
 	}
-	return clampUnit(sum)
+	return clampUnit(sum), nil
 }
 
 // fisherInfoTol bounds the absolute error of the difference of two values

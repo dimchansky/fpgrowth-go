@@ -130,6 +130,7 @@ func TestInvalidMeasurePanics(t *testing.T) {
 	calls := map[string]func(){
 		"Eval":        func() { Eval(NumMeasures, 1, 1, 1, 1) },
 		"Func":        func() { NumMeasures.Func() },
+		"AbortFunc":   func() { NumMeasures.AbortFunc() },
 		"Dir":         func() { Measure(255).Dir() },
 		"Letter":      func() { Measure(27).Letter() },
 		"Description": func() { Measure(26).Description() },

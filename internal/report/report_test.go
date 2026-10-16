@@ -457,14 +457,103 @@ func (d *discardSink) ItemSet(ItemSet) error { d.n++; return nil }
 func (d *discardSink) Rule(Rule) error       { d.n++; return nil }
 
 func TestReporter_ZeroAllocs(t *testing.T) {
-	r := New(64, 1000, nil)
-	r.SetSink(&discardSink{})
-	r.Setup()
-	allocs := testing.AllocsPerRun(1000, func() {
-		addReportRemove(r)
-	})
-	if allocs != 0 {
-		t.Fatalf("%v allocations per add/report/remove cycle", allocs)
+	for _, withAbort := range []bool{false, true} {
+		r := New(64, 1000, nil)
+		r.SetSink(&discardSink{})
+		if withAbort {
+			r.SetAbort(func() error { return nil })
+		}
+		r.Setup()
+		allocs := testing.AllocsPerRun(1000, func() {
+			addReportRemove(r)
+			r.Add(40, 500)
+			for i := range tract.Item(12) {
+				r.AddPex(i)
+			}
+			_ = r.Report() // 4096 sets: several abort checks
+			r.Remove(1)
+		})
+		if allocs != 0 {
+			t.Fatalf("abort hook %v: %v allocations per add/report/remove cycle", withAbort, allocs)
+		}
+	}
+}
+
+// TestReporter_SetAbort checks that the abort function stops the
+// expansion of a perfect-extension hypercube within AbortEvery sets, is
+// latched (Report returns it, Add fails, Err reports it), and is not
+// called again once it failed.
+func TestReporter_SetAbort(t *testing.T) {
+	t.Parallel()
+	errAbort := errors.New("aborted")
+	for _, tt := range []struct {
+		name  string
+		sink  bool
+		after int // the abort function fails from this call on
+	}{
+		{"sink first check", true, 1},
+		{"sink later check", true, 5},
+		{"count only", false, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := New(30, 10, nil)
+			d := &discardSink{}
+			if tt.sink {
+				r.SetSink(d)
+			}
+			calls := 0
+			r.SetAbort(func() error {
+				calls++
+				if calls >= tt.after {
+					return errAbort
+				}
+				return nil
+			})
+			r.Setup()
+			if !tt.sink {
+				// count-only mode counts hypercubes arithmetically; the
+				// steps are Add and Report calls
+				for i := 0; r.Err() == nil && i < 100*AbortEvery; i++ {
+					if r.Add(0, 5) {
+						_ = r.Report()
+						r.Remove(1)
+					}
+				}
+				if !errors.Is(r.Err(), errAbort) || calls != 1 {
+					t.Fatalf("Err %v after %d abort calls", r.Err(), calls)
+				}
+				if steps := 2 * r.Count(); steps > AbortEvery {
+					t.Errorf("%d steps before the abort check", steps)
+				}
+				return
+			}
+			for i := range tract.Item(26) { // 2^26 sets
+				r.AddPex(i)
+			}
+			err := r.Report()
+			if !errors.Is(err, errAbort) {
+				t.Fatalf("Report: %v", err)
+			}
+			if limit := tt.after * AbortEvery; d.n >= limit {
+				t.Errorf("%d sets reported, want fewer than %d", d.n, limit)
+			}
+			if calls != tt.after {
+				t.Errorf("abort function called %d times, want %d", calls, tt.after)
+			}
+			if r.Add(27, 5) {
+				t.Error("Add succeeded after the abort")
+			}
+			if err := r.Report(); !errors.Is(err, errAbort) {
+				t.Errorf("second Report: %v", err)
+			}
+			if !errors.Is(r.Err(), errAbort) {
+				t.Errorf("Err: %v", r.Err())
+			}
+			if calls != tt.after {
+				t.Errorf("abort function called again after it failed (%d calls)", calls)
+			}
+		})
 	}
 }
 
@@ -504,6 +593,21 @@ func BenchmarkReporter(b *testing.B) {
 	b.Run("pex-hypercube-8", func(b *testing.B) {
 		r := New(64, 1000, nil)
 		r.SetSink(&discardSink{})
+		r.Setup()
+		b.ReportAllocs()
+		for b.Loop() {
+			r.Add(40, 500)
+			for i := range tract.Item(8) {
+				r.AddPex(i)
+			}
+			_ = r.Report()
+			r.Remove(1)
+		}
+	})
+	b.Run("pex-hypercube-8-abort-hook", func(b *testing.B) {
+		r := New(64, 1000, nil)
+		r.SetSink(&discardSink{})
+		r.SetAbort(func() error { return nil })
 		r.Setup()
 		b.ReportAllocs()
 		for b.Loop() {

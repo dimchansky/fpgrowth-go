@@ -124,6 +124,9 @@ func (m *Miner[T]) mineTree(ctx context.Context) error {
 		measure = ruleval.Measure(c.Eval)
 	}
 	ist.SetAbort(tm.aborted)
+	if tm.done != nil {
+		m.rep.SetAbort(tm.aborted)
+	}
 	ist.SetEval(istree.Eval{
 		Measure:    measure,
 		Agg:        istree.Aggregation(c.Agg),

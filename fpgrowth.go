@@ -104,11 +104,16 @@ var errStop = errors.New("fpgrowth: iteration stopped")
 // the pass in which they occurred. A database without frequent items is
 // not an error: nothing is reported and Summary.FrequentItems is 0.
 //
-// Cancellation is checked between transactions while reading and
-// frequently, but not before every result, while mining: fn may still be
-// called for a few results (at most a few hundred item sets of the
-// current subtree) after ctx is canceled; MineItemsets then returns
-// ctx.Err() all the same.
+// Cancellation is checked every 1024 transactions while reading and
+// frequently, but not before every result, while mining: at every
+// recursion step, every 1024 steps of the reporter (which also bounds the
+// expansion of large perfect-extension hypercubes and the bursts of the
+// k-items machine), and in the item set tree path of rule-based
+// evaluations every 256 counters and every 4096 tables of a Fisher test.
+// fn may therefore still be called for up to about 1024 item sets after
+// ctx is canceled. MineItemsets returns ctx.Err() whenever ctx was
+// canceled before it returns, also if mining finished after the last
+// check.
 //
 // If opt.OnStart is set, it is called once before the first result (also
 // if nothing is reported), with the Stats of the database; its error
@@ -237,7 +242,7 @@ func mine[T comparable](
 	if rs, ok := src.(runSource[T]); ok {
 		src = rs.forRun() // per-run replay checks of file sources
 	}
-	sc := newScanner(ctx, src, hook)
+	sc := newScanner(ctx, src, ib, hook)
 	if err := ib.Count(sc.scan); err != nil {
 		return Summary{}, sc.failure(err)
 	}
@@ -298,6 +303,10 @@ func mine[T comparable](
 		}
 	}
 	switch {
+	case err == nil && ctx.Err() != nil:
+		// Canceled after the last check: the results may be incomplete,
+		// and a canceled run never reports success.
+		return sum, ctx.Err()
 	case err == nil:
 		return sum, nil
 	case sink != nil && err == sink.userErr():
@@ -320,16 +329,76 @@ type scanner[T comparable] struct {
 	// transactions and total weight of pass 1
 	n1  int
 	w1  int64
+	cur int   // number of the current transaction of the pass
 	err error // the first error raised by the scanner itself
 }
 
 // checkEvery is the number of transactions between cancellation checks.
 const checkEvery = 1024
 
-func newScanner[T comparable](ctx context.Context, src Source[T], hook func([]T) error) *scanner[T] {
+// newScanner returns the scanner of src for the item base ib and installs
+// the item check in ib (ItemBase.SetCheck).
+//
+// Items are validated once per distinct item rather than per occurrence
+// (an `any` or interface-holding struct item costs a reflection walk and
+// often an allocation per check): ib checks an item when it first meets
+// it, which also covers NaN values, as they never equal a registered key
+// and are therefore always new. Interface values with an incomparable
+// dynamic type cannot reach that check, because the map lookup before it
+// panics; for item types that can hold them, step runs under a recover
+// that turns the panic into ErrInvalidItem (stepGuarded).
+func newScanner[T comparable](ctx context.Context, src Source[T], ib *tract.ItemBase[T], hook func([]T) error) *scanner[T] {
 	s := &scanner[T]{ctx: ctx, src: src, hook: hook}
 	s.isDynamic, s.mayBeNaN = itemKinds(reflect.TypeFor[T]())
+	if s.isDynamic || s.mayBeNaN {
+		ib.SetCheck(s.checkItem)
+	}
 	return s
+}
+
+// checkItem is the item check of the item base: ErrInvalidItem for an
+// item that cannot be used, naming the current transaction and pass.
+func (s *scanner[T]) checkItem(it T) error {
+	if msg := itemProblem(it, s.isDynamic); msg != "" {
+		return s.invalidItem(msg)
+	}
+	return nil
+}
+
+func (s *scanner[T]) invalidItem(msg string) error {
+	return s.fail(newDetailError(fmt.Sprintf("%s: transaction %d (pass %d): %s",
+		ErrInvalidItem, s.cur, s.pass, msg), ErrInvalidItem))
+}
+
+// step passes one transaction to the hook (pass 1) and to yield. It
+// returns whether the pass continues, or the hook's error.
+func (s *scanner[T]) step(yield func([]T, tract.Supp) bool, tx Transaction[T]) (bool, error) {
+	if s.pass == 1 && s.hook != nil {
+		if err := s.hook(tx.Items); err != nil {
+			return false, err
+		}
+	}
+	return yield(tx.Items, tract.Supp(tx.Weight)), nil
+}
+
+// stepGuarded is step for item types that may hold incomparable dynamic
+// values: a panic of a map operation on such an item (hash of unhashable
+// type) becomes ErrInvalidItem. A panic that no item of the transaction
+// explains is re-raised. The recover is per transaction, not per item,
+// and costs nothing measurable when nothing panics.
+func (s *scanner[T]) stepGuarded(yield func([]T, tract.Supp) bool, tx Transaction[T]) (cont bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			for _, it := range tx.Items {
+				if msg := itemProblem(it, true); msg != "" {
+					cont, err = false, s.invalidItem(msg)
+					return
+				}
+			}
+			panic(r)
+		}
+	}()
+	return s.step(yield, tx)
 }
 
 func (s *scanner[T]) fail(err error) error {
@@ -376,14 +445,6 @@ func (s *scanner[T]) scan(yield func(items []T, w tract.Supp) bool) error {
 			return s.fail(newDetailError(fmt.Sprintf("%s: pass %d has more than the %d transactions of pass 1",
 				ErrNotReplayable, pass, s.n1), ErrNotReplayable))
 		}
-		if s.isDynamic || s.mayBeNaN {
-			for _, it := range tx.Items {
-				if msg := itemProblem(it, s.isDynamic); msg != "" {
-					return s.fail(newDetailError(fmt.Sprintf("%s: transaction %d (pass %d): %s",
-						ErrInvalidItem, n, pass, msg), ErrInvalidItem))
-				}
-			}
-		}
 		if done != nil && n%checkEvery == 0 {
 			select {
 			case <-done:
@@ -391,12 +452,18 @@ func (s *scanner[T]) scan(yield func(items []T, w tract.Supp) bool) error {
 			default:
 			}
 		}
-		if pass == 1 && s.hook != nil {
-			if err := s.hook(tx.Items); err != nil {
-				return s.fail(err)
-			}
+		s.cur = n
+		var cont bool
+		var err error
+		if s.isDynamic {
+			cont, err = s.stepGuarded(yield, tx)
+		} else {
+			cont, err = s.step(yield, tx)
 		}
-		if !yield(tx.Items, tract.Supp(tx.Weight)) {
+		if err != nil {
+			return s.fail(err)
+		}
+		if !cont {
 			return nil
 		}
 	}

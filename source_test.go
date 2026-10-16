@@ -316,6 +316,69 @@ func TestReplayCheck(t *testing.T) {
 	}
 }
 
+// statReader is an input whose Stat fails if fail is set and otherwise
+// reports size and a zero modification time.
+type statReader struct {
+	io.Reader
+	fail bool
+	size int64
+}
+
+func (r *statReader) Close() error { return nil }
+
+func (r *statReader) Stat() (fs.FileInfo, error) {
+	if r.fail {
+		return nil, errors.New("stat not supported")
+	}
+	return fakeInfo{size: r.size}, nil
+}
+
+type fakeInfo struct{ size int64 }
+
+func (fakeInfo) Name() string       { return "input" }
+func (i fakeInfo) Size() int64      { return i.size }
+func (fakeInfo) Mode() fs.FileMode  { return 0 }
+func (fakeInfo) ModTime() time.Time { return time.Time{} }
+func (fakeInfo) IsDir() bool        { return false }
+func (fakeInfo) Sys() any           { return nil }
+
+// TestReplayCheckStatFails checks that a failing Stat skips the metadata
+// check instead of failing the run: at the first pass (nothing to compare
+// with, even if a later Stat works and differs) and at a later pass;
+// a working Stat on both passes still detects a change.
+func TestReplayCheckStatFails(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		fail  [2]bool  // Stat fails at pass 1, 2
+		size  [2]int64 // reported sizes
+		valid bool
+	}{
+		{"first pass fails", [2]bool{true, false}, [2]int64{1, 2}, true},
+		{"second pass fails", [2]bool{false, true}, [2]int64{1, 2}, true},
+		{"both fail", [2]bool{true, true}, [2]int64{1, 2}, true},
+		{"both work, size differs", [2]bool{false, false}, [2]int64{1, 2}, false},
+	}
+	for _, tt := range tests {
+		for _, kind := range []string{"table", "csv"} {
+			pass := 0
+			open := func() (io.ReadCloser, error) {
+				p := pass % 2
+				pass++
+				return &statReader{Reader: strings.NewReader("a b\nb\n"), fail: tt.fail[p], size: tt.size[p]}, nil
+			}
+			src := TableReader(open, "input", DefaultTableFormat())
+			if kind == "csv" {
+				src = CSVReader(open, "input", CSVFormat{Comma: ' '})
+			}
+			_, err := MineItemsets(context.Background(), src, Options[string]{MinSupport: Count(1)}, nil)
+			if tt.valid != (err == nil) || !tt.valid && !errors.Is(err, ErrNotReplayable) {
+				t.Errorf("%s/%s: %v", tt.name, kind, err)
+			}
+		}
+	}
+}
+
 // TestCSVFile checks the CSV semantics on edge cases.
 func TestCSVFile(t *testing.T) {
 	t.Parallel()

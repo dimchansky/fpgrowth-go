@@ -85,7 +85,12 @@ func (f TableFormat) config() tabread.Config {
 // The file must not change between passes: mining compares its size and
 // modification time at the start of every pass with those of the first
 // pass and fails with ErrNotReplayable if they differ (and detects most
-// other changes by the transaction count and total weight).
+// other changes by the transaction count and total weight). The check is
+// conservative: a file whose modification time changes without a change
+// of content (touch) is rejected too. It is skipped if Stat fails, and it
+// applies only when the Source returned here is passed to mining
+// directly; a Source that wraps it (for example a SourceFunc delegating
+// to it) is checked by transaction count and total weight only.
 //
 // Errors: a file that cannot be opened yields an error "cannot open file
 // <path>: ..." wrapping the *os.PathError, a failed read "read error on
@@ -106,8 +111,9 @@ func TableFile(path string, f TableFormat) Source[string] {
 //
 // If the reader that open returns has a method Stat() (fs.FileInfo,
 // error), like *os.File, mining checks its size and modification time
-// between passes as TableFile does; other inputs are checked only by
-// transaction count and total weight.
+// between passes as TableFile does (with the same limits: skipped if Stat
+// fails, conservative for touched files, not through a wrapping Source);
+// other inputs are checked only by transaction count and total weight.
 //
 // Concurrent passes call open concurrently.
 func TableReader(open func() (io.ReadCloser, error), name string, f TableFormat) Source[string] {

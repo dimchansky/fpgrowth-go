@@ -66,6 +66,23 @@ import (
 // are the rule support, body support, head support and total weight.
 type Func func(supp, body, head, base tract.Supp) float64
 
+// AbortFunc is a rule evaluation function with a cancellation check:
+// abort, if not nil, is called every few thousand steps of a long
+// computation, and its non-nil result stops the evaluation and is
+// returned (with a NaN value). With a nil abort, or when abort never
+// fails, the value is bit-identical to the measure's Func.
+type AbortFunc func(supp, body, head, base tract.Supp, abort func() error) (float64, error)
+
+// abortable holds the AbortFunc of the measures whose cost is not
+// constant: the Fisher tests sum over min(body, head)+1 contingency
+// tables (after normalization), which takes seconds for weights of 10^8.
+var abortable = [NumMeasures]AbortFunc{
+	FisherProb:    fetProb,
+	FisherChi2:    fetChi2,
+	FisherInfo:    fetInfo,
+	FisherSupport: fetSupp,
+}
+
 // Measure identifies a rule evaluation measure. The values are upstream's
 // RE_* identifiers, so they can be stored and compared like upstream's ids.
 type Measure uint8
@@ -225,6 +242,15 @@ func (m Measure) info() *measureInfo {
 		panic("ruleval: invalid measure " + strconv.Itoa(int(m)))
 	}
 	return &measures[m]
+}
+
+// AbortFunc returns the abortable evaluation function of m, or nil if m
+// takes constant time per evaluation (every measure except the Fisher
+// tests, which take O(min(body, head)) time). It panics if m is not
+// valid.
+func (m Measure) AbortFunc() AbortFunc {
+	_ = m.info() // validity check
+	return abortable[m]
 }
 
 // Eval evaluates measure m for a rule with the given rule support, body

@@ -153,11 +153,18 @@ func (o opener) openPass() (io.ReadCloser, error) {
 
 // replayCheck records the size and modification time of the input at the
 // first pass of a mining run and compares them at later passes. Inputs
-// without a Stat method (such as decompressing readers) are not checked.
+// without a Stat method (such as decompressing readers) are not checked,
+// and neither is an input whose Stat fails at the first pass; a failing
+// Stat at a later pass skips the comparison of that pass. The metadata is
+// a cheap, conservative hint: a modification time that changes while the
+// content stays the same (a touch) is reported as a change, and the
+// transaction count and total weight remain the check for everything
+// else.
 type replayCheck struct {
-	isSet bool
-	size  int64
-	mtime time.Time
+	isSet  bool
+	noStat bool // Stat failed at the first pass: nothing to compare with
+	size   int64
+	mtime  time.Time
 }
 
 // statter is implemented by *os.File.
@@ -174,12 +181,17 @@ func (c *replayCheck) verify(rc io.ReadCloser, name string) error {
 		return nil
 	}
 	fi, err := st.Stat()
-	if err != nil {
-		return fmt.Errorf("read error on file %s: %w", name, err)
-	}
 	if !c.isSet {
-		c.isSet, c.size, c.mtime = true, fi.Size(), fi.ModTime()
+		c.isSet = true
+		if err != nil {
+			c.noStat = true
+			return nil
+		}
+		c.size, c.mtime = fi.Size(), fi.ModTime()
 		return nil
+	}
+	if err != nil || c.noStat {
+		return nil // metadata unavailable: the pass totals still check
 	}
 	if fi.Size() != c.size || !fi.ModTime().Equal(c.mtime) {
 		return newDetailError(fmt.Sprintf(

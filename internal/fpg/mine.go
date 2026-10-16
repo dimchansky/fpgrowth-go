@@ -63,6 +63,14 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		dir:    1,
 		clomax: c.Target == report.TargetClosed || c.Target == report.TargetMaximal,
 	}
+	if m.done != nil {
+		// Recursion entries alone do not bound the work after a
+		// cancellation: a perfect-extension hypercube or a burst of the
+		// 16-items machine reports up to 2^k sets without returning to
+		// one. The reporter checks every report.AbortEvery steps and
+		// latches the error, so every recursion unwinds.
+		rep.SetAbort(m.aborted)
+	}
 	switch c.Algo {
 	case AlgoSimple:
 		return m.mineSimple()

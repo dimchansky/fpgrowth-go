@@ -230,3 +230,42 @@ func checkAllocs[T comparable](t *testing.T, name string, d typedData[T]) {
 		}
 	}
 }
+
+// ifaceItem is an item type whose values must be checked at run time
+// (an interface field may hold an incomparable dynamic value).
+type ifaceItem struct {
+	Name string
+	Tag  any
+}
+
+// BenchmarkItemChecks measures the cost of the run-time item checks
+// (ErrInvalidItem) on reading: two passes over the benchmark dataset with
+// a support threshold above every item, so that almost nothing is mined.
+// string needs no check; any and ifaceItem do.
+func BenchmarkItemChecks(b *testing.B) {
+	txs := benchDataset(b)
+	run := func(b *testing.B, src func() int) {
+		b.ReportAllocs()
+		for b.Loop() {
+			src()
+		}
+	}
+	strData := newTypedData(txs, func(s string) string { return s })
+	anyData := newTypedData(txs, func(s string) any { return s })
+	structData := newTypedData(txs, func(s string) ifaceItem { return ifaceItem{Name: s, Tag: len(s)} })
+	b.Run("string", func(b *testing.B) { run(b, countOnlyRun(b, strData)) })
+	b.Run("any", func(b *testing.B) { run(b, countOnlyRun(b, anyData)) })
+	b.Run("struct-with-interface", func(b *testing.B) { run(b, countOnlyRun(b, structData)) })
+}
+
+func countOnlyRun[T comparable](b *testing.B, d typedData[T]) func() int {
+	src := d.source()
+	opt := Options[T]{MinSupport: Fraction(0.99)}
+	return func() int {
+		sum, err := MineItemsets(context.Background(), src, opt, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		return int(sum.Transactions)
+	}
+}

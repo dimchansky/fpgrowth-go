@@ -128,6 +128,7 @@ type Tree struct {
 	// evaluation (ist_seteval)
 	eval       ruleval.Measure
 	fn         ruleval.Func
+	afn        ruleval.AbortFunc // abortable fn (non-constant measures), or nil
 	agg        Aggregation
 	isInvBxs   bool
 	dir        float64
@@ -142,6 +143,7 @@ type Tree struct {
 	// cancellation (SetAbort)
 	abort func() error
 	ticks uint32
+	err   error // abort error latched by an evaluation (value)
 }
 
 // abortEvery is the number of steps (nodes in Filter and CloMax, counters
@@ -149,7 +151,10 @@ type Tree struct {
 const abortEvery = 256
 
 // SetAbort sets a function that the long-running methods Filter, CloMax
-// and Report call every abortEvery steps. A non-nil result stops the
+// and Report call every abortEvery steps. Evaluations with a measure whose
+// cost is not constant (the Fisher tests, O(min(body, head)) per rule)
+// call it as well, every few thousand summed tables, so that a single
+// evaluation with huge weights can be canceled too. A non-nil result stops the
 // method, which returns it; the tree is then in an unspecified state and
 // must not be used further. The function should be cheap (for example a
 // non-blocking receive on a done channel); nil (the default) disables the
@@ -163,6 +168,9 @@ func (t *Tree) SetAbort(fn func() error) { t.abort = fn }
 func (t *Tree) tick() error {
 	if t.abort == nil {
 		return nil
+	}
+	if t.err != nil {
+		return t.err
 	}
 	t.ticks++
 	if t.ticks%abortEvery != 0 {

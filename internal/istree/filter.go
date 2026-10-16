@@ -49,6 +49,9 @@ func (t *Tree) Filter(size int) error {
 				if cnts[i] < t.smin || t.dir*t.evaluate(ni, i) < t.thresh {
 					cnts[i] |= skip
 				}
+				if t.err != nil {
+					return t.err
+				}
 			}
 		}
 	}

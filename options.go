@@ -374,8 +374,12 @@ type Options[T comparable] struct {
 	Algorithm Algorithm
 	// Tuning holds performance options.
 	Tuning Tuning
-	// Evaluation, if not nil, filters the item sets by an evaluation
-	// measure and fills Itemset.Value.
+	// Evaluation, if not nil, computes an evaluation measure for every
+	// reported item set and puts it into Itemset.Value; with
+	// Evaluation.Filter it also filters the item sets by
+	// Evaluation.Threshold (and enables Evaluation.PruneSize). Without
+	// Filter (the zero value) no item set is removed. nil leaves Value
+	// NaN.
 	Evaluation *Evaluation
 	// PatternSpectrum fills Summary.Spectrum.
 	PatternSpectrum bool

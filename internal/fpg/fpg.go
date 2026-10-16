@@ -168,11 +168,14 @@ func (m *Miner[T]) Reporter() (*report.Reporter, error) {
 // the selected variant, which reports the item sets to the reporter's
 // sink. Association rules and item sets with a rule-based evaluation go
 // through the item set tree (fpg_tree, see mineTree). Cancellation of ctx
-// is checked at every recursion entry, every few thousand transactions
-// while the item set tree's FP-tree is built, and every few hundred nodes
-// or counters in the item set tree's filter and report phases; it returns
-// ctx.Err(). Results already found between two checks may still be
-// reported after the cancellation. An error of
+// is checked at every recursion entry, every report.AbortEvery reporter
+// steps (Add and Report calls and sets of an expanded perfect-extension
+// hypercube, which covers the 16-items machine), every few thousand
+// transactions while the item set tree's FP-tree is built, and every few
+// hundred nodes or counters in the item set tree's filter and report
+// phases; it returns ctx.Err(). Up to about report.AbortEvery results
+// found between two checks may still be reported after the cancellation.
+// An error of
 // the sink is returned unchanged; a tree that outgrows its node arena, the
 // item set tree or the closed/maximal repository of the reporter gives
 // ErrTooLarge.

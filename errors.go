@@ -31,7 +31,12 @@ var (
 	// ErrInvalidItem reports an item that cannot be mined: a value whose
 	// dynamic type is not comparable (for example a slice in an item of
 	// interface type), or a value that is not equal to itself (a NaN, also
-	// inside a struct, array or interface).
+	// inside a struct, array or interface). Only item types that can hold
+	// such values (interfaces, floats, and arrays and structs containing
+	// them) are checked, once per distinct item when it is first read
+	// rather than per occurrence; ignored items (outside Options.Items, or
+	// not in RuleOptions.Appearance with DefaultAppearance AppearNone) are
+	// never registered and are checked at every occurrence.
 	ErrInvalidItem = errors.New("fpgrowth: invalid item")
 )
 

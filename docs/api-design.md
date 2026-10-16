@@ -68,9 +68,10 @@ func SpoolCSV(ctx context.Context, r io.Reader, dir string, f CSVFormat) (Source
   `TableFormat` means the same, any other value is literal.
 - **CSV.** RFC 4180 via `encoding/csv`: one record = one transaction;
   options `Comma`, `Comment`, `HasHeader` (skip first record),
-  `WeightColumn` (index or -1), `TrimSpace`, `SkipEmptyFields` (default
-  true: empty fields are not items). Distinct from the flexible table
-  format on purpose.
+  `WeightColumn` (1-based; 0 = none, negative counts from the end),
+  `TrimSpace`, `KeepEmptyFields` (default false: empty fields are not
+  items), `LazyQuotes`. Distinct from the flexible table format on
+  purpose.
 
 ## Mining item sets
 
@@ -134,9 +135,12 @@ func CollectItemsets[T comparable](ctx context.Context, src Source[T], opt Optio
   optional pattern spectrum. Counts describing the input are `int64` (like
   weights and supports), counts of results `uint64` (like upstream's
   reporter counters).
-- Cancellation is checked between transactions, at every recursion step
-  and every 256 nodes or counters of the item set tree; a few results may
-  still be delivered after the context is canceled.
+- Cancellation is checked between transactions, at every recursion step,
+  every 1024 reporter steps (bounding perfect-extension hypercubes and
+  k-items machine bursts), every 256 nodes or counters of the item set
+  tree and every 4096 tables of a Fisher test; up to about 1024 results
+  may still be delivered after the context is canceled, and a canceled
+  run always returns `ctx.Err()`.
 - `Tuning`: `NoPerfectExtensions`, `NoReorder`, `NoHeadUnionTail`,
   `ItemMachine int` (k-items machine size, 0 = upstream default 16,
   negative = off), `ItemOrder` (upstream `-q`). Zero value = upstream
@@ -206,7 +210,9 @@ Sentinels: `ErrInvalidOptions` (wrapped with the field name),
 `ErrNotReplayable`, `ErrNegativeWeight`, `ErrWeightOverflow`,
 `ErrTooLarge`, `ErrSyntax`, `ErrInvalidItem` (an item whose dynamic type
 is not comparable, or that is not equal to itself such as NaN; checked
-only for item types that can hold interfaces or floats). Context
+only for item types that can hold interfaces or floats, once per
+distinct item when it is first read; items ignored by `Options.Items` or
+`RuleOptions.DefaultAppearance` are checked at every occurrence). Context
 cancellation returns `ctx.Err()`. A database without frequent items is
 not an error: nothing is reported and `Summary.FrequentItems` is 0 (the
 CLI keeps upstream's "no (frequent) items found" error).

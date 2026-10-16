@@ -18,6 +18,16 @@ import (
 // YatesPValue, InformationPValue and the Fisher measures) smaller values
 // are better and the threshold is a maximum. Measure.HigherIsBetter tells.
 //
+// Cost: every measure takes constant time per evaluated rule, except the
+// four Fisher measures, which sum the probabilities of all contingency
+// tables with the rule's margins and take O(min(body, head)) time per
+// rule, where body and head are the supports of B and {h}. With large
+// transaction weights this dominates: with body and head supports of
+// 5·10^7 (total weight 10^8) one evaluation takes about 0.7 to 4.4
+// seconds, depending on the measure (Apple M1 Max). The sums check for
+// cancellation every 4096 tables, so a canceled context still stops
+// mining promptly.
+//
 // The zero Measure is not a measure; an Evaluation must name one.
 type Measure int
 

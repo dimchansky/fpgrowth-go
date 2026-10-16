@@ -11,9 +11,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
+	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
@@ -690,6 +692,172 @@ func TestCancel(t *testing.T) {
 	}
 }
 
+// cancelLatencyLimit bounds the time from a cancellation to the return of
+// a mining call in the tests below; the measured values are a few
+// milliseconds at most (logged), the limit leaves room for -race and
+// loaded machines.
+const cancelLatencyLimit = 500 * time.Millisecond
+
+// identicalSource returns three transactions that all consist of items
+// 0..k-1: every item is a perfect extension of the empty set, so the 2^k-1
+// sets are reported from a single report call (perfect-extension
+// hypercube) without a recursion entry of the miner in between.
+func identicalSource(k int) Source[int] {
+	items := make([]int, k)
+	for i := range items {
+		items[i] = i
+	}
+	return FromItems([][]int{items, items, items})
+}
+
+// dense16Source returns transactions over 16 items, each present with
+// probability 0.85: almost all 2^16 sets are frequent and few items are
+// perfect extensions, so the 16-items machine reports them in one burst.
+func dense16Source() Source[int] {
+	r := rand.New(rand.NewPCG(16, 16))
+	txs := make([][]int, 3000)
+	for i := range txs {
+		for j := range 16 {
+			if r.Float64() < 0.85 {
+				txs[i] = append(txs[i], j)
+			}
+		}
+	}
+	return FromItems(txs)
+}
+
+// TestCancelBursts cancels mining while the reporter emits sets without
+// returning to a recursion entry of the miner: the expansion of large
+// perfect-extension hypercubes (20 to 26 identical items) and the bursts
+// of the 16-items machine, for every variant. Mining must return
+// context.Canceled promptly, after at most about report.AbortEvery further
+// results.
+func TestCancelBursts(t *testing.T) {
+	t.Parallel()
+	type dataset struct {
+		name string
+		src  Source[int]
+	}
+	data := []dataset{{"dense16", dense16Source()}}
+	for _, k := range []int{20, 23, 26} {
+		data = append(data, dataset{fmt.Sprintf("identical%d", k), identicalSource(k)})
+	}
+	algos := []Algorithm{AlgorithmAuto, AlgorithmSimple, AlgorithmComplex, AlgorithmSingleTree, AlgorithmTopDown}
+	const cancelAt = 1000
+	for _, d := range data {
+		for _, a := range algos {
+			for _, tg := range []Target{TargetFrequent, TargetClosed} {
+				if tg == TargetClosed && d.name != "dense16" {
+					continue // closed sets do not expand perfect extensions
+				}
+				t.Run(fmt.Sprintf("%s/%v/%v", d.name, a, tg), func(t *testing.T) {
+					t.Parallel()
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					opt := Options[int]{MinSupport: Count(1), Algorithm: a, Target: tg}
+					calls, after := 0, 0
+					var canceled time.Time
+					_, err := MineItemsets(ctx, d.src, opt, func(Itemset[int]) error {
+						calls++
+						switch {
+						case calls == cancelAt:
+							canceled = time.Now()
+							cancel()
+						case calls > cancelAt:
+							after++
+						}
+						return nil
+					})
+					if calls < cancelAt {
+						t.Fatalf("only %d results", calls)
+					}
+					latency := time.Since(canceled)
+					if err != context.Canceled {
+						t.Fatalf("got %v after %d results", err, calls)
+					}
+					if after > 2*report.AbortEvery {
+						t.Errorf("%d results after the cancellation", after)
+					}
+					if latency > cancelLatencyLimit {
+						t.Errorf("returned %v after the cancellation", latency)
+					}
+					t.Logf("%d results and %v after the cancellation", after, latency)
+				})
+			}
+		}
+	}
+}
+
+// TestCancelAfterLastCheck cancels in the callback of the last result,
+// after which the miner performs no further cancellation check: a
+// canceled run must still return ctx.Err(), never success.
+func TestCancelAfterLastCheck(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	src := FromItems([][]string{{"a"}, {"a"}})
+	n := 0
+	sum, err := MineItemsets(ctx, src, Options[string]{MinSupport: Count(1)}, func(Itemset[string]) error {
+		n++
+		cancel()
+		return nil
+	})
+	if err != context.Canceled || n != 1 || sum.Reported != 1 {
+		t.Fatalf("got %v, %d results, summary %+v", err, n, sum)
+	}
+}
+
+// TestCancelFisher cancels mining while a Fisher measure evaluates a rule
+// with huge supports (O(min(body, head)) = 5·10^7 tables per evaluation,
+// seconds each): mining must return context.Canceled promptly, for rules
+// and for item sets evaluated through the item set tree.
+func TestCancelFisher(t *testing.T) {
+	t.Parallel()
+	src := FromSlice([]Transaction[string]{
+		{Items: []string{"a", "b"}, Weight: 30_000_000},
+		{Items: []string{"a"}, Weight: 20_000_000},
+		{Items: []string{"b"}, Weight: 20_000_000},
+		{Items: []string{"c"}, Weight: 30_000_000},
+	})
+	measures := []Measure{FisherProb, FisherChi2, FisherInfo, FisherSupport}
+	for _, m := range measures {
+		for _, kind := range []string{"rules", "itemsets"} {
+			t.Run(fmt.Sprintf("%v/%s", m, kind), func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				var canceled time.Time
+				ev := &Evaluation{Measure: m}
+				onStart := func(Stats) error {
+					time.AfterFunc(20*time.Millisecond, func() {
+						canceled = time.Now()
+						cancel()
+					})
+					return nil
+				}
+				var err error
+				if kind == "rules" {
+					_, err = MineRules(ctx, src, RuleOptions[string]{
+						MinSupport: Fraction(0.1), MinConfidence: 0.1, Evaluation: ev, OnStart: onStart,
+					}, nil)
+				} else {
+					_, err = MineItemsets(ctx, src, Options[string]{
+						MinSupport: Fraction(0.1), Evaluation: ev, OnStart: onStart,
+					}, nil)
+				}
+				if err != context.Canceled {
+					t.Fatalf("got %v", err)
+				}
+				latency := time.Since(canceled)
+				if latency > cancelLatencyLimit {
+					t.Errorf("returned %v after the cancellation", latency)
+				}
+				t.Logf("returned %v after the cancellation", latency)
+			})
+		}
+	}
+}
+
 // TestConcurrent runs mining calls concurrently on shared sources (run
 // with -race).
 func TestConcurrent(t *testing.T) {
@@ -1053,6 +1221,74 @@ func TestInvalidItems(t *testing.T) {
 		Options[any]{MinSupport: Count(1), Items: []any{[]byte("x")}}, nil)
 	if !errors.Is(err, ErrInvalidOptions) {
 		t.Errorf("slice in Items: %v", err)
+	}
+}
+
+// TestInvalidItemsPerDistinctItem checks the item checks that run once
+// per distinct item (when the item base first meets it) and under the
+// per-transaction recover: they name the right transaction and pass, also
+// for items ignored by Options.Items, for items that only occur in pass 2
+// of a source that is not replayable, and for the appearance hook of
+// rules, whose map lookups panic first.
+func TestInvalidItemsPerDistinctItem(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// per pass: a source that yields different items in pass 2
+	twoPass := func(p1, p2 [][]any) Source[any] {
+		pass := 0
+		return SourceFunc[any](func() iter.Seq2[Transaction[any], error] {
+			pass++
+			txs := p1
+			if pass > 1 {
+				txs = p2
+			}
+			return FromItems(txs).Transactions()
+		})
+	}
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{"nan in transaction 3", func() error {
+			_, err := MineItemsets(ctx, FromItems([][]any{{1, 2}, {1}, {2, math.NaN()}}), Options[any]{MinSupport: Count(1)}, nil)
+			return err
+		}, "transaction 3 (pass 1)"},
+		{"slice after known items", func() error {
+			_, err := MineItemsets(ctx, FromItems([][]any{{1, 2}, {2, 1, []int{1}}}), Options[any]{MinSupport: Count(1)}, nil)
+			return err
+		}, "transaction 2 (pass 1): item of type []int is not comparable"},
+		{"nan ignored by Items", func() error {
+			_, err := MineItemsets(ctx, FromItems([][]any{{1}, {1, math.NaN()}}), Options[any]{MinSupport: Count(1), Items: []any{1}}, nil)
+			return err
+		}, "transaction 2 (pass 1)"},
+		{"nan in pass 2 only", func() error {
+			_, err := MineItemsets(ctx, twoPass([][]any{{1}, {1}}, [][]any{{1}, {math.NaN()}}), Options[any]{MinSupport: Count(1)}, nil)
+			return err
+		}, "transaction 2 (pass 2)"},
+		{"map in pass 2 only", func() error {
+			_, err := MineItemsets(ctx, twoPass([][]any{{1}, {1}}, [][]any{{map[int]int{}}, {1}}), Options[any]{MinSupport: Count(1)}, nil)
+			return err
+		}, "transaction 1 (pass 2): item of type map[int]int is not comparable"},
+		{"slice in rules with appearances", func() error {
+			_, err := MineRules(ctx, FromItems([][]any{{1, 2}, {[]byte("x")}}), RuleOptions[any]{
+				MinSupport: Count(1), Appearance: map[any]Appearance{1: AppearBody},
+			}, nil)
+			return err
+		}, "transaction 2 (pass 1): item of type []uint8 is not comparable"},
+		{"struct with an interface field", func() error {
+			_, err := MineItemsets(ctx, FromItems([][]ifaceItem{{{"a", 1}}, {{"a", 1}, {"b", []int{}}}}), Options[ifaceItem]{MinSupport: Count(1)}, nil)
+			return err
+		}, "transaction 2 (pass 1)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.run()
+			if !errors.Is(err, ErrInvalidItem) || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("got %v, want ErrInvalidItem with %q", err, tt.want)
+			}
+		})
 	}
 }
 
