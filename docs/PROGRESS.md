@@ -20,10 +20,31 @@ linked documents.
   - Upstream audits running: fpgrowth core, tract/fim16/clomax/patspec,
     report, rules/evaluation, CLI/IO, reference build + sanitizers.
 
-## Next steps
+## PAUSED (2026-10-16, at the user's request)
 
-1. Collect audits → `docs/feature-matrix.md`, architecture plan.
-2. Stage 1: faithful port, component by component, with tests.
+Stage 0 audits are complete (`docs/upstream/*.md`); `docs/architecture.md`,
+`docs/feature-matrix.md` and `docs/differences.md` are drafted.
+
+Stage 1 wave 1 was stopped mid-work. Partial, **uncommitted and unreviewed**
+files are in the working tree:
+- `internal/tract/` (item base, recode sort ports, bag) — C harness not done.
+- `internal/tabread/`, `internal/cconv/` — tokenizer tests passed; reader
+  tests/fuzz pending.
+- `internal/ruleval/` — C harness started; Go code just begun.
+- `internal/report/` — in progress (simulator/property tests pending).
+- `internal/oracle/` — unit tests passed; C cross-check pending.
+- `reference/build.sh`, `reference/README.md` — variant build being
+  rewritten (add `-ffp-contract=off` to all variants, plus a `native`
+  variant); `docs/upstream/reference-build.md` not written yet.
+- `reference/harness/*` — partial C harnesses.
+
+## Next steps (on resume)
+
+1. Resume or restart the six wave-1 tasks above from their partial files;
+   review each deliverable, then commit package by package.
+2. Wave 2: `internal/fpg` (variants + fim16, fixes core B1/B3/B5),
+   `internal/istree` (rules path; decide rules B1/B2), `internal/isrout`.
+3. Wave 3: CLI, golden fixtures, differential tests, Stage 1 review.
 
 ## Open problems
 
