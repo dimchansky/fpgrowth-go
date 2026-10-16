@@ -1,0 +1,19 @@
+# Local tooling state (machine-specific, not part of the project)
+.code-review-graph/
+.mcp.json
+.claude/
+CLAUDE.local.md
+
+# Build outputs
+/fpgrowth
+/cmd/fpgrowth/fpgrowth
+/dist/
+/reference/build/
+*.test
+*.out
+*.prof
+coverage.*
+
+# OS/editor noise
+.DS_Store
+*.swp
