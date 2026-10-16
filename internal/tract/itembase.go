@@ -57,6 +57,7 @@ type ItemBase[T comparable] struct {
 	isRecoded bool          // Recode has been called
 	buf       []Item        // scratch: items of the current record
 	check     func(T) error // validation of unknown identifiers (SetCheck)
+	abort     func() error  // cancellation check of BuildBag (SetAbort)
 }
 
 // NewItemBase returns an empty item base in which every new item may
@@ -127,6 +128,14 @@ func (b *ItemBase[T]) AddAppearance(id T, app Appearance) error {
 // The check cannot catch interface values whose dynamic type is not
 // comparable: the map lookup that precedes it panics.
 func (b *ItemBase[T]) SetCheck(fn func(T) error) { b.check = fn }
+
+// SetAbort sets a cancellation check for the work of BuildBag after its
+// scan: completing the bag visits every node of its prefix tree (tens of
+// millions for large databases) and calls fn every few tens of thousands
+// of nodes. A non-nil result stops BuildBag, which returns it unchanged.
+// The scan itself is not checked; the caller's scan function does that.
+// nil (the default) disables the check.
+func (b *ItemBase[T]) SetAbort(fn func() error) { b.abort = fn }
 
 // add appends a new item with zero counters.
 func (b *ItemBase[T]) add(id T, app Appearance) (Item, error) {

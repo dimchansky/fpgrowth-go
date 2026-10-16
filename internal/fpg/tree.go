@@ -165,10 +165,6 @@ func (m *Miner[T]) mineTree(ctx context.Context) error {
 	return nil
 }
 
-// fillCheckEvery is the number of transactions between cancellation
-// checks while fillTree builds the FP-tree.
-const fillCheckEvery = 4096
-
 // fillTree is a port of fpg_tree: it builds a simple FP-tree of the
 // frequent items (no perfect extension pruning, no 16-items machine) and
 // fills the item set tree ist with rec_tree.
@@ -200,7 +196,7 @@ func (m *miner) fillTree(ist *istree.Tree) error {
 	buf := make([]int32, k)
 	nt := 0
 	for items, w := range m.bag.Backward() {
-		if nt++; nt%fillCheckEvery == 0 {
+		if nt++; nt%buildCheckEvery == 0 {
 			if err := m.aborted(); err != nil {
 				return err
 			}

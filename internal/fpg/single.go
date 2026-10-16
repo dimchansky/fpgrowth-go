@@ -129,7 +129,13 @@ func (m *miner) mineSingle() error {
 		t.heads[i] = fpHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}
 	}
 	buf := m.path
+	nt := 0
 	for items, w := range m.bag.Backward() {
+		if nt++; nt%buildCheckEvery == 0 {
+			if err := m.aborted(); err != nil {
+				return err
+			}
+		}
 		n := 0
 		for _, p := range items {
 			if p < 0 { // packed items go to the 16-items machine
@@ -141,6 +147,9 @@ func (m *miner) mineSingle() error {
 			}
 		}
 		m.addSmp16(t, buf[:n], w)
+	}
+	if err := m.aborted(); err != nil {
+		return err
 	}
 	if t.fim != nil {
 		if _, err := t.fim.mine(); err != nil {

@@ -86,7 +86,11 @@
 // are rerun with an output file and the measure in the format
 // (countByRerun); the difference is tolerated if the records differ only
 // at the threshold or by a value-level deviation, and each count matches
-// that program's records.
+// that program's records. Likewise, if the records differ and the case
+// has a measure but its output format no value column, both programs are
+// rerun with the measure in the format (recordsByRerun): the difference
+// is tolerated if the rerun shows only such records and each program
+// wrote the same records in both runs.
 //
 // Value-level deviations of measures (R4 conviction, R5 certainty factor,
 // R6/R9 Fisher, R7 information, R9 Yates) excuse individual records in

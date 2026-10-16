@@ -391,7 +391,13 @@ func (m *miner) mineComplex() error {
 		m.fim = newMachine(m.dir, m.supp, m.rep)
 	}
 	buf := m.path
+	nt := 0
 	for items, w := range m.bag.Backward() {
+		if nt++; nt%buildCheckEvery == 0 {
+			if err := m.aborted(); err != nil {
+				return err
+			}
+		}
 		n := 0
 		for _, p := range items {
 			if x := d[p]; x >= 0 {

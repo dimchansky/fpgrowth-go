@@ -398,7 +398,13 @@ func (m *miner) mineSimple() error {
 	if usePack {
 		t.fim = newMachine(m.dir, m.supp, m.rep)
 		t.heads[0].item = tract.End
+		nt := 0
 		for items, w := range m.bag.Backward() {
+			if nt++; nt%buildCheckEvery == 0 {
+				if err := m.aborted(); err != nil {
+					return err
+				}
+			}
 			n := 0
 			for _, p := range items {
 				if p < 0 { // packed items are always copied
@@ -416,7 +422,13 @@ func (m *miner) mineSimple() error {
 		}
 		return m.rep.Report() // finally report the empty item set
 	}
+	nt := 0
 	for items, w := range m.bag.Backward() {
+		if nt++; nt%buildCheckEvery == 0 {
+			if err := m.aborted(); err != nil {
+				return err
+			}
+		}
 		n := 0
 		for _, p := range items {
 			if x := d[p]; x >= 0 {

@@ -166,6 +166,7 @@ func (r *runner) mine() *cliError {
 	}
 	start = time.Now()
 	r.logf("filtering, sorting and recoding items ... ")
+	ib.SetAbort(r.aborted) // completing a large bag takes a while
 	if err := m.Data(ib, scan); err != nil {
 		if errors.Is(err, fpg.ErrNoItems) {
 			return errorf(exitNoItems, "no (frequent) items found")
@@ -406,6 +407,16 @@ func (r *runner) copyError(err error, name string) *cliError {
 		return errorf(exitWrite, "write error on temporary file for "+name)
 	default:
 		return errorf(exitRead, "read error on file "+name)
+	}
+}
+
+// aborted is a non-blocking check of ctx (SIGINT).
+func (r *runner) aborted() error {
+	select {
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	default:
+		return nil
 	}
 }
 

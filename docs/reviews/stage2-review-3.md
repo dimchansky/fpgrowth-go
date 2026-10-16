@@ -51,4 +51,22 @@ below.
 
 ## Fix record
 
-To be completed by the orchestrator after the fixes land.
+- N7: abort checks every 4 096 transactions in every top-level tree build,
+  bag finishing abortable (`ItemBase.SetAbort`, every 32 768 nodes), ctx
+  checked before mining. 4 M × 20 scenario: cancel in OnStart 3.9–19.3 s →
+  24–47 µs; cancel at end of pass 2 3.4 s → 40 ms. Tests
+  `TestCancelTreeBuild`, `TestItemBase_BuildBag_abort`.
+- N8: `recTopDown` checks before every node and returns the latched error;
+  top-down `MaxSize: 1` cancel 17.5 s → 9–10 ms (`TestCancelTopDownLevel`).
+- N9: second SIGINT restores default handling and kills the CLI (exec test).
+- N10: OnStart skipped after cancel; early returns give `ctx.Err()`
+  (`TestCancelBeforeOnStart`).
+- N11: difftest reruns value-less eval cases with a value column; M3
+  exempts order. Seed 663127 (20 000 + 400 large): 0 failures.
+- N12: progress log updated (`0d405e8`).
+- Benchmarks: `internal/fpg BenchmarkMine` all 18 cases within noise
+  (benchstat, count 6, p > 0.05), allocations identical.
+- Verification: gofmt, vet, staticcheck, `go test -race ./...`, difftest,
+  CLI golden tests unchanged — all pass.
+
+**Stage 2 closed.**

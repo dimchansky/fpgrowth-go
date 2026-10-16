@@ -83,6 +83,11 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 	}
 }
 
+// buildCheckEvery is the number of transactions between two cancellation
+// checks while a top-level FP-tree is built from the bag (all item set
+// variants and fillTree of the item set tree path).
+const buildCheckEvery = 4096
+
 // aborted is the cancellation check at recursion entry (upstream
 // sig_aborted with FPG_ABORT): a non-blocking receive on ctx.Done().
 func (m *miner) aborted() error {

@@ -73,7 +73,7 @@ type outcome struct {
 	cFull      bool     // deviation case: C passed the brute force and was compared in full
 	cExempt    bool     // ... and differed only in channels the deviations excuse
 	rerun      rerunFunc
-	reruns     int     // count-only differences classified by a rerun with output
+	reruns     int     // differences classified by a rerun with the measure (countByRerun, recordsByRerun)
 	bfChecked  bool    // Go was checked against the brute force
 	bfSubset   bool    // ... only as a subset (evaluation measure)
 	maxRel     float64 // largest relative difference of equal 17-digit values (relTol)
@@ -310,6 +310,11 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []cdiff {
 	dev := measureDeviation(c)
 	evalIdx := c.info.fieldIndex("e")
 	membership := false // a set/rule is on one side only
+	// Without a value column a record at the threshold cannot be
+	// recognized here: such membership differences are collected and
+	// classified by a rerun with the measure (recordsByRerun).
+	rerunMissing := c.eval != 'x' && evalIdx < 0 && o.rerun != nil
+	var missing []cdiff
 	for _, key := range sortedKeys(cm) {
 		cr := cm[key]
 		gr, ok := gm[key]
@@ -320,6 +325,8 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []cdiff {
 				o.boundary++
 			case dev != nil && dev.allowsMissing(c, db, cr, false):
 				o.recordDevs++
+			case rerunMissing:
+				missing = append(missing, cdiff{kind: diffRecords, msg: "only in C: " + cr.line})
 			default:
 				kind = diffRecords
 				failf("only in C: %s", cr.line)
@@ -382,10 +389,15 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []cdiff {
 			o.boundary++
 		case dev != nil && dev.allowsMissing(c, db, gr, true):
 			o.recordDevs++
+		case rerunMissing:
+			missing = append(missing, cdiff{kind: diffRecords, msg: "only in Go: " + gr.line})
 		default:
 			kind = diffRecords
 			failf("only in Go: %s", gr.line)
 		}
+	}
+	if len(missing) > 0 && !o.recordsByRerun(c, db, crecs, grecs) {
+		diffs = append(diffs, missing...)
 	}
 	// the order of the common records must be the same
 	var co, gorder []string
@@ -568,6 +580,45 @@ func (o *outcome) countByRerun(c *tcase, db *bfDB, cr, gr *runResult) bool {
 	for _, p := range [][2]*runResult{{cr, rcr}, {gr, rgr}} {
 		recs, err := parseOutput(p[1].out, rc.info, rc.isRules(), rc.sep, rc.imp)
 		if err != nil || reportedCount(p[0].stderr) != int64(len(recs)) {
+			return false
+		}
+	}
+	o.boundary += sub.boundary
+	o.recordDevs += sub.recordDevs
+	o.tolerated += sub.tolerated
+	o.reruns++
+	return true
+}
+
+// recordsByRerun classifies the records that only one program wrote in a
+// case with an evaluation measure whose output format has no value
+// column (crecs and grecs are the records of the C and the Go run).
+// Like countByRerun, it reruns both programs with the measure in the
+// format; the difference is explained if the records of the rerun differ
+// only by records at the threshold or by a value-level deviation (R4-R9)
+// and each program wrote the same records, in the same order, in both
+// runs.
+func (o *outcome) recordsByRerun(c *tcase, db *bfDB, crecs, grecs []record) bool {
+	rc := c.withOutput()
+	rcr, rgr := o.rerun(rc)
+	if rcr.runErrMsg != "" || rgr.runErrMsg != "" || rcr.exit != 0 || rgr.exit != 0 {
+		return false
+	}
+	sub := &outcome{deviations: o.deviations}
+	for _, d := range sub.compareC(rc, db, rcr, rgr) {
+		if d.kind == diffRecords || d.kind == diffValue || d.kind == diffParse {
+			return false
+		}
+	}
+	if sub.boundary+sub.recordDevs == 0 {
+		return false // the rerun shows no record at the threshold
+	}
+	for _, p := range []struct {
+		orig  []record
+		rerun *runResult
+	}{{crecs, rcr}, {grecs, rgr}} {
+		recs, err := parseOutput(p.rerun.out, rc.info, rc.isRules(), rc.sep, rc.imp)
+		if err != nil || !slices.EqualFunc(p.orig, recs, func(a, b record) bool { return a.key == b.key }) {
 			return false
 		}
 	}

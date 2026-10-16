@@ -93,6 +93,64 @@ func TestOutcome_countByRerunNeedsMeasure(t *testing.T) {
 	}
 }
 
+func TestOutcome_recordsByRerun(t *testing.T) {
+	t.Parallel()
+	const (
+		cOut  = "b (3)\na (2)\nx (2)\n"
+		goOut = "b (3)\na b (1)\na (2)\nx (2)\n"
+		cRe   = "b (3,0)\na (2,0)\nx (2,0)\n"
+	)
+	tests := []struct {
+		name       string
+		cRerun     string
+		goRerun    string
+		wantDiff   bool
+		wantReruns int
+	}{
+		{name: "pair at the threshold explains the records", cRerun: cRe,
+			goRerun: "b (3,0)\na b (1,0)\na (2,0)\nx (2,0)\n", wantReruns: 1},
+		{name: "pair away from the threshold is a failure", cRerun: cRe,
+			goRerun: "b (3,0)\na b (1,0.5)\na (2,0)\nx (2,0)\n", wantDiff: true},
+		{name: "rerun records must be those of the run", cRerun: "b (3,0)\na b (1,0)\na (2,0)\nx (2,0)\n",
+			goRerun: "b (3,0)\na b (1,0)\na (2,0)\nx (2,0)\n", wantDiff: true},
+		{name: "same records in the rerun cannot explain the difference", cRerun: cRe,
+			goRerun: cRe, wantDiff: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := f1Case(false)
+			c.info.fields = c.info.fields[:1] // "-v (%a)": no value column
+			db, err := newBF(c.txs, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rerunArgs []string
+			o := &outcome{rerun: func(rc *tcase) (cr, gr *runResult) {
+				rerunArgs = rc.args()
+				return &runResult{out: []byte(tt.cRerun), hasOut: true}, &runResult{out: []byte(tt.goRerun), hasOut: true}
+			}}
+			cr := &runResult{out: []byte(cOut), hasOut: true}
+			gr := &runResult{out: []byte(goOut), hasOut: true}
+			diffs := o.compareC(c, db, cr, gr)
+			if got := len(diffs) > 0; got != tt.wantDiff {
+				t.Errorf("differences %v, want some: %v", diffMessages(diffs), tt.wantDiff)
+			}
+			for _, d := range diffs {
+				if d.kind != diffRecords {
+					t.Errorf("difference of kind %d: %s", d.kind, d.msg)
+				}
+			}
+			if o.reruns != tt.wantReruns || o.boundary != tt.wantReruns {
+				t.Errorf("reruns = %d, boundary = %d, want %d", o.reruns, o.boundary, tt.wantReruns)
+			}
+			if !slices.Contains(rerunArgs, "-v (%a,%17e)") {
+				t.Errorf("rerun arguments %q lack the format with the measure", rerunArgs)
+			}
+		})
+	}
+}
+
 // TestF1Reproducer runs both programs on the F1 reproducer. Whether the C
 // reference reports {a, b} depends on its libm (Apple's omits it, see
 // internal/fpg TestLogRatioIndependenceBoundary); in either case the

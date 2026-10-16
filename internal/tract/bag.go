@@ -153,7 +153,7 @@ func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
 			"pass 2 read %d records of weight %d, pass 1 %d of weight %d: %w",
 			records, total, b.records, b.wgt, ErrNotReplayable)
 	}
-	return bld.finish(records, total), nil
+	return bld.finish(records, total, b.abort)
 }
 
 // newBagBuilder returns a builder for a bag over n items.
@@ -262,9 +262,14 @@ func childKey(v int32, c Item) uint64 {
 	return uint64(v)<<32 | uint64(uint32(c))
 }
 
+// finishCheckEvery is the number of prefix tree nodes between two calls
+// of the abort function in finish.
+const finishCheckEvery = 1 << 15
+
 // finish completes the bag: it applies tbg_reduce's rules to the counts
-// and sorts every child list by descending item.
-func (bb *bagBuilder) finish(records int, total Supp) *Bag {
+// and sorts every child list by descending item. abort, if not nil, is
+// called every finishCheckEvery nodes; its error stops finish.
+func (bb *bagBuilder) finish(records int, total Supp, abort func() error) (*Bag, error) {
 	bag := bb.bag
 	bb.index = nil
 	bag.records = records
@@ -282,6 +287,11 @@ func (bb *bagBuilder) finish(records int, total Supp) *Bag {
 	}
 	var buf []int32
 	for v := range bag.nodes {
+		if abort != nil && v%finishCheckEvery == finishCheckEvery-1 {
+			if err := abort(); err != nil {
+				return nil, err
+			}
+		}
 		nd := &bag.nodes[v]
 		if nd.nchild < 2 {
 			continue
@@ -302,7 +312,7 @@ func (bb *bagBuilder) finish(records int, total Supp) *Bag {
 			bag.nodes[x].sibling = next
 		}
 	}
-	return bag
+	return bag, nil
 }
 
 // NumItems returns the number of items, i.e. of codes 0..NumItems()-1

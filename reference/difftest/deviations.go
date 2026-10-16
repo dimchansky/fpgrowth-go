@@ -89,12 +89,16 @@ func caseDeviations(c *tcase, db *bfDB) []string {
 // Go that the deviation explains even when C's records pass the
 // brute-force check: M2 changes the log (item count) and, through the
 // codes of the zero-frequency items it keeps, the order of the rules; M3
-// changes the logged transaction count, O3 the pattern spectrum (and its
-// logged signature count), R1 the rule values, R2 the pruned sets and O4
-// the count-only counts.
+// changes the logged transaction count and the order of the sets (the
+// port mines generators without upstream's zmin transaction filter, so
+// the trees hold the short transactions too and the conditional supports
+// by which the projections reorder their items differ, and with them the
+// order in which the sets are found); O3 changes the pattern spectrum
+// (and its logged signature count), R1 the rule values, R2 the pruned
+// sets and O4 the count-only counts.
 var devExempt = map[string][]diffKind{
 	"M2": {diffStderr, diffOrder},
-	"M3": {diffStderr},
+	"M3": {diffStderr, diffOrder},
 	"O3": {diffSpectrum},
 	"R1": {diffValue, diffRecords},
 	"R2": {diffRecords},

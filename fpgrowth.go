@@ -104,20 +104,26 @@ var errStop = errors.New("fpgrowth: iteration stopped")
 // the pass in which they occurred. A database without frequent items is
 // not an error: nothing is reported and Summary.FrequentItems is 0.
 //
-// Cancellation is checked every 1024 transactions while reading and
+// Cancellation is checked before each pass and every 1024 transactions
+// while reading; every 32768 prefix-tree nodes while the transaction bag
+// is completed after the second pass; before OnStart and before mining;
+// every 4096 transactions while the top-level FP-tree is built; and
 // frequently, but not before every result, while mining: at every
-// recursion step, every 1024 steps of the reporter (which also bounds the
-// expansion of large perfect-extension hypercubes and the bursts of the
-// k-items machine), and in the item set tree path of rule-based
-// evaluations every 256 counters and every 4096 tables of a Fisher test.
-// fn may therefore still be called for up to about 1024 item sets after
-// ctx is canceled. MineItemsets returns ctx.Err() whenever ctx was
-// canceled before it returns, also if mining finished after the last
-// check.
+// recursion step, before every item of a top-down tree level, every 1024
+// steps of the reporter (which also bounds the expansion of large
+// perfect-extension hypercubes and the bursts of the k-items machine),
+// and in the item set tree path of rule-based evaluations every 256 nodes
+// or counters and every 4096 tables of a Fisher test. fn may therefore
+// still be called for up to about 1024 item sets after ctx is canceled.
+// The time to return is that of the work between two checks, which grows
+// with the input (a projection or a merge is proportional to the tree it
+// processes); it is not a hard bound. MineItemsets returns ctx.Err()
+// whenever ctx was canceled before it returns, also if mining finished
+// after the last check.
 //
 // If opt.OnStart is set, it is called once before the first result (also
-// if nothing is reported), with the Stats of the database; its error
-// stops mining and is returned unchanged.
+// if nothing is reported), with the Stats of the database, unless ctx is
+// canceled by then; its error stops mining and is returned unchanged.
 //
 // MineItemsets is safe for concurrent use if src supports concurrent
 // passes. The Summary is valid also when an error is returned (as far as
@@ -250,7 +256,13 @@ func mine[T comparable](
 	sum.Transactions = int64(ib.Records())
 	sum.TotalWeight = int64(ib.TotalWeight())
 	border := p.setThresholds(&sum.Stats)
+	// start calls OnStart unless ctx was canceled in the meantime (the
+	// last transactions of a pass, the completion of the bag): a
+	// canceled run returns ctx.Err(), also where nothing would be mined.
 	start := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if p.onStart == nil {
 			return nil
 		}
@@ -263,15 +275,28 @@ func mine[T comparable](
 	if err != nil {
 		return sum, mapInternal(err) // excluded by validation
 	}
+	if done := ctx.Done(); done != nil {
+		ib.SetAbort(func() error { // completing a large bag takes a while
+			select {
+			case <-done:
+				return ctx.Err()
+			default:
+				return nil
+			}
+		})
+	}
 	if err := m.Data(ib, sc.scan); err != nil {
 		if errors.Is(err, fpg.ErrNoItems) {
 			return sum, start()
+		}
+		if cerr := ctx.Err(); cerr != nil && errors.Is(err, cerr) {
+			return sum, cerr
 		}
 		return sum, sc.failure(err)
 	}
 	sum.FrequentItems = int64(ib.Len())
 	if err := start(); err != nil {
-		return sum, err // OnStart's error, unchanged
+		return sum, err // ctx.Err() or OnStart's error, unchanged
 	}
 	rep, err := m.Reporter()
 	if err != nil {

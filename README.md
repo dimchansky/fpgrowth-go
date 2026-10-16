@@ -680,20 +680,38 @@ true 5
 
 ### Cancellation
 
-Mining checks the context every 1024 transactions of a pass, at every
-recursion step, every 1024 steps of the item set reporter (so the
-expansion of a large perfect-extension hypercube, up to 2^k sets for k
-items that occur in all transactions, and the bursts of the k-items
-machine stop promptly too), every 256 item sets while the item set tree
-of rules and rule-based evaluations is filtered and reported, and every
-4096 tables while a Fisher measure is evaluated. It returns `ctx.Err()`
-whenever the context was canceled, also if mining finished after the last
-check. Results found since the last check may still be delivered after
-the cancellation: up to about 1024 item sets, or the rules of up to 256
-item sets. In measurements (`TestCancelBursts`, `TestCancelFisher`,
-Apple M1 Max) mining returned within 2 ms of the cancellation, also on
-26 identical items (2^26 sets) and with Fisher evaluations over 5·10^7
-tables. `SpoolTable` and `SpoolCSV` check the context between chunks.
+Mining checks the context in every phase:
+
+- before each pass and every 1024 transactions while reading;
+- every 32768 prefix-tree nodes while the transaction bag is completed
+  after the second pass;
+- before `OnStart` (which is not called once the context is canceled) and
+  before mining;
+- every 4096 transactions while the top-level FP-tree is built;
+- at every recursion step, and before every item of a tree level of
+  `AlgorithmTopDown`;
+- every 1024 steps of the item set reporter, so the expansion of a large
+  perfect-extension hypercube (up to 2^k sets for k items that occur in
+  all transactions) and the bursts of the k-items machine stop promptly
+  too;
+- every 256 nodes or counters while the item set tree of rules and
+  rule-based evaluations is filtered and reported, and every 4096 tables
+  while a Fisher measure is evaluated.
+
+It returns `ctx.Err()` whenever the context was canceled, also if mining
+finished after the last check. Results found since the last check may
+still be delivered after the cancellation: up to about 1024 item sets, or
+the rules of up to 256 item sets. How long the return takes is the work
+between two checks, which grows with the input (one projection or merge
+of a tree is proportional to its size); it is not a hard bound. In
+measurements (Apple M1 Max) mining returned within 2 ms of the
+cancellation in `TestCancelBursts` (26 identical items, 2^26 sets) and
+`TestCancelFisher` (5·10^7 tables per evaluation); on 4 million
+generated transactions of 20 items each, canceled while the FP-tree was
+built or while mining (building the whole tree takes 4–19 s there), it
+usually returned within 10 ms and at most within 0.35 s, when the
+cancellation met the growth (a copy) of a node arena of several GB. `SpoolTable` and `SpoolCSV` check the context between
+chunks.
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

@@ -17,7 +17,7 @@ linked documents.
   randomized differential suite `reference/difftest` (0 failures in
   30 000+ cases). Medium/Low review findings: docs fixed (F4, F6–F8, F10);
   F1/F2/F3/F9 test-suite work in progress.
-- **Stage 2 (idiomatic API, sources, streaming): accepted with conditions**
+- **Stage 2 (idiomatic API, sources, streaming): accepted and closed** (conditions fixed)
   after three review iterations (`docs/reviews/stage2-review-{1,2,3}.md`):
   iteration 1 rejected (H1 cancellation in item-set tree), iteration 2
   rejected (N1 cancellation during perfect-extension enumeration),
@@ -31,14 +31,12 @@ linked documents.
 
 ## Next steps
 
-1. Land the Stage 2 iteration-3 fixes (N7–N11), record them in
-   `docs/reviews/stage2-review-3.md`.
-2. Stage 3: benchmark suite (sparse/dense, item universes, lengths,
+1. Stage 3: benchmark suite (sparse/dense, item universes, lengths,
    weights, thresholds, targets, rules, variants, file vs memory sources,
    streaming), C comparison (time, CPU, RSS), profiling, optimizations with
    benchstat evidence, M5 investigation, benchmark report; then the Stage 3
    critic review.
-3. Stage 4: CI/CD, release automation, OSS files; Stage 4 review; final
+2. Stage 4: CI/CD, release automation, OSS files; Stage 4 review; final
    report.
 
 ## Open problems

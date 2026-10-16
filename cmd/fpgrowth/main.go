@@ -7,7 +7,8 @@
 // docs/differences.md.
 //
 // An interrupt (SIGINT) stops reading and mining, removes the temporary
-// spool file of standard input and exits with status 130.
+// spool file of standard input and exits with status 130. A second
+// interrupt kills the program at once (the default signal behavior).
 package main
 
 import (
@@ -17,7 +18,7 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := interruptContext()
 	code := run(ctx, env{
 		args:   os.Args,
 		stdin:  os.Stdin,
@@ -26,4 +27,13 @@ func main() {
 	})
 	stop()
 	os.Exit(code)
+}
+
+// interruptContext returns a context that the first SIGINT cancels. It
+// then restores the default behavior of SIGINT, so that a second one
+// kills the program if stopping takes too long.
+func interruptContext() (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	context.AfterFunc(ctx, stop)
+	return ctx, stop
 }

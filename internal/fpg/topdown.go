@@ -205,8 +205,18 @@ func (m *miner) recTopDown(t *tdTree, depth int) error {
 		proj = &tdTree{items: m.tdItemBuf(depth+1, t.cnt-1)}
 	}
 	for node := t.root; node >= 0; node = t.root {
+		// Every node of this loop costs a merge of its subtrees, which
+		// at the top level is proportional to the size of the tree and
+		// does not reach a recursion entry when nothing is projected
+		// (e.g. with a maximum size of 1): check before each one.
+		if err := m.aborted(); err != nil {
+			return err
+		}
 		nd := m.td.nodes[node]
 		if !m.rep.Add(t.items[nd.id], nd.supp) {
+			if err := m.rep.Err(); err != nil {
+				return err // latched abort or repository overflow
+			}
 			t.root = m.tdMerge(nd.sibling, nd.children)
 			continue
 		}
@@ -270,7 +280,13 @@ func (m *miner) mineTopDown() error {
 	t := &tdTree{cnt: k, root: nilIdx, items: items}
 	m.td.nodes = make([]tdNode, 0, presize(2*m.bag.Extent()+16))
 	buf := m.path
+	nt := 0
 	for tx, w := range m.bag.Backward() {
+		if nt++; nt%buildCheckEvery == 0 {
+			if err := m.aborted(); err != nil {
+				return err
+			}
+		}
 		n := 0
 		for _, p := range tx {
 			if x := d[p]; x >= 0 {

@@ -385,8 +385,9 @@ type Options[T comparable] struct {
 	PatternSpectrum bool
 	// OnStart, if not nil, is called once before the first item set is
 	// reported (also if none is), with the Stats of the database: the
-	// total weight for relative supports, the resolved thresholds. Its
-	// error stops mining and is returned unchanged.
+	// total weight for relative supports, the resolved thresholds;
+	// not if ctx is canceled by then. Its error stops mining and is
+	// returned unchanged.
 	OnStart func(Stats) error
 }
 

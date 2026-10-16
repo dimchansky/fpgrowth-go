@@ -392,22 +392,35 @@ variants or tuning settings report the same sets in a different order.
   fused multiply-add, so values match the C reference built without FMA;
   log-based values can differ in the last bit from the platform's C library
   (deviation F-1).
-- Cancellation is checked at every recursion entry, every 1024
-  transactions while reading, every 1024 reporter steps (`Add` and
-  `Report` calls and sets of an expanded perfect-extension hypercube,
-  `report.AbortEvery`), every 4096 transactions while the item set tree
-  path builds its FP-tree, every 256 nodes or counters while the item set
-  tree is filtered (`Filter`, `CloMax`) and reported, and every 4096
-  tables of a Fisher test (O(min(body, head)) per evaluation). The
+- Cancellation is checked before each pass and every 1024 transactions
+  while reading; every 32768 prefix-tree nodes while `BuildBag`
+  completes the bag (`ItemBase.SetAbort`: sorting the child lists visits
+  every node, about 0.6 s for 69 million nodes); before `OnStart` and at
+  the start of `Miner.Mine`; every 4096 transactions while any variant
+  (and the item set tree path) builds its top-level FP-tree
+  (`buildCheckEvery`); at every recursion entry; before every node of a
+  top-down level (`recTopDown`: each one costs a merge of its subtrees,
+  proportional to the tree at the top level, without a recursion entry
+  when nothing is projected, e.g. with `-n1`); every 1024 reporter steps
+  (`Add` and `Report` calls and sets of an expanded perfect-extension
+  hypercube, `report.AbortEvery`); every 256 nodes or counters while the
+  item set tree is filtered (`Filter`, `CloMax`) and reported; and every
+  4096 tables of a Fisher test (O(min(body, head)) per evaluation). The
   recursion entries alone are not enough: a hypercube of 2^k sets or a
   burst of the 16-items machine reports without returning to one. The
   reporter latches the abort error like a repository overflow, so `Add`
-  fails and `Report` returns it until every recursion has unwound. A
-  canceled context ends mining with `ctx.Err()`, also if the miner
-  finished after its last check. The checks are non-blocking receives on
-  the context's done channel and do not allocate. Up to about 1024 sets
-  (rules: those of 256 item sets) found between two checks may still be
-  reported after the cancellation.
+  fails and `Report` returns it until every recursion has unwound (the
+  top-down loop returns it at once instead of merging the rest of the
+  level). A canceled context ends mining with `ctx.Err()`, also if the
+  miner finished after its last check. The checks are non-blocking
+  receives on the context's done channel and do not allocate. Up to about
+  1024 sets (rules: those of 256 item sets) found between two checks may
+  still be reported after the cancellation. The latency is the work
+  between two checks: a single projection, merge or transaction
+  insertion, each proportional to the tree it processes, so it grows with
+  the input and is not a hard bound (measured on 4 million transactions
+  of 20 items out of 1000: usually 10 ms or less, up to 0.35 s when a
+  node arena of several GB is grown, i.e. copied, by one insertion).
 
 ## 15. References
 

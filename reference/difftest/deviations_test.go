@@ -72,7 +72,8 @@ func TestExempted(t *testing.T) {
 		want bool
 	}{
 		{"M3 excuses the log", noEval, []string{"M3"}, diffStderr, true},
-		{"M3 does not excuse the order", noEval, []string{"M3"}, diffOrder, false},
+		{"M3 excuses the order (unfiltered conditional supports)", noEval, []string{"M3"}, diffOrder, true},
+		{"M3 does not excuse the records", noEval, []string{"M3"}, diffRecords, false},
 		{"O3 excuses the spectrum only", noEval, []string{"O3"}, diffStdout, false},
 		{"M1 excuses nothing without a measure", noEval, []string{"M1"}, diffRecords, false},
 		{"M1 excuses membership under a measure", withEval, []string{"M1"}, diffRecords, true},

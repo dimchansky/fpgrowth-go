@@ -37,10 +37,12 @@
 // association rules. Mining runs synchronously on the calling goroutine;
 // results are delivered one at a time; returning an error from the
 // callback, breaking out of the loop, or canceling the context stops it.
-// Cancellation is checked frequently but not before every result, so up
-// to about a thousand results may still be delivered after the context is
-// canceled; a canceled run always returns ctx.Err(), also if mining
-// finished after the last check.
+// Cancellation is checked frequently in every phase (reading, building
+// the transaction bag and the FP-tree, mining, reporting; see
+// [MineItemsets]) but not before every result, so up to about a thousand
+// results may still be delivered after the context is canceled; a
+// canceled run always returns ctx.Err(), also if mining finished after
+// the last check.
 //
 // Options.OnStart and RuleOptions.OnStart receive the [Stats] of the
 // database (total weight, frequent items, resolved thresholds) before the

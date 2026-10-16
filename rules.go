@@ -100,8 +100,9 @@ type RuleOptions[T comparable] struct {
 	// for rules).
 	Tuning Tuning
 	// OnStart, if not nil, is called once before the first rule is
-	// reported (also if none is), with the Stats of the database. Its
-	// error stops mining and is returned unchanged.
+	// reported (also if none is), with the Stats of the database, unless
+	// ctx is canceled by then. Its error stops mining and is returned
+	// unchanged.
 	OnStart func(Stats) error
 }
 
@@ -198,10 +199,13 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 // calls fn for each of them, in upstream's order. It behaves like
 // MineItemsets: synchronous, two passes over src, fn's and OnStart's
 // errors returned unchanged, ctx.Err() on cancellation, a nil fn only
-// counts. As with MineItemsets, cancellation is checked frequently but
-// not before every rule (every 256 item set tree counters, and every 4096
-// tables of a Fisher test): fn may still be called for the rules of up to
-// 256 item sets after ctx is canceled, and a canceled run always returns
+// counts. Cancellation is checked at the same points as in MineItemsets
+// while reading, completing the bag and building the FP-tree (OnStart is
+// not called once ctx is canceled), then at every recursion step that
+// fills the item set tree, every 256 of its nodes or counters while it is
+// filtered and reported, and every 4096 tables of a Fisher test, but not
+// before every rule: fn may still be called for the rules of up to 256
+// item sets after ctx is canceled, and a canceled run always returns
 // ctx.Err().
 func MineRules[T comparable](ctx context.Context, src Source[T], opt RuleOptions[T], fn func(Rule[T]) error) (Summary, error) {
 	p, err := opt.plan()

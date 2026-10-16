@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -855,6 +856,160 @@ func TestCancelFisher(t *testing.T) {
 				t.Logf("returned %v after the cancellation", latency)
 			})
 		}
+	}
+}
+
+// sparseSource returns n transactions of 20 random items out of 1000:
+// a bag with millions of prefix tree nodes and a top-level FP-tree that
+// takes a noticeable time to build.
+func sparseSource(n int) Source[int] {
+	return Generate(n, func(i int, buf []int) Transaction[int] {
+		r := rand.New(rand.NewPCG(uint64(i), 7))
+		for range 20 {
+			buf = append(buf, r.IntN(1000))
+		}
+		return Transaction[int]{Items: buf, Weight: 1}
+	})
+}
+
+// treeBuildLatencyLimit bounds the return after a cancellation in
+// OnStart in TestCancelTreeBuild. Building the whole top-level FP-tree
+// takes 130-480 ms there (Apple M1 Max) and a run checks the context
+// every few thousand transactions (measured: below 0.1 ms).
+const treeBuildLatencyLimit = 50 * time.Millisecond
+
+// TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
+// is built from a large bag: every algorithm (and the item set tree path
+// of rules and rule-based evaluations) must return context.Canceled
+// promptly, without reporting anything, instead of first building the
+// whole tree.
+func TestCancelTreeBuild(t *testing.T) {
+	t.Parallel()
+	n := 300_000
+	if raceEnabled {
+		n = 100_000
+	}
+	src := sparseSource(n)
+	type run struct {
+		name string
+		mine func(ctx context.Context, onStart func(Stats) error, fn func()) error
+	}
+	var runs []run
+	for _, a := range []Algorithm{AlgorithmSimple, AlgorithmComplex, AlgorithmSingleTree, AlgorithmTopDown} {
+		runs = append(runs, run{a.String(), func(ctx context.Context, onStart func(Stats) error, fn func()) error {
+			_, err := MineItemsets(ctx, src, Options[int]{MinSupport: Count(2), Algorithm: a, OnStart: onStart},
+				func(Itemset[int]) error { fn(); return nil })
+			return err
+		}})
+	}
+	runs = append(runs, run{"rules", func(ctx context.Context, onStart func(Stats) error, fn func()) error {
+		_, err := MineRules(ctx, src, RuleOptions[int]{MinSupport: Count(2), OnStart: onStart},
+			func(Rule[int]) error { fn(); return nil })
+		return err
+	}})
+	for _, r := range runs {
+		t.Run(r.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var canceled time.Time
+			calls := 0
+			err := r.mine(ctx, func(Stats) error {
+				canceled = time.Now()
+				cancel()
+				return nil
+			}, func() { calls++ })
+			latency := time.Since(canceled)
+			if err != context.Canceled {
+				t.Fatalf("got %v", err)
+			}
+			if calls != 0 {
+				t.Errorf("%d results after the cancellation", calls)
+			}
+			if latency > treeBuildLatencyLimit {
+				t.Errorf("returned %v after the cancellation", latency)
+			}
+			t.Logf("returned %v after the cancellation", latency)
+		})
+	}
+}
+
+// TestCancelTopDownLevel cancels top-down mining with a maximum size of
+// 1 at the first result: no projection is built, so no recursion entry
+// checks the context, while every further item of the top level costs a
+// merge of large subtrees. Mining must stop at the next item.
+func TestCancelTopDownLevel(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var canceled time.Time
+	calls := 0
+	_, err := MineItemsets(ctx, sparseSource(300_000),
+		Options[int]{MinSupport: Count(2), MaxSize: 1, Algorithm: AlgorithmTopDown},
+		func(Itemset[int]) error {
+			if calls++; calls == 1 {
+				canceled = time.Now()
+				cancel()
+			}
+			return nil
+		})
+	latency := time.Since(canceled)
+	if err != context.Canceled || calls == 0 {
+		t.Fatalf("got %v after %d results", err, calls)
+	}
+	if calls > 2 {
+		t.Errorf("%d results after the cancellation", calls-1)
+	}
+	if latency > cancelLatencyLimit {
+		t.Errorf("returned %v after the cancellation", latency)
+	}
+	t.Logf("%d results and %v after the cancellation", calls-1, latency)
+}
+
+// TestCancelBeforeOnStart cancels at the last transaction of a pass
+// (after the reader's last check): at the end of pass 1 when there is
+// nothing to mine (no item is frequent, or no transaction has an item),
+// and at the end of pass 2. The run must return context.Canceled, not
+// success, and must not call OnStart.
+func TestCancelBeforeOnStart(t *testing.T) {
+	t.Parallel()
+	const n = 100
+	tests := []struct {
+		name   string
+		items  func(i int) []int
+		supp   int64
+		cancel int // index of the transaction over both passes
+	}{
+		{"no frequent items", func(i int) []int { return []int{i} }, 1000, n - 1},
+		{"no items", func(int) []int { return nil }, 1, n - 1},
+		{"end of pass 2", func(i int) []int { return []int{i % 3, 3 + i%5} }, 1, 2*n - 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			for _, kind := range []string{"itemsets", "rules"} {
+				ctx, cancel := context.WithCancel(context.Background())
+				var read atomic.Int64
+				src := Generate(n, func(i int, buf []int) Transaction[int] {
+					if read.Add(1) == int64(tt.cancel+1) {
+						cancel()
+					}
+					return Transaction[int]{Items: append(buf, tt.items(i)...), Weight: 1}
+				})
+				started := 0
+				onStart := func(Stats) error { started++; return nil }
+				var err error
+				if kind == "rules" {
+					_, err = MineRules(ctx, src, RuleOptions[int]{MinSupport: Count(tt.supp), OnStart: onStart}, nil)
+				} else {
+					_, err = MineItemsets(ctx, src, Options[int]{MinSupport: Count(tt.supp), OnStart: onStart}, nil)
+				}
+				cancel()
+				if err != context.Canceled || started != 0 {
+					t.Errorf("%s: got %v, OnStart called %d times", kind, err, started)
+				}
+			}
+		})
 	}
 }
 

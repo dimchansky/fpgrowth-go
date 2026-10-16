@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -111,4 +113,81 @@ func TestMain_interrupt(t *testing.T) {
 		t.Errorf("exit %v after SIGINT", latency)
 	}
 	t.Logf("exited %v after SIGINT", latency)
+}
+
+// helperEnv makes the test binary act as the process of
+// TestInterruptContext_second instead of running tests.
+const helperEnv = "FPGROWTH_INTERRUPT_HELPER"
+
+// TestInterruptContext_helper is the child process of
+// TestInterruptContext_second: it sets up interruptContext, reports the
+// first SIGINT and then keeps running as if stopping took long.
+func TestInterruptContext_helper(t *testing.T) {
+	if os.Getenv(helperEnv) != "1" {
+		t.Skip("helper process")
+	}
+	ctx, stop := interruptContext()
+	defer stop()
+	fmt.Println("ready")
+	<-ctx.Done()
+	fmt.Println("canceled")
+	time.Sleep(30 * time.Second)
+	os.Exit(0) // not reached if the second SIGINT kills the process
+}
+
+// TestInterruptContext_second checks that the first SIGINT cancels the
+// context and a second one kills the process (it is not swallowed).
+func TestInterruptContext_second(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGINT cannot be sent to a process on Windows")
+	}
+	t.Parallel()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestInterruptContext_helper$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+	rd := bufio.NewReader(stdout)
+	expect := func(want string) {
+		t.Helper()
+		line, err := rd.ReadString('\n')
+		if err != nil || line != want+"\n" {
+			t.Fatalf("got %q, %v; want %q", line, err, want)
+		}
+	}
+	expect("ready")
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	expect("canceled")
+	go func() { _, _ = io.Copy(io.Discard, rd) }()
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	// The default behavior is restored asynchronously right after the
+	// cancellation; repeat the second SIGINT until it takes effect.
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case err := <-waited:
+			var ws syscall.WaitStatus
+			if ee, ok := err.(*exec.ExitError); ok {
+				ws, _ = ee.Sys().(syscall.WaitStatus)
+			}
+			if !ws.Signaled() || ws.Signal() != syscall.SIGINT {
+				t.Fatalf("process ended with %v, want death by SIGINT", err)
+			}
+			return
+		case <-tick.C:
+			_ = cmd.Process.Signal(os.Interrupt)
+		case <-deadline:
+			t.Fatal("a second SIGINT did not kill the process")
+		}
+	}
 }

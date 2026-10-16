@@ -466,6 +466,62 @@ func TestItemBase_BuildBag_scanError(t *testing.T) {
 	}
 }
 
+// TestItemBase_BuildBag_abort checks the abort hook of SetAbort: it is
+// called about once per finishCheckEvery nodes while the bag is
+// completed, its error stops BuildBag unchanged, and a nil result keeps
+// the bag unchanged.
+func TestItemBase_BuildBag_abort(t *testing.T) {
+	t.Parallel()
+	recs := make([]intRecord, 3*finishCheckEvery)
+	for i := range recs {
+		recs[i] = rec(1, i) // one node per record
+	}
+	_, want := buildIntBag(t, recs, 1, 0)
+	nodes := want.NodeCount() + 1
+	errAbort := errors.New("aborted")
+	for _, stopAt := range []int{0, 1, 2} {
+		t.Run(fmt.Sprintf("stop after %d", stopAt), func(t *testing.T) {
+			t.Parallel()
+			b := NewItemBase[int]()
+			if err := b.Count(intScan(recs)); err != nil {
+				t.Fatal(err)
+			}
+			b.Recode(1, 0)
+			calls := 0
+			b.SetAbort(func() error {
+				if calls++; calls > stopAt {
+					return errAbort
+				}
+				return nil
+			})
+			bag, err := b.BuildBag(intScan(recs), 0)
+			if bag != nil || err != errAbort || calls != stopAt+1 {
+				t.Errorf("got %v, %v after %d calls", bag, err, calls)
+			}
+		})
+	}
+	t.Run("no abort", func(t *testing.T) {
+		t.Parallel()
+		b := NewItemBase[int]()
+		if err := b.Count(intScan(recs)); err != nil {
+			t.Fatal(err)
+		}
+		b.Recode(1, 0)
+		calls := 0
+		b.SetAbort(func() error { calls++; return nil })
+		bag, err := b.BuildBag(intScan(recs), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wantCalls := nodes / finishCheckEvery; calls != wantCalls {
+			t.Errorf("%d calls for %d nodes, want %d", calls, nodes, wantCalls)
+		}
+		if !equalWeighted(collect(bag.All()), collect(want.All())) {
+			t.Error("different bag")
+		}
+	})
+}
+
 func TestItemBase_BuildBag_beforeRecode(t *testing.T) {
 	t.Parallel()
 	defer func() {

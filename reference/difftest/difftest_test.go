@@ -186,7 +186,7 @@ type summary struct {
 	devFlagged   map[string]int // cases per flagged deviation (any verdict)
 	devFull      int            // flagged cases compared with C in full (C passed the brute force)
 	devExempt    int            // ... deviation-verified: C differed only in excused channels
-	reruns       int            // count-only cases classified by a rerun with output
+	reruns       int            // cases classified by a rerun with the measure in the output
 	bfExact      int            // cases whose Go result equals the brute force
 	bfSubset     int            // ... is a subset of the brute force (measures)
 	recordDevs   int
@@ -290,7 +290,7 @@ func (s *summary) String() string {
 		s.tolerated, s.boundary, s.recordDevs)
 	fmt.Fprintf(&b, "  largest difference of 17-digit values accepted as equal: %.3g relative;\n", s.maxRel)
 	fmt.Fprintf(&b, "    logarithmic measures (%s, b, j): %.3g relative, %.3g absolute\n", logMeasures, s.maxRelLog, s.maxAbsLog)
-	fmt.Fprintf(&b, "  count-only cases whose differing counts a rerun with output explained: %d\n", s.reruns)
+	fmt.Fprintf(&b, "  cases whose differing counts or records a rerun with the measure explained: %d\n", s.reruns)
 	fmt.Fprintf(&b, "  cases with a flagged deviation in which C passed the brute force and was compared in full: %d\n", s.devFull)
 	fmt.Fprintf(&b, "    of which C differed only in channels the deviations excuse (deviation-verified): %d\n", s.devExempt)
 	fmt.Fprintf(&b, "  deviation-verified cases whose C output the comparison accepted (C failed the brute force, e.g. O3's dropped empty set): %d\n", s.devCAgrees)
