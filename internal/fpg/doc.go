@@ -80,8 +80,10 @@
 //   - B2: the minimum support (and rule body support) is at least 1.
 //   - B3: generators are mined without the zmin transaction filter.
 //   - B5: closed and maximal item sets with a maximum size are searched
-//     without the zmax+1 depth limit, so the closed/maximal repository is
-//     complete and only closed/maximal sets are reported.
+//     only as deep as a reportable set can reach, and every set the
+//     closed/maximal repository accepts is checked against all items of
+//     the database (extChecker), so only closed/maximal sets are reported
+//     (docs/m5-investigation.md).
 //   - B9: threshold conversions saturate instead of being undefined.
 //   - rules-eval.md B1: for association rules the measure code
 //     EvalLogRatio (-eb) selects ruleval.Imbalance.

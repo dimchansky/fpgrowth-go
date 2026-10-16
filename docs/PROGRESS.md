@@ -41,42 +41,15 @@ linked documents.
 
 ## Open problems
 
-- **M5 performance investigation — scheduled for Stage 3 (user request,
-  2026-10-16).** Closed/maximal with `-n` currently searches beyond the size
-  limit to guarantee exact closure (commit 9397bab). Investigate whether full
-  exploration can be replaced by a correct, efficient one-item extension
-  check at the `zmax` boundary:
-  1. Re-analyze the original failing randomized case (oracle seed 678 in
-     `internal/fpg` tests): why boundary perfect extensions were not
-     enough (repository rejected a set via a stored same-support superset
-     whose subtree was never fully searched).
-  2. Account for FP-growth traversal order (ascending/descending item loops,
-     post-order reporting), perfect-extension pruning, fim16 and head-union-
-     tail pruning, and each variant's projection rules.
-  3. Keep correctness proven by differential tests against
-     `internal/oracle` (large randomized sweeps, all variants, closed and
-     maximal, many `-n` values incl. small ones).
-  4. Benchmark both approaches (full exploration vs. boundary check), with
-     emphasis on dense datasets and small `-n`; keep the faster one only if
-     it is exactly correct. Record results in the Stage 3 report.
-
-  Additional requirements (user, 2026-10-16):
-  - First **minimize** the seed-678 case (delta-debug transactions/items/
-    weights) and establish the exact root cause: expected vs. actual output
-    and the **first violated invariant** in the traversal/repository state.
-  - The earlier explanation ("repository rejects a set because a stored
-    same-support superset exists whose subtree was not fully searched") is
-    insufficient: if that superset is genuine, the rejected set really is
-    not closed. Determine precisely what went wrong — e.g. a set wrongly
-    *accepted* because its proof superset was never stored, a stored
-    superset with a wrong (partial-closure) support, or a set rejected by a
-    non-genuine superset — and state it with evidence.
-  - The one-item extension check must consider **all eligible items of the
-    original database** (after selection/recoding), not only items in the
-    current conditional FP-tree or traversal tail.
-  - Distinguish a **mathematically complete** extension check (closedness/
-    maximality w.r.t. every eligible item) from an **implementation-
-    dependent local** check (relying on traversal order, tail, repository
-    contents). The correctness argument and regression tests must cover
-    both: tests that would fail for a merely local check (items outside
-    the conditional tree/tail), plus the minimized seed-678 case.
+- **M5 investigation — done (Stage 3, awaiting the Stage 3 review).**
+  Report: `docs/m5-investigation.md`. The seed-678 case was minimized to
+  4 transactions; root cause: a set wrongly *accepted* because its
+  proving supersets were never stored (beyond zmax+1, or in subtrees
+  pruned by genuine stored supersets whose own subtrees were cut);
+  boundary perfect extensions cannot fix it. Closed/maximal with `-n` now
+  use a size-limited search plus a complete one-item extension check
+  against all items (`internal/fpg/extcheck.go`); full exploration with a
+  limit is removed. Oracle sweeps: 220,000 closed/maximal comparisons,
+  0 differences; critic case 34 s / 673 MiB → 21 ms / 14 MiB (C 236 ms).
+  Sparse data with small `-n` pays up to 1.7× for the check (follow-up:
+  incremental covers).

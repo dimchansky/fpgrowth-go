@@ -1094,9 +1094,13 @@ or non-maximal sets (confirmed).**
     `$FPG -tm -s-1 -n2 -At -x -v' [%a]' mz -` prints `i3 i7 [2]`, which
     is not maximal.
 - **Go.** Reproducing the behaviour exactly requires porting this
-  faithfully. Fixing it means collecting pex (conditional supports) at
-  the `xmax` boundary as well. That is a decision to record in
-  `docs/decisions.md`.
+  faithfully. Collecting pex (conditional supports) at the `xmax`
+  boundary as well is **not** enough (Stage 3 investigation,
+  `docs/m5-investigation.md`): the missing witnesses are supersets of
+  smaller support, beyond the limit or inside subtrees pruned by genuine
+  stored supersets, so the mechanism above is only part of the story. The
+  port limits the search and checks every accepted set against all items
+  of the database (deviation M5).
 
 **B6. Spurious empty set and an off-by-one set count with the fast output
 format (confirmed; report.c).**

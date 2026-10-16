@@ -175,7 +175,7 @@ func (m *miner) recSimple(t *fpTree, depth int) error {
 			for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
 				m.rep.AddPex(t.heads[nodes[anc].id].item)
 			}
-		case proj != nil:
+		case proj != nil && m.deeper():
 			if m.projSimple(proj, t, i) {
 				if err := m.recSimple(proj, depth+1); err != nil {
 					return err
@@ -364,7 +364,7 @@ func (m *miner) recSmp16(t *fpTree, depth int) error {
 					m.rep.AddPexPacked(k)
 				}
 			}
-		case proj != nil:
+		case proj != nil && m.deeper():
 			m.projSmp16(proj, t, i, mask)
 			if err := m.recSmp16(proj, depth+1); err != nil {
 				return err
@@ -397,6 +397,7 @@ func (m *miner) mineSimple() error {
 	buf := m.path
 	if usePack {
 		t.fim = newMachine(m.dir, m.supp, m.rep)
+		t.fim.limited, t.fim.zmax = m.limited, m.zmax
 		t.heads[0].item = tract.End
 		nt := 0
 		for items, w := range m.bag.Backward() {

@@ -347,7 +347,7 @@ func (m *miner) recCmplx(t *csTree, depth int) error {
 			for node := nodes[h.list].parent; nodes[node].id >= 0; node = nodes[node].parent {
 				m.rep.AddPex(t.heads[nodes[node].id].item)
 			}
-		case proj != nil:
+		case proj != nil && m.deeper():
 			var ok bool
 			var err error
 			if m.mode&ModeReorder != 0 {
@@ -389,6 +389,7 @@ func (m *miner) mineComplex() error {
 	}
 	if m.pack != 0 {
 		m.fim = newMachine(m.dir, m.supp, m.rep)
+		m.fim.limited, m.fim.zmax = m.limited, m.zmax
 	}
 	buf := m.path
 	nt := 0

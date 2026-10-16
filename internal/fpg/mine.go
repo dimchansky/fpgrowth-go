@@ -28,6 +28,10 @@ type miner struct {
 	pack   int  // FIM16 field (number of items for the 16-items machine)
 	dir    int  // item loop direction (fpg->dir)
 	clomax bool // closed or maximal target
+	// limited: closed/maximal search limited by the maximum size zmax,
+	// with the complete extension check (see xable2).
+	limited bool
+	zmax    int
 
 	// Scratch buffers (upstream fpg->set, fpg->map, fpg->cis).
 	set  []int32      // reorder map and flags (2k)
@@ -47,9 +51,19 @@ type miner struct {
 	tdItems [][]tract.Item // per recursion depth
 }
 
+// testHooks are settings of a Miner for tests only.
+type testHooks struct {
+	// cloMaxCheck, if set, replaces the complete extension check of a
+	// size-limited closed/maximal search.
+	cloMaxCheck func(*extChecker, *report.Reporter) report.CloMaxCheck
+	// noBits makes the extension checker use transaction lists instead
+	// of bit sets.
+	noBits bool
+}
+
 // mineItemSets runs the item set variant selected by c (fpgvars[algo]).
 func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
-	rep *report.Reporter, supp tract.Supp,
+	rep *report.Reporter, supp tract.Supp, h testHooks,
 ) error {
 	m := &miner{
 		ctx:    ctx,
@@ -62,6 +76,20 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		pack:   c.Pack,
 		dir:    1,
 		clomax: c.Target == report.TargetClosed || c.Target == report.TargetMaximal,
+	}
+	if m.clomax && c.ZMax < bag.MaxSize() {
+		// A maximum size below the longest transaction: limited search
+		// with the complete extension check (see xable2).
+		chk, err := newExtChecker(bag, c.Target, supp, h.noBits, m.aborted)
+		if err != nil {
+			return err
+		}
+		m.limited, m.zmax = true, c.ZMax
+		fn := chk.check
+		if h.cloMaxCheck != nil {
+			fn = h.cloMaxCheck(chk, rep)
+		}
+		rep.SetCloMaxCheck(fn)
 	}
 	if m.done != nil {
 		// Recursion entries alone do not bound the work after a
@@ -109,20 +137,35 @@ func (m *miner) alloc(k int) {
 }
 
 // xable2 is the projection condition isr_xable(rep, 2) of the rec_*
-// functions.
+// functions: whether the items of a projection can be added to the
+// current set.
 //
-// Deviation from upstream (fpgrowth-core.md B5): for closed and maximal
-// item sets with a maximum size, upstream does not project beyond
-// zmax+1 items. The closed/maximal repository then misses the supersets
-// below the size limit, while isr_add still prunes subtrees with a stored
-// superset of equal support on the assumption that the superset's subtree
-// was searched completely, so non-closed and non-maximal sets are
-// reported (and collecting the perfect extensions at the size limit is not
-// enough: a closed set beyond the limit can be the only witness).
-// Closed and maximal targets are therefore searched without a depth
-// limit, like the 16-items machine does anyway; the reporter's size gate
-// still applies to what is reported.
-func (m *miner) xable2() bool { return m.clomax || m.rep.Xable(2) }
+// Deviation from upstream (fpgrowth-core.md B5, docs/m5-investigation.md):
+// for closed and maximal item sets with a maximum size, upstream projects
+// up to zmax+1 items and lets the closed/maximal repository decide. The
+// repository then misses the supersets beyond the limit that prove a set
+// non-closed or non-maximal, so such sets are reported. Here the search
+// stops where no reportable set can follow (the current set, its perfect
+// extensions and one more item exceed zmax, see deeper), and every set
+// the repository accepts is checked against all items of the database
+// (extChecker). Without a maximum size below the longest transaction the
+// search is unlimited and the repository alone is exact.
+func (m *miner) xable2() bool {
+	if m.limited {
+		return m.rep.Len()+m.rep.PexCount()+2 <= m.zmax
+	}
+	return m.clomax || m.rep.Xable(2)
+}
+
+// deeper reports whether the set just added needs its projection (its
+// perfect extensions and subtree): for a size-limited closed/maximal
+// search only if the set with its perfect extensions so far is smaller
+// than zmax. Otherwise every set of the subtree exceeds zmax, and the set
+// itself is reportable only if it has no further perfect extension, which
+// the extension check verifies.
+func (m *miner) deeper() bool {
+	return !m.limited || m.rep.Len()+m.rep.PexCount() < m.zmax
+}
 
 // perfectThreshold returns the support from which an item is a perfect
 // extension: supp if perfect extension pruning is on, else SUPP_MAX.

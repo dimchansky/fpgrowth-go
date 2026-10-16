@@ -108,7 +108,15 @@ type Reporter struct {
 
 	abort func() error // cancellation check (SetAbort)
 	ticks uint32       // steps since the start (see tick)
+
+	cmCheck CloMaxCheck // final closed/maximal check (SetCloMaxCheck)
 }
+
+// CloMaxCheck decides whether an item set is closed (TargetClosed) or
+// maximal (TargetMaximal) in the whole database: set holds the items of
+// the current set and all its perfect extensions, in no particular
+// order, and supp is its support. See SetCloMaxCheck.
+type CloMaxCheck func(set []tract.Item, supp tract.Supp) bool
 
 // AbortEvery is the number of reporter steps between two calls of the
 // abort function (SetAbort). A step is a call of Add or Report or one set
@@ -206,6 +214,19 @@ func (r *Reporter) SetTarget(target Target, mode Mode, dir int) {
 	}
 	r.updateXmax()
 }
+
+// SetCloMaxCheck sets a final check for closed and maximal item sets (an
+// extension, not part of upstream). Report calls fn for every set that
+// the closed/maximal repository accepts and that passes the support and
+// size gates, before the border, the evaluation and the sink; a false
+// result suppresses the set (the repository has stored it already, which
+// is harmless: it is a genuine item set with its true support). A miner
+// that limits its search by the maximum size needs it, because the
+// repository then lacks the supersets beyond the limit that would prove
+// a set non-closed or non-maximal (fpgrowth-core.md B5). nil (the
+// default) removes the check. It has no effect for other targets or
+// with ModeNoFilter.
+func (r *Reporter) SetCloMaxCheck(fn CloMaxCheck) { r.cmCheck = fn }
 
 // SetSupport is a port of isr_setsupp: only item sets (and rules) with a
 // support in [smin, smax] are reported.
@@ -523,6 +544,7 @@ func (r *Reporter) Report() error {
 	}
 	n := len(r.pexs)
 	s := r.supps[r.cnt]
+	var set []tract.Item // closed/maximal: the set with its perfect extensions
 	if r.cm != nil {
 		rs := r.cm.supp()
 		if r.target == TargetMaximal && r.cnt == 0 && n > 0 && !r.cm.stored {
@@ -541,7 +563,7 @@ func (r *Reporter) Report() error {
 		if rs >= s || rs >= r.sto {
 			return nil
 		}
-		set := r.items[:r.cnt]
+		set = r.items[:r.cnt]
 		if n > 0 {
 			k := r.cnt + n
 			set = r.iset[:k]
@@ -562,6 +584,9 @@ func (r *Reporter) Report() error {
 	}
 	if r.cnt > r.zmax || r.cnt+n < r.zmin {
 		return nil
+	}
+	if r.cmCheck != nil && r.cm != nil && r.cnt+n <= r.zmax && !r.cmCheck(set, s) {
+		return nil // not closed/maximal: an extension the repository lacks
 	}
 	if r.sink == nil && len(r.border) == 0 && r.evalFn == nil {
 		r.countOnly(n, s)

@@ -220,7 +220,7 @@ func (m *miner) recTopDown(t *tdTree, depth int) error {
 			t.root = m.tdMerge(nd.sibling, nd.children)
 			continue
 		}
-		if proj != nil && nd.children >= 0 {
+		if proj != nil && nd.children >= 0 && m.deeper() {
 			s := m.cis[:nd.id]
 			clear(s)
 			m.getSupp(nd.children, s)

@@ -79,6 +79,10 @@ type runOpts struct {
 	border []tract.Supp // absolute border by size (index = size)
 	sink   *collectSink
 	ctx    context.Context
+	// sel, if not nil, is the item selection (ItemBase.Select).
+	sel []string
+	// hooks are the miner's test hooks.
+	hooks testHooks
 }
 
 // run mines scan with cfg through the step API.
@@ -88,6 +92,11 @@ func run(scan tract.ScanFunc[string], cfg Config, o runOpts) (runResult, error) 
 	if err != nil {
 		return runResult{}, err
 	}
+	if o.sel != nil {
+		if err := ib.Select(o.sel...); err != nil {
+			return runResult{}, err
+		}
+	}
 	if err := ib.Count(scan); err != nil {
 		return runResult{}, err
 	}
@@ -96,6 +105,7 @@ func run(scan tract.ScanFunc[string], cfg Config, o runOpts) (runResult, error) 
 		sink = &collectSink{}
 	}
 	sink.ib = ib
+	m.hooks = o.hooks
 	res := runResult{sink: sink, miner: m}
 	if err := m.Data(ib, scan); err != nil {
 		return res, err

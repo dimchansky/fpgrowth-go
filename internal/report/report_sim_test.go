@@ -47,6 +47,28 @@ func (db *simDB) support(mask uint64) tract.Supp {
 	return s
 }
 
+// cloMaxCheck is a complete closed/maximal check by brute force: no
+// single item outside the set gives the same support (closed) or a
+// frequent superset (maximal).
+func (db *simDB) cloMaxCheck(target Target, smin tract.Supp) CloMaxCheck {
+	return func(set []tract.Item, supp tract.Supp) bool {
+		var m uint64
+		for _, it := range set {
+			m |= 1 << it
+		}
+		for j := range db.nItems {
+			if m&(1<<j) != 0 {
+				continue
+			}
+			s := db.support(m | 1<<j)
+			if (target == TargetClosed && s >= supp) || (target == TargetMaximal && s >= smin) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 func (db *simDB) itemFreqs() []tract.Supp {
 	f := make([]tract.Supp, db.nItems)
 	for i := range f {
@@ -92,9 +114,12 @@ type simConfig struct {
 	rules      bool // istree-style rule reporting (ReportRule)
 	queries    bool // sprinkle query calls (only affects the script)
 	// noChain disables the chain shortcut; boundaryPex collects perfect
-	// extensions also where no projection is built (Xable(2) false),
-	// the fix of fpgrowth-core.md B5.
-	noChain, boundaryPex bool
+	// extensions also where no projection is built (Xable(2) false).
+	// extCheck installs a complete closed/maximal check computed from
+	// the database (SetCloMaxCheck), the fix of fpgrowth-core.md B5
+	// (docs/m5-investigation.md); boundary perfect extensions alone are
+	// not enough.
+	noChain, boundaryPex, extCheck bool
 }
 
 // tracer forwards calls to a Reporter and records them as a script.
@@ -546,6 +571,9 @@ func simulate(db *simDB, cfg *simConfig, sink Sink, rng *rand.Rand, record bool)
 		w = &strings.Builder{}
 	}
 	r := newSimReporter(db, cfg, sink, w)
+	if cfg.extCheck {
+		r.SetCloMaxCheck(db.cloMaxCheck(cfg.target, cfg.smin))
+	}
 	t := &tracer{r: r, w: w}
 	if cfg.queries {
 		t.rng = rng

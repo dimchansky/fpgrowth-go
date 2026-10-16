@@ -28,6 +28,7 @@ type Miner[T comparable] struct {
 	th    thresholds
 	rep   *report.Reporter
 	state int
+	hooks testHooks
 	// progress, if set, is called at the start and end of the phases of
 	// the rules path (SetProgress).
 	progress func(p Phase, done bool)
@@ -194,7 +195,7 @@ func (m *Miner[T]) Mine(ctx context.Context) (err error) {
 	if c.Target == report.TargetRules || isRuleEval(c.Eval) {
 		err = m.mineTree(ctx)
 	} else {
-		err = mineItemSets(ctx, c, m.bag, m.rep, m.th.supp)
+		err = mineItemSets(ctx, c, m.bag, m.rep, m.th.supp, m.hooks)
 	}
 	if err == nil {
 		// a repository overflow in Add or Tail that no later Report

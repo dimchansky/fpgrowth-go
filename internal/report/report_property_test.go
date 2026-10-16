@@ -323,10 +323,11 @@ func wantMasks(s []expectedSet) []string {
 	return out
 }
 
-// TestReporter_PropertyClosedMaximalZmax checks that a miner that collects
-// perfect extensions also at the Xable boundary (the fix for
-// fpgrowth-core.md B5) gets exactly the closed/maximal sets up to zmax,
-// without the chain shortcut that otherwise masks the problem.
+// TestReporter_PropertyClosedMaximalZmax checks that a miner that limits
+// its search by the maximum size (Xable) gets exactly the closed/maximal
+// sets up to zmax with the complete extension check (SetCloMaxCheck, the
+// fix for fpgrowth-core.md B5), without the chain shortcut that otherwise
+// masks the problem.
 func TestReporter_PropertyClosedMaximalZmax(t *testing.T) {
 	t.Parallel()
 	for _, target := range []Target{TargetClosed, TargetMaximal} {
@@ -335,11 +336,53 @@ func TestReporter_PropertyClosedMaximalZmax(t *testing.T) {
 			db := randomDB(rng, 3+rng.IntN(6), 2+rng.IntN(12), 1+rng.IntN(3), 0.3+rng.Float64()/2)
 			cfg := randomSimConfig(rng, db, target)
 			cfg.zmax = cfg.zmin + rng.IntN(3)
-			cfg.noChain, cfg.boundaryPex, cfg.perfect = true, true, true
+			cfg.noChain, cfg.boundaryPex, cfg.extCheck = true, true, true
 			checkAgainstBruteForce(t, iter, db, cfg, rng)
 			if t.Failed() {
 				return
 			}
+		}
+	}
+}
+
+// TestReporter_BoundaryPexNotEnough is the minimized oracle seed 678 case
+// (docs/m5-investigation.md): items b=0, c=1, a=2, d=3, transactions
+// {a,c,d}, {a,b,c,d}, {c}, {a,d}:2 (and {d} with perfect extension
+// pruning), closed/maximal sets with zmax 2. Collecting
+// the perfect extensions at the Xable boundary does not prevent {b, c}
+// (support 1) from being reported, although {a, b, c, d} has support 1:
+// the witnesses {a,b,c} and {b,c,d} lie in subtrees that genuine stored
+// supersets prune, and {a,b,c,d} lies beyond zmax+1. The complete check
+// rejects it.
+func TestReporter_BoundaryPexNotEnough(t *testing.T) {
+	t.Parallel()
+	for _, target := range []Target{TargetClosed, TargetMaximal} {
+		for _, perfect := range []bool{false, true} {
+			db := &simDB{nItems: 4,
+				trans: [][]tract.Item{{1, 2, 3}, {0, 1, 2, 3}, {1}, {2, 3}},
+				wgts:  []tract.Supp{1, 1, 1, 2},
+			}
+			if perfect { // keep d from being a perfect extension of a
+				db.trans = append(db.trans, []tract.Item{3})
+				db.wgts = append(db.wgts, 1)
+			}
+			cfg := &simConfig{target: target, dir: -1, smin: 1, smax: MaxSupp,
+				zmin: 1, zmax: 2, output: "emit", descending: true,
+				perfect: perfect, noChain: true, boundaryPex: true}
+			sink := &collectSink{}
+			if _, _, err := simulate(db, cfg, sink, rand.New(rand.NewPCG(1, 1)), false); err != nil {
+				t.Fatal(err)
+			}
+			bad := false
+			for _, s := range sink.sets {
+				bad = bad || s.mask == 0b0011 // {b, c}
+			}
+			if !bad {
+				t.Errorf("%s perfect=%v: boundary pex alone did not report {b, c}; got %v",
+					targetName(target), perfect, masksOf(sink.sets))
+			}
+			cfg.extCheck = true
+			checkAgainstBruteForce(t, 0, db, cfg, rand.New(rand.NewPCG(1, 1)))
 		}
 	}
 }

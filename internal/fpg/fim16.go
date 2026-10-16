@@ -48,6 +48,14 @@ type machine struct {
 	subs []m16
 	imap [16]tract.Item
 	rep  *report.Reporter
+	// limited and zmax limit a closed/maximal search like miner.deeper.
+	limited bool
+	zmax    int
+}
+
+// deeper is miner.deeper for an item added by the machine.
+func (f *machine) deeper() bool {
+	return !f.limited || f.rep.Len()+f.rep.PexCount() < f.zmax
 }
 
 // newMachine is a port of m16_create; the item map is the identity
@@ -386,6 +394,8 @@ func (f *machine) recNeg(k, n int, mask uint16) error {
 			if err := cur.single(i); err != nil {
 				return err
 			}
+		} else if !f.deeper() { // size limit: no projection needed
+			cur.clear(i)
 		} else {
 			nxt := &f.subs[k+1]
 			cur.project(i, mask, nxt)

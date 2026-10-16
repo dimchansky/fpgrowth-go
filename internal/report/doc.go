@@ -90,13 +90,15 @@
 // # Closed and maximal sets with a size limit
 //
 // The repository stores each reported set together with all its perfect
-// extensions (its closure), so it is only correct if the miner pushes the
-// perfect extensions of every set it reports. Upstream's miners do not
-// project at the Xable(2) boundary and therefore miss the perfect
-// extensions of the largest sets (fpgrowth-core.md B5). AddPex works at
-// any depth, independent of Xable; a miner that computes the conditional
-// supports at the boundary as well and pushes the perfect extensions
-// there gets correct closed and maximal results with a size limit.
+// extensions, and decides closedness with stored supersets. That is exact
+// only if the miner searched the subtree of every stored set completely.
+// Upstream's miners stop at zmax+1 items (Xable), so supersets beyond the
+// limit are never stored and non-closed or non-maximal sets are accepted
+// (fpgrowth-core.md B5). Collecting perfect extensions at the boundary
+// does not help: the missing witnesses have smaller support than their
+// parents (docs/m5-investigation.md). A miner with a size limit installs
+// a complete check with SetCloMaxCheck, which decides closedness and
+// maximality of every accepted set against all items of the database.
 //
 // Supports are tract.Supp (int64) instead of upstream's 32-bit int; sizes
 // are int. Like upstream, the reporter relies on non-negative supports
