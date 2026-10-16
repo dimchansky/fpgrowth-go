@@ -16,15 +16,15 @@ Status: **decided** (policy fixed, implementation pending) or
 
 | # | Upstream behavior (evidence) | Go behavior | Status / test |
 | --- | --- | --- | --- |
-| M1 | `-At` copies the item map from the wrong array: crash or wrong item names when an item is dropped at the top level (core B1) | Correct map; same sets as the other variants | decided |
-| M2 | `-s0` crashes on zero-frequency items or reports support-0 sets (core B2, tract) | Effective absolute minimum support is at least 1 | decided |
-| M3 | Generators with `-m ≥ 2` are missed because the `zmin` transaction filter deflates subset supports (core B3) | No `zmin` filter for the generator target | decided |
+| M1 | `-At` copies the item map from the wrong array: crash or wrong item names when an item is dropped at the top level (core B1) | Correct map; same sets as the other variants | implemented in `internal/fpg` (`TestDeviations`, golden `deviations.txt`) |
+| M2 | `-s0` crashes on zero-frequency items or reports support-0 sets (core B2, tract) | Effective absolute minimum support is at least 1 | implemented in `internal/fpg` (`TestDeviations`, golden `deviations.txt`) |
+| M3 | Generators with `-m ≥ 2` are missed because the `zmin` transaction filter deflates subset supports (core B3) | No `zmin` filter for the generator target | implemented in `internal/fpg` (`TestDeviations`, golden `deviations.txt`) |
 | M4 | Maximal target reports nothing when every frequent item is a top-level perfect extension (core B4) | The maximal set is reported | implemented in `internal/report` (scripts `mp`, `ab2`, property test) |
-| M5 | Closed/maximal targets with `-n` can report non-closed/non-maximal sets (core B5) | Closure is always computed; results equal the brute-force definition | decided |
+| M5 | Closed/maximal targets with `-n` can report non-closed/non-maximal sets (core B5) | Closed/maximal search is not depth-limited by `zmax`; the reporter's size gate decides what is reported, so results equal the brute-force definition. Cost: can be slower than upstream with `-n` on large data | implemented in `internal/fpg` (`TestDeviations`, oracle seed 678) |
 | M6 | Negative weights corrupt supports and crash the 16-items machine (core B7, tract) | Negative weights are rejected with an error | decided |
 | M7 | Supports and weight sums are 32-bit `int`; overflow is undefined behavior (tract, cli) | 64-bit supports; total-weight overflow is an error | decided |
-| M9 | Maximal target with `-x` and the 16-items machine (`-As`/`-Ad`) loses maximal sets, e.g. a single transaction `a` gives no output (reference-build bug 3) | Maximal sets reported in all variants | decided |
-| M8 | Out-of-range floating-point thresholds are converted to `int` with undefined behavior (core B9) | Explicit clamping | decided |
+| M9 | Maximal target with `-x` and the 16-items machine (`-As`/`-Ad`) loses maximal sets, e.g. a single transaction `a` gives no output (reference-build bug 3) | Maximal sets reported in all variants | implemented in `internal/fpg` (`TestDeviations`, golden `deviations.txt`) |
+| M8 | Out-of-range floating-point thresholds are converted to `int` with undefined behavior (core B9) | Explicit clamping | implemented in `internal/fpg` (`TestDeviations`, golden `deviations.txt`) |
 
 ## Rules and evaluation
 

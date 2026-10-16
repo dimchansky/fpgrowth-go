@@ -1,0 +1,73 @@
+# Golden cases whose Go output differs from the C reference by design.
+# Format: <dataset> | <options> | <deviation id>; TestGolden checks each
+# against the oracle and the expected shape of the difference:
+#   B1  -At item map bug: C crashes or prints wrong items
+#   B3  generators with -m >= 2: C misses generators (C output is a
+#       proper subsequence of Go's)
+#   B4  maximal sets that consist of top-level perfect extensions only
+#       (also M9: -x with the 16-items machine): C misses the set
+#   B5  closed/maximal with -n: C reports non-closed/non-maximal sets
+#       (Go output is a proper subsequence of C's)
+
+b1a.tab | -tc -At -s20 | B1
+b1a.tab | -ts -At -s20 | B1
+b1b.tab | -ts -At -m2 -q1 -s10 | B1
+b3.tab | -tg -Ac -l0 -s-1 -m2 | B3
+b3.tab | -tg -Ac -s-1 -m2 | B3
+b3.tab | -tg -Ad -l0 -s-1 -m2 | B3
+b3.tab | -tg -Ad -s-1 -m2 | B3
+b3.tab | -tg -As -l0 -s-1 -m2 | B3
+b3.tab | -tg -As -s-1 -m2 | B3
+b3.tab | -tg -At -s-1 -m2 | B1
+b4.tab | -tm -Ac -l0 -s-2 | B4
+b4.tab | -tm -Ac -s-2 | B4
+b4.tab | -tm -Ad -l0 -s-2 | B4
+b4.tab | -tm -Ad -s-2 | B4
+b4.tab | -tm -Ad -s-2 -x | B4
+b4.tab | -tm -As -l0 -s-2 | B4
+b4.tab | -tm -As -s-2 | B4
+b4.tab | -tm -As -s-2 -x | B4
+b4.tab | -tm -At -s-2 | B4
+b5c.w.tab | -tc -Ac -l0 -s-1 -n2 -q-1 | B5
+b5c.w.tab | -tc -Ad -l0 -s-1 -n2 -q-1 | B5
+b5c.w.tab | -tc -As -l0 -s-1 -n2 -q-1 | B5
+b5c.w.tab | -tc -At -s-1 -n2 -q-1 | B5
+b5m.tab | -tm -At -s-1 -n2 -x | B5
+b5x.w.tab | -tc -Ac -l0 -s-3 -n2 -q-1 | B5
+b5x.w.tab | -tc -Ac -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tc -Ad -l0 -s-3 -n2 -q-1 | B5
+b5x.w.tab | -tc -Ad -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tc -As -l0 -s-3 -n2 -q-1 | B5
+b5x.w.tab | -tc -As -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tc -At -s-3 -n2 -q-1 | B5
+b5x.w.tab | -tc -At -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tm -Ac -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tm -Ad -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tm -As -l0 -s-3 -n2 -q-1 -x | B5
+b5x.w.tab | -tm -At -s-3 -n2 -q-1 -x | B5
+m9.tab | -tm -Ac -l0 -s-1 | B4
+m9.tab | -tm -Ac -s-1 | B4
+m9.tab | -tm -Ad -l0 -s-1 | B4
+m9.tab | -tm -Ad -s-1 | B4
+m9.tab | -tm -Ad -s-1 -x | B4
+m9.tab | -tm -As -l0 -s-1 | B4
+m9.tab | -tm -As -s-1 | B4
+m9.tab | -tm -As -s-1 -x | B4
+m9.tab | -tm -At -s-1 | B4
+r01.tab | -tg -Ac -j -l0 -s-3 -m2 | B3
+r01.tab | -tg -As -l3 -s-3 -m2 | B3
+r03.tab | -tc -At -s-2 | B1
+r03.tab | -tc -At -s-2 -m0 | B1
+r03.tab | -tc -At -s-2 -m3 -q0 | B1
+r03.tab | -tc -At -s-2 -q0 | B1
+r03.tab | -tm -At -s-2 | B1
+r03.tab | -ts -At -s-2 | B1
+r03.tab | -ts -At -s-2 -q1 | B1
+r05.w.tab | -tg -Ac -s-2 -m2 | B3
+r05.w.tab | -tg -Ad -l3 -s-2 -m2 | B3
+r06.tab | -tm -At -s30 -m3 -q0 | B1
+r08.w.tab | -tm -At -s-3 -x -n3 | B5
+r09.tab | -ts -At -s-2 -m3 -q0 | B1
+r10.tab | -tg -Ac -l0 -s-3 -m2 | B3
+r10.tab | -tg -As -l0 -s-3 -m2 | B3
+r10.tab | -tg -At -s-3 -m2 | B1
