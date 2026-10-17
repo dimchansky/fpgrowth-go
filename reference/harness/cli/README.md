@@ -36,5 +36,5 @@ differ from the C output and equal the reviewed Go output in
 diff against `golden/` before committing.
 
 Golden files in the repository were produced on macOS arm64 with Apple
-clang 21 (`cc`). Two cases crash the C program (exit 138/139: `dev-bigw`,
-`dev-At`); their exit status is platform dependent.
+clang 21 (`cc`). Three cases crash the C program (exit 138/139: `dev-bigw`,
+`dev-prefmt`, `dev-At`); their exit status is platform dependent.

@@ -157,6 +157,8 @@ dev-esc-end -s-1 -f';\' escsep.tab -
 dev-nonascii -s-1 -fé nonascii.tab -
 dev-negw -w negw.tab -
 dev-bigw -w bigw.tab -
+dev-prefmt -w prefmt.tab -
+prefmt-N -N -w prefmt.tab -
 dev-longfield -s-1 longnames.tab -
 dev-lastsep -s-1 lastsep.tab -
 dev-recnum -w recnum.tab -

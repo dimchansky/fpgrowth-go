@@ -67,7 +67,9 @@ type RuleOptions[T comparable] struct {
 	// OriginalSupport. Required.
 	MinSupport Support
 	// MaxSupport is the maximum support of a rule, applied to the same
-	// support as MinSupport; the zero value means no limit.
+	// support as MinSupport; the zero value means no limit. It must not
+	// be below MinSupport if both are of the same kind (see
+	// Options.MaxSupport).
 	MaxSupport Support
 	// MinConfidence is the minimum confidence in [0, 1]; 0 means no
 	// confidence filter. A rule passes if
@@ -127,7 +129,8 @@ type Rule[T comparable] struct {
 	// HeadSupport / Summary.TotalWeight.
 	Lift float64
 	// Value is the evaluation value (RuleOptions.Evaluation), NaN without
-	// an evaluation.
+	// an evaluation (as for Itemset.Value, so reflect.DeepEqual and ==
+	// report two such rules as different; see there).
 	Value float64
 }
 
@@ -146,6 +149,9 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 		return nil, err
 	}
 	if err := o.MaxSupport.validate("MaxSupport"); err != nil {
+		return nil, err
+	}
+	if err := checkRange(o.MinSupport, o.MaxSupport); err != nil {
 		return nil, err
 	}
 	if !(o.MinConfidence >= 0 && o.MinConfidence <= 1) {
@@ -212,7 +218,7 @@ func MineRules[T comparable](ctx context.Context, src Source[T], opt RuleOptions
 	if err != nil {
 		return Summary{}, err
 	}
-	if src == nil {
+	if isNilSource(src) {
 		return Summary{}, invalid("src", "nil source")
 	}
 	ib := tract.NewItemBase[T]()
@@ -290,7 +296,7 @@ type ruleSink[T comparable] struct {
 	buf     []T
 	fn      func(Rule[T]) error
 	hasEval bool
-	err     error
+	err     error // the error of fn that stopped mining, if any
 }
 
 var errUnexpectedSet = errors.New("fpgrowth: internal error: item set reported while mining rules")

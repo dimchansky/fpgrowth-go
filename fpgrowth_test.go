@@ -345,7 +345,9 @@ func TestThresholdBoundaries(t *testing.T) {
 		{"max fraction exactly 7 of 10", Count(1), Fraction(0.7), []string{"a", "b"}},
 		{"max fraction 0.69", Count(1), Fraction(0.69), []string{"a"}},
 		{"max count 3", Count(1), Count(3), []string{"a"}},
-		{"max count 0", Count(1), Count(0), nil},
+		{"max count equal to min", Count(3), Count(3), []string{"a"}},
+		{"max fraction equal to min", Fraction(0.7), Fraction(0.7), []string{"b"}},
+		{"max fraction 1 ulp below min", Fraction(math.Nextafter(0.3, 1)), Fraction(0.3), []string{"a"}},
 		{"max fraction 1", Count(1), Fraction(1), []string{"a", "b", "c"}},
 	}
 	for _, tt := range tests {
@@ -629,6 +631,61 @@ func TestEarlyStop(t *testing.T) {
 	}
 }
 
+// sliceError is an error whose dynamic type is not comparable: == on two
+// such interface values panics.
+type sliceError []string
+
+func (e sliceError) Error() string { return strings.Join(e, "; ") }
+
+// TestCallbackErrorNotComparable checks that a callback error of a
+// non-comparable type is returned unchanged, without a panic, by every
+// form that passes the callback's error through (API-1), and that the
+// iterators still stop cleanly.
+func TestCallbackErrorNotComparable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := bigSource(200)
+	check := func(name string, err error, calls int) {
+		t.Helper()
+		if se, ok := errors.AsType[sliceError](err); !ok || len(se) != 1 || se[0] != "boom" || calls != 1 {
+			t.Errorf("%s: got %v (%T) after %d calls", name, err, err, calls)
+		}
+	}
+	calls := 0
+	sum, err := MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2)}, func(Itemset[int]) error {
+		calls++
+		return sliceError{"boom"}
+	})
+	check("item sets", err, calls)
+	if sum.Reported != 1 {
+		t.Errorf("item sets: %d reported", sum.Reported)
+	}
+	calls = 0
+	_, err = MineRules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2)}, func(Rule[int]) error {
+		calls++
+		return sliceError{"boom"}
+	})
+	check("rules", err, calls)
+	calls = 0
+	_, err = MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2), OnStart: func(Stats) error {
+		calls++
+		return sliceError{"boom"}
+	}}, func(Itemset[int]) error { return nil })
+	check("OnStart", err, calls)
+	for _, err := range Itemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2)}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	for _, err := range Rules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2)}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+}
+
 // TestCancel cancels before, during reading and during mining.
 func TestCancel(t *testing.T) {
 	t.Parallel()
@@ -874,17 +931,30 @@ func sparseSource(n int) Source[int] {
 
 // treeBuildLatencyLimit bounds the return after a cancellation in
 // OnStart in TestCancelTreeBuild. Building the whole top-level FP-tree
-// takes 130-480 ms there (Apple M1 Max) and a run checks the context
-// every few thousand transactions (measured: below 0.1 ms).
-const treeBuildLatencyLimit = 50 * time.Millisecond
+// takes 104-490 ms there (Apple M1 Max, unloaded; measured with the
+// cancellation checks removed), while a run with the checks returns in
+// well under 0.1 ms. The test runs sequentially, so parallel tests'
+// CPU and GC load (which cost 219-241 ms on hosted runners) no longer
+// delays it; the limit leaves a wide margin for descheduling but stays
+// far below a whole tree build, which is what the test is meant to
+// catch, also on faster machines.
+const treeBuildLatencyLimit = 30 * time.Millisecond
 
 // TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
 // is built from a large bag: every algorithm (and the item set tree path
 // of rules and rule-based evaluations) must return context.Canceled
 // promptly, without reporting anything, instead of first building the
 // whole tree.
+//
+// The test and its subtests do not run in parallel: between the
+// cancellation and the return there is only O(items) work (the reporter
+// set-up and the check at the start of Miner.Mine), so every latency
+// beyond a few milliseconds is the goroutine waiting for a CPU or doing
+// GC work while other parallel tests run. Measured with -cpu 1,
+// GOMEMLIMIT=300MiB and the whole package in parallel: 62 ms and 184 ms
+// spent in Reporter (normally 1 us); a hosted macOS runner showed 241 ms.
+// A sequential top-level test runs while all parallel tests are paused.
 func TestCancelTreeBuild(t *testing.T) {
-	t.Parallel()
 	n := 300_000
 	if raceEnabled {
 		n = 100_000
@@ -909,7 +979,6 @@ func TestCancelTreeBuild(t *testing.T) {
 	}})
 	for _, r := range runs {
 		t.Run(r.name, func(t *testing.T) {
-			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var canceled time.Time
@@ -1369,12 +1438,12 @@ func TestInvalidItems(t *testing.T) {
 	}
 	_, err = MineItemsets(context.Background(), FromItems([][]float64{{1}}),
 		Options[float64]{MinSupport: Count(1), Items: []float64{1, math.NaN()}}, nil)
-	if !errors.Is(err, ErrInvalidOptions) || !strings.Contains(err.Error(), "Items: item 1:") {
+	if !errors.Is(err, ErrInvalidOptions) || !errors.Is(err, ErrInvalidItem) || !strings.Contains(err.Error(), "Items: item 1:") {
 		t.Errorf("NaN in Items: %v", err)
 	}
 	_, err = MineItemsets(context.Background(), FromItems([][]any{{1}}),
 		Options[any]{MinSupport: Count(1), Items: []any{[]byte("x")}}, nil)
-	if !errors.Is(err, ErrInvalidOptions) {
+	if !errors.Is(err, ErrInvalidOptions) || !errors.Is(err, ErrInvalidItem) {
 		t.Errorf("slice in Items: %v", err)
 	}
 }
@@ -1510,6 +1579,10 @@ func FuzzMineItemsets(f *testing.F) {
 			}
 		}
 		got, sum, err := CollectItemsets(context.Background(), sourceOf(txs), opt)
+		if invertedRange(c.minSupp, c.maxSupp) {
+			checkInvertedRange(t, c.minSupp, c.maxSupp, err)
+			return
+		}
 		if err != nil {
 			t.Fatalf("%+v: %v", opt, err)
 		}

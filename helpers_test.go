@@ -2,6 +2,7 @@ package fpgrowth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -30,6 +31,40 @@ type testCase struct {
 	zmin, zmax   int // zmax: fpg.MaxSize = no limit
 	includeEmpty bool
 	tuning       Tuning
+}
+
+// orderedMax returns the maximum support (in upstream and public
+// notation) raised to the minimum if the options would reject it as below
+// the minimum (see invertedRange): such a range is an error of
+// the API, while the CLI accepts it and reports nothing.
+func orderedMax(smin float64, minSupp Support, smax float64, maxSupp Support) (float64, Support) {
+	if invertedRange(minSupp, maxSupp) {
+		return smin, minSupp
+	}
+	return smax, maxSupp
+}
+
+// invertedRange reports whether the options must reject a maximum
+// support below the minimum: both Count (a minimum below 1 counts as 1)
+// or both Fraction. It restates the rule of checkRange independently.
+func invertedRange(minSupp, maxSupp Support) bool {
+	switch {
+	case minSupp.kind == supportCount && maxSupp.kind == supportCount:
+		return maxSupp.count < max(minSupp.count, 1)
+	case minSupp.kind == supportFraction && maxSupp.kind == supportFraction:
+		// empty for every total weight, beyond the conversion tolerance
+		return maxSupp.frac*(1+4*dblEpsilon) < minSupp.frac*(1-4*dblEpsilon)
+	}
+	return false
+}
+
+// checkInvertedRange fails t unless err is the rejection of an inverted
+// support range (ErrInvalidOptions naming MaxSupport).
+func checkInvertedRange(t *testing.T, minSupp, maxSupp Support, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrInvalidOptions) || !strings.Contains(err.Error(), ": MaxSupport: ") {
+		t.Fatalf("MinSupport %v, MaxSupport %v: got %v, expected ErrInvalidOptions for MaxSupport", minSupp, maxSupp, err)
+	}
 }
 
 // genTestCase draws a random dataset over at most maxItems items and
@@ -73,6 +108,7 @@ func genTestCase(seed uint64, maxItems int) (testCase, error) {
 		k := 30 + r.IntN(71)
 		c.smax, c.maxSupp = float64(k), Fraction(float64(k)/100)
 	}
+	c.smax, c.maxSupp = orderedMax(c.smin, c.minSupp, c.smax, c.maxSupp)
 	switch r.IntN(5) {
 	case 0:
 		c.zmin, c.includeEmpty = 0, true

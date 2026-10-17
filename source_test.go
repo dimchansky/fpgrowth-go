@@ -152,6 +152,43 @@ func TestTableFileErrors(t *testing.T) {
 	}
 }
 
+// TestTableFormatValidation checks that a non-zero TableFormat without
+// record separators is rejected naming the field (instead of reading the
+// whole input as one transaction), by TableFile, TableReader and
+// SpoolTable, while the zero format still means the default.
+func TestTableFormatValidation(t *testing.T) {
+	t.Parallel()
+	const data = "a b 2\na c 3\n"
+	open := func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(data)), nil }
+	isFieldErr := func(err error) bool {
+		return errors.Is(err, ErrInvalidOptions) && strings.Contains(err.Error(), "TableFormat.RecordSeparators")
+	}
+	for _, f := range []TableFormat{{FieldSeparators: ";"}, {Weighted: true}, {RecordSeparators: "", Comments: "#"}} {
+		if _, err := readPass(TableReader(open, "memory", f)); !isFieldErr(err) {
+			t.Errorf("%+v: reader: %v", f, err)
+		}
+		if _, err := readPass(TableFile("testdata/basket.txt", f)); !isFieldErr(err) {
+			t.Errorf("%+v: file: %v", f, err)
+		}
+		if _, err := MineItemsets(context.Background(), TableReader(open, "memory", f), Options[string]{MinSupport: Count(1)}, nil); !isFieldErr(err) {
+			t.Errorf("%+v: mining: %v", f, err)
+		}
+		dir := t.TempDir()
+		reads := 0
+		r := readerFunc(func(p []byte) (int, error) { reads++; return 0, io.EOF })
+		if s, c, err := SpoolTable(context.Background(), r, dir, f); !isFieldErr(err) || s != nil || c != nil {
+			t.Errorf("%+v: spool: %v", f, err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 || reads != 0 {
+			t.Errorf("%+v: spool read %d times, left %v", f, reads, entries)
+		}
+	}
+	got, err := readPass(TableReader(open, "memory", TableFormat{}))
+	if err != nil || len(got) != 2 {
+		t.Errorf("zero format: %s %v", txString(got), err)
+	}
+}
+
 // TestTableReader checks reader-backed table sources: an fs.FS, gzip,
 // the zero format, and the open errors.
 func TestTableReader(t *testing.T) {
@@ -623,6 +660,14 @@ func TestSpool(t *testing.T) {
 	}
 	if _, _, err := SpoolTable(context.Background(), nil, dir, DefaultTableFormat()); !errors.Is(err, ErrInvalidOptions) {
 		t.Errorf("nil reader: %v", err)
+	}
+	formatReads := 0
+	invalidFormat := readerFunc(func(p []byte) (int, error) { formatReads++; return copy(p, "a\n"), io.EOF })
+	if s, c, err := SpoolCSV(context.Background(), invalidFormat, dir, CSVFormat{Comma: '\n'}); !errors.Is(err, ErrInvalidOptions) || s != nil || c != nil {
+		t.Errorf("invalid CSV format: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 || formatReads != 0 {
+		t.Errorf("invalid CSV format: input read %d times, spool files left: %v", formatReads, entries)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

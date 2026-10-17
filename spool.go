@@ -17,14 +17,18 @@ import (
 //
 // ctx is checked before every chunk; if it is canceled, SpoolTable
 // removes the partial file and returns ctx.Err(). A Read that blocks is
-// not interrupted (close the reader to unblock it). A nil r is an error
-// wrapping ErrInvalidOptions; other errors are "fpgrowth: spool: ..."
+// not interrupted (close the reader to unblock it). An invalid format
+// (see TableFormat) and a nil r are errors wrapping ErrInvalidOptions,
+// returned before anything is copied; other errors are "fpgrowth: spool: ..."
 // wrapping the cause.
 //
 // The caller must call cleanup when the source is no longer used; it
 // removes the temporary file and may be called more than once. On error
 // nothing is left behind and cleanup is nil.
 func SpoolTable(ctx context.Context, r io.Reader, dir string, f TableFormat) (src Source[string], cleanup func() error, err error) {
+	if err := f.validate(); err != nil {
+		return nil, nil, err
+	}
 	path, cleanup, err := spool(ctx, r, dir)
 	if err != nil {
 		return nil, nil, err
@@ -34,8 +38,12 @@ func SpoolTable(ctx context.Context, r io.Reader, dir string, f TableFormat) (sr
 
 // SpoolCSV is like SpoolTable for CSV input: it copies r to a temporary
 // file in dir and returns a CSVFile source over it, together with the
-// function that removes the file.
+// function that removes the file. An invalid Comma or Comment is an error
+// wrapping ErrInvalidOptions, returned before anything is copied.
 func SpoolCSV(ctx context.Context, r io.Reader, dir string, f CSVFormat) (src Source[string], cleanup func() error, err error) {
+	if err := f.validate(); err != nil {
+		return nil, nil, err
+	}
 	path, cleanup, err := spool(ctx, r, dir)
 	if err != nil {
 		return nil, nil, err

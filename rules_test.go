@@ -362,6 +362,10 @@ func FuzzMineRules(f *testing.F) {
 			}
 		}
 		got, sum, err := CollectRules(context.Background(), sourceOf(txs), opt)
+		if invertedRange(minSupp, maxSupp) {
+			checkInvertedRange(t, minSupp, maxSupp, err)
+			return
+		}
 		if err != nil {
 			t.Fatalf("%+v: %v", opt, err)
 		}

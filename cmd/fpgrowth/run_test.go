@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
@@ -364,5 +365,86 @@ func TestBorderSupp(t *testing.T) {
 		if got := borderSupp(tc.v, tract.Supp(tc.w)); int64(got) != tc.want {
 			t.Errorf("borderSupp(%g, %d) = %d, want %d", tc.v, tc.w, got, tc.want)
 		}
+	}
+}
+
+// TestBorderEmptyValue is the regression test of docs/differences.md C2
+// (cli B16): a support border list that ends in an empty value counts
+// only its parsed values, so "-F60:" mines as "-F60" and "-F" without a
+// value as no border (upstream reads an uninitialized border entry).
+func TestBorderEmptyValue(t *testing.T) {
+	t.Parallel()
+	in := writeFile(t, t.TempDir(), "t1.tab", test1)
+	mine := func(args ...string) string {
+		t.Helper()
+		out, stderr, code := invocation{args: append(args, "-s20", in, "-")}.run(t)
+		if code != 0 {
+			t.Fatalf("%q: exit %d: %s", args, code, stderr)
+		}
+		return out
+	}
+	none, f60 := mine(), mine("-F60")
+	if f60 == none {
+		t.Fatal("-F60 does not change the result; the test needs a border that filters")
+	}
+	if got := mine("-F60:"); got != f60 {
+		t.Errorf("-F60: gives\n%s\nwant the -F60 result\n%s", got, f60)
+	}
+	if got := mine("-F"); got != none {
+		t.Errorf("-F gives\n%s\nwant the result without a border\n%s", got, none)
+	}
+}
+
+// slowWriter sleeps before its first write: wall-clock time passes
+// without CPU time.
+type slowWriter struct {
+	delay time.Duration
+	slept bool
+	buf   bytes.Buffer
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	if !w.slept {
+		time.Sleep(w.delay)
+		w.slept = true
+	}
+	return w.buf.Write(p)
+}
+
+// TestLogTimesWallClock documents docs/differences.md C7: the times in
+// the log messages are wall-clock times (upstream: CPU time, clock()).
+// The output stalls for 300 ms while the program sleeps, which CPU time
+// would not count; the "writing" step must report at least that long.
+func TestLogTimesWallClock(t *testing.T) {
+	t.Parallel()
+	var b strings.Builder
+	for i := range 300 { // more output than the 64 KiB output buffer
+		fmt.Fprintf(&b, "i%d i%d i%d i%d i%d i%d\n", i%13, i%17, i%19, i%23, i%29, i%31)
+	}
+	in := writeFile(t, t.TempDir(), "many.tab", b.String())
+	const delay = 300 * time.Millisecond
+	w := &slowWriter{delay: delay}
+	var stderr bytes.Buffer
+	code := run(context.Background(), env{
+		args:   []string{"fpgrowth", "-s-1", in, "-"},
+		stdin:  strings.NewReader(""),
+		stdout: w,
+		stderr: &stderr,
+	})
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	m := regexp.MustCompile(`writing <stdout> \.\.\. \[\d+ set\(s\)\] done \[(\d+\.\d\d)s\]\.\n`).FindStringSubmatch(stderr.String())
+	if m == nil {
+		t.Fatalf("no writing message in %q", stderr.String())
+	}
+	secs, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// %.2f rounds, so 0.295 s and more may print as 0.30
+	if !w.slept || secs < delay.Seconds()-0.01 {
+		t.Errorf("writing took [%ss] with a %v stall of the output (slept %v), want at least %.2fs",
+			m[1], delay, w.slept, delay.Seconds())
 	}
 }

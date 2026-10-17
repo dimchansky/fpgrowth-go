@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One scan at a time (schedule and manual runs scan the same ref).
+  group: vulncheck
+  cancel-in-progress: false
+
 defaults:
   run:
     shell: bash

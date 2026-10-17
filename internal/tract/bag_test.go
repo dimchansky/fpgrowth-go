@@ -637,6 +637,63 @@ func TestItemBase_BuildBag_random(t *testing.T) {
 	}
 }
 
+// TestItemBase_BuildBag_longSharedPrefix is the regression test of
+// docs/differences.md M10: upstream's bucket sort of the transactions
+// (tract.c sort) recurses once per item of a prefix shared by more than
+// 16 transactions and overflows the stack (audit T4). The records are
+// the audit's reproducer, 17 identical transactions of 100,000 items
+// plus 100,010 one-item transactions (fewer items than transactions, so
+// upstream takes the bucket sort), on which "fpgrowth -s-17 -n1" exits
+// 139. The bag must hold the two distinct transactions with their
+// weights, in item order.
+func TestItemBase_BuildBag_longSharedPrefix(t *testing.T) {
+	t.Parallel()
+	const (
+		n     = 100000 // items of the long transaction
+		dup   = 17     // copies of it: more than 16
+		short = n + 10 // one-item transactions of item n
+	)
+	long := make([]int, n)
+	for i := range long {
+		long[i] = i
+	}
+	recs := make([]intRecord, 0, dup+short)
+	for range dup {
+		recs = append(recs, rec(1, long...))
+	}
+	for range short {
+		recs = append(recs, rec(1, n))
+	}
+	_, bag := buildIntBag(t, recs, dup, 0)
+	wantLong := make([]Item, n)
+	for i := range wantLong {
+		wantLong[i] = Item(i)
+	}
+	want := []weighted{tx(dup, wantLong...), tx(short, n)}
+	if got := collect(bag.All()); !equalWeighted(got, want) {
+		t.Errorf("All() = %d transactions, want the long one (weight %d), then {%d} (weight %d)",
+			len(got), dup, n, short)
+	}
+	slices.Reverse(want)
+	if got := collect(bag.Backward()); !equalWeighted(got, want) {
+		t.Errorf("Backward() = %d transactions, want {%d}, then the long one", len(got), n)
+	}
+	if bag.Len() != 2 || bag.Records() != dup+short || bag.TotalWeight() != dup+short {
+		t.Errorf("Len, Records, TotalWeight = %d, %d, %d, want 2, %d, %d",
+			bag.Len(), bag.Records(), bag.TotalWeight(), dup+short, dup+short)
+	}
+	if bag.MaxSize() != n || bag.Extent() != n+1 || bag.NumItems() != n+1 {
+		t.Errorf("MaxSize, Extent, NumItems = %d, %d, %d, want %d, %d, %d",
+			bag.MaxSize(), bag.Extent(), bag.NumItems(), n, n+1, n+1)
+	}
+	wantFreq := slices.Repeat([]Supp{dup}, n)
+	wantFreq = append(wantFreq, short)
+	if got := bag.Frequencies(); !slices.Equal(got, wantFreq) {
+		t.Errorf("Frequencies() differ: want %d for items 0..%d and %d for item %d",
+			Supp(dup), n-1, Supp(short), n)
+	}
+}
+
 func FuzzItemBase_BuildBag(f *testing.F) {
 	f.Add([]byte{0x01, 0x12, 0x80, 0x23, 0x01}, uint8(0))
 	f.Add([]byte{0x81, 0x81, 0x00, 0x00, 0x90}, uint8(2))

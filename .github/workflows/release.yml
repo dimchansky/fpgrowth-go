@@ -121,4 +121,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+        # GitHub marks a newly published non-prerelease as "Latest" unless
+        # told otherwise, so both flags are set explicitly: a pre-release
+        # (vX.Y.Z-suffix; build metadata is refused by validate-tag) is
+        # never Latest, and a final release is Latest only if no higher
+        # final vX.Y.Z tag exists, so a backport patch of an older line
+        # does not become Latest. The checkout has every tag (fetch-depth
+        # 0); without a suffix, sort -V orders vX.Y.Z tags as SemVer does.
+        run: |
+          prerelease=false latest=false
+          if [[ "$TAG" == *-* ]]; then
+            prerelease=true
+          else
+            highest=$(git tag -l 'v*.*.*' | grep -Ex 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1)
+            echo "highest final tag: $highest"
+            if [ "$highest" = "$TAG" ]; then
+              latest=true
+            fi
+          fi
+          echo "$TAG: prerelease=$prerelease latest=$latest"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false \
+            --prerelease="$prerelease" --latest="$latest"

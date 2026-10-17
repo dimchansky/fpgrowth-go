@@ -24,7 +24,10 @@ type Itemset[T comparable] struct {
 	// transactions that contain all items.
 	Support int64
 	// Value is the evaluation value (Options.Evaluation), NaN without an
-	// evaluation.
+	// evaluation. NaN is not equal to itself, so without an evaluation
+	// reflect.DeepEqual and == report two identical results as different;
+	// tests comparing results should compare Items and Support (or treat
+	// NaNs as equal, for example with cmpopts.EquateNaNs of go-cmp).
 	Value float64
 }
 
@@ -133,7 +136,7 @@ func MineItemsets[T comparable](ctx context.Context, src Source[T], opt Options[
 	if err != nil {
 		return Summary{}, err
 	}
-	if src == nil {
+	if isNilSource(src) {
 		return Summary{}, invalid("src", "nil source")
 	}
 	ib := tract.NewItemBase[T]()
@@ -195,7 +198,7 @@ type setSink[T comparable] struct {
 	buf     []T
 	fn      func(Itemset[T]) error
 	hasEval bool
-	err     error // the last error of fn
+	err     error // the error of fn that stopped mining, if any
 }
 
 var errUnexpectedRule = errors.New("fpgrowth: internal error: rule reported while mining item sets")
@@ -226,7 +229,11 @@ type resultSink[T comparable] interface {
 	report.Sink
 	// setup passes the items in code order and the total weight.
 	setup(names []T, total int64)
-	// userErr returns the last error of the user callback.
+	// userErr returns the error with which the user callback stopped
+	// mining, or nil if it did not fail. Mining stops at the first
+	// non-nil error, so a non-nil result is the error to return. Errors
+	// are never compared: a callback error may have a dynamic type that
+	// is not comparable, on which == panics.
 	userErr() error
 }
 
@@ -334,8 +341,8 @@ func mine[T comparable](
 		return sum, ctx.Err()
 	case err == nil:
 		return sum, nil
-	case sink != nil && err == sink.userErr():
-		return sum, err // the callback's error, unchanged
+	case sink != nil && sink.userErr() != nil:
+		return sum, sink.userErr() // the callback's error, unchanged
 	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
 		return sum, ctx.Err()
 	}
@@ -537,7 +544,8 @@ func itemProblem[T comparable](it T, dynamic bool) string {
 	return ""
 }
 
-// checkItems checks the items of an option field.
+// checkItems checks the items of an option field. An invalid item is an
+// error matching both ErrInvalidOptions and ErrInvalidItem.
 func checkItems[T comparable](field string, items []T) error {
 	dynamic, mayBeNaN := itemKinds(reflect.TypeFor[T]())
 	if !dynamic && !mayBeNaN {
@@ -545,8 +553,19 @@ func checkItems[T comparable](field string, items []T) error {
 	}
 	for i, it := range items {
 		if msg := itemProblem(it, dynamic); msg != "" {
-			return invalid(field, "item %d: %s", i, msg)
+			return newDetailError(fmt.Sprintf("%s: %s: item %d: %s", ErrInvalidOptions, field, i, msg),
+				ErrInvalidOptions, ErrInvalidItem)
 		}
 	}
 	return nil
+}
+
+// isNilSource reports whether src is nil or a nil SourceFunc, which
+// would panic when a pass starts.
+func isNilSource[T comparable](src Source[T]) bool {
+	if src == nil {
+		return true
+	}
+	f, ok := src.(SourceFunc[T])
+	return ok && f == nil
 }
