@@ -362,8 +362,13 @@ reached, accepted by the repository (3.4) and passes the check.
     cost at most about as much as the copy. Without them a long chain
     with a small maximum size was quadratic: with `-At -tc -n1` on 17
     identical transactions of n items each of the n item checks copied
-    all n items (22.0 s at n = 100,000, now 0.30 s; C 0.24 s, same
-    machine). For a single-transaction cover the first item of t
+    all n items (n = 100,000: 22.0 s, now 0.30 s, where the C program
+    crashes from about n = 60,000; n = 30,000: 2.17 s, now 0.08 s,
+    C 0.05 s; independent review of the change). One quadratic shape
+    remains, in C too: a long first cover transaction whose probes fail,
+    followed by short ones (one 50,000-item line plus 50,000 one-item
+    lines, `-As -tc -s-2 -n1`: Go 6.8 s, C 3.4 s); starting the
+    candidates from the shortest cover transaction would remove it. For a single-transaction cover the first item of t
     outside the set always succeeds, so a check reads at most |X| + 1
     items of t; the maximal scan already stopped at the first frequent
     extension and is unchanged.
