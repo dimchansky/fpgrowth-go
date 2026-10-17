@@ -30,6 +30,7 @@ dev-esc-end     I1   trailing backslash stands for itself
 dev-nonascii    I2   non-ASCII separator bytes
 dev-negw        M6   negative weights rejected
 dev-bigw        M7   64-bit weights (C crashes)
+dev-prefmt      O11  no pre-format table (C crashes in isr_prefmt)
 dev-longfield   I4   no 1024-byte field limit
 dev-lastsep     I3   final record ending in a field separator kept
 dev-recnum      I5   record number in messages

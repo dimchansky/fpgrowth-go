@@ -115,6 +115,65 @@ func TestMain_interrupt(t *testing.T) {
 	t.Logf("exited %v after SIGINT", latency)
 }
 
+// runHelperEnv makes the test binary act as the program in
+// TestMain_closedStdout: its value is the input file of the run.
+const runHelperEnv = "FPGROWTH_RUN_HELPER"
+
+// TestRun_helper is the child process of TestMain_closedStdout: it runs
+// the program on the process's standard streams, like main, after
+// noting on stderr whether standard output is the null device.
+func TestRun_helper(t *testing.T) {
+	in := os.Getenv(runHelperEnv)
+	if in == "" {
+		t.Skip("helper process")
+	}
+	if fi, err := os.Stdout.Stat(); err == nil {
+		if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(fi, null) {
+			fmt.Fprintln(os.Stderr, "stdout is "+os.DevNull)
+		}
+	}
+	os.Exit(run(context.Background(), env{
+		args:   []string{"fpgrowth", "-Z", in, "-"},
+		stdin:  os.Stdin,
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+	}))
+}
+
+// TestMain_closedStdout documents docs/differences.md C10 (audit
+// DIF-5): with standard output closed by the caller (">&-"), upstream
+// fails on the first write with "write error on file <stdout>" and exit
+// status 4. The Go runtime opens the null device for a closed file
+// descriptor 0-2 at startup, so the program's writes succeed and it
+// exits 0 as with ">/dev/null". Unix only: it closes the descriptor with
+// the shell.
+func TestMain_closedStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("closes standard output with /bin/sh")
+	}
+	t.Parallel()
+	in := filepath.Join(t.TempDir(), "t1.tab")
+	if err := os.WriteFile(in, []byte(test1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", `exec "$0" "$@" >&-`, os.Args[0], "-test.run=^TestRun_helper$")
+	cmd.Env = append(os.Environ(), runHelperEnv+"="+in)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("exit: %v (upstream: exit 4); stderr:\n%s", err, stderr.String())
+	}
+	log := stderr.String()
+	if !strings.HasPrefix(log, "stdout is "+os.DevNull+"\n") {
+		t.Errorf("closed stdout was not reopened on %s; stderr:\n%s", os.DevNull, log)
+	}
+	if strings.Contains(log, "write error") ||
+		!strings.Contains(log, "writing <stdout> ... [21 set(s)] done") {
+		t.Errorf("stderr:\n%s", log)
+	}
+}
+
 // helperEnv makes the test binary act as the process of
 // TestInterruptContext_second instead of running tests.
 const helperEnv = "FPGROWTH_INTERRUPT_HELPER"
