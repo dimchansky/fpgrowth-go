@@ -211,7 +211,12 @@ public at this point (see [Cutting a release](#cutting-a-release)).
      the upstream `PROVENANCE.md` into `fpgrowth_<version>_<os>_<arch>`
      (`.tar.gz`, `.zip` for Windows) with fixed owner, mode and times;
    - writes `checksums.txt` (SHA-256) and creates the GitHub release as
-     a **draft** (pre-release for versions with a suffix);
+     a **draft** (pre-release for versions with a suffix), with the
+     `CHANGELOG.md` section as its notes;
+   - checks that the draft carries those notes (a snapshot cannot show
+     them, because GoReleaser skips its changelog step in snapshot
+     mode; `v0.1.0-rc.1` was published without notes before this check
+     existed);
    - creates a signed build provenance attestation for every archive
      listed in `checksums.txt` (GitHub artifact attestations, Sigstore);
    - only then publishes the draft (`gh release edit --draft=false`), so

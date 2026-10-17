@@ -65,9 +65,13 @@ snapshot:
   version_template: '{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}'
 
 # The release notes come from CHANGELOG.md (--release-notes in
-# release.yml), not from the commit log.
+# release.yml), not from the commit log. The changelog step must stay
+# enabled: it is the step that reads --release-notes (with a notes file
+# it does not generate a commit log), and disabling it published
+# v0.1.0-rc.1 without notes. Snapshots skip it, so only a real release
+# shows the notes; release.yml checks them before publishing.
 changelog:
-  disable: true
+  use: git
 
 release:
   github:
