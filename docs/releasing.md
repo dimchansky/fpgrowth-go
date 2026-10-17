@@ -82,8 +82,19 @@ directive (currently `go1.27.2`, `docs/decisions.md` D3).
 ## Cutting a release
 
 Prerequisites (once per repository, see
-[Repository settings](#repository-settings)): the `release` environment
-exists and is protected.
+[Repository settings](#repository-settings)): the `release` environment,
+the rulesets for `main` and `v*` tags, and immutable releases are in
+place.
+
+**The tag push publishes the library.** The Go module version
+`vX.Y.Z` becomes public as soon as the tag reaches GitHub: anyone (or
+pkg.go.dev, or a bot) can fetch it through `proxy.golang.org`, and
+`sum.golang.org` records its content forever, whether or not the release
+workflow then passes or the deployment is approved. The workflow gates
+only the GitHub release and its binaries. The real gate for the library
+is the `main` ruleset (a pull request and the 15 CI checks are required
+for every change), so tag only a commit of `main` whose own CI run on
+`main` succeeded (step 4).
 
 1. Make sure `main` is green in CI and up to date locally:
 
@@ -120,17 +131,34 @@ exists and is protected.
    limits) and lists the omitted files (`.git`, the nested `reference/`
    module) and the zip size. CI runs it in the lint job.
 
-4. Tag the merged commit on `main` with an annotated (ideally signed)
-   tag and push the tag:
+4. Check that CI passed for exactly this commit on `main` (the ruleset
+   checks pull requests, but does not require them to be up to date
+   with `main`, so the merge commit's own run is what counts), then tag
+   it with an annotated (ideally signed) tag and push the tag:
 
    ```bash
+   git fetch origin && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+   gh run list --workflow ci.yml --branch main --event push \
+     --commit "$(git rev-parse HEAD)" --json conclusion --jq '.[0].conclusion'
+   # must print: success
    git tag -a vX.Y.Z -m "vX.Y.Z"        # or: git tag -s vX.Y.Z -m "vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-5. Approve the `release` deployment when GitHub asks (Actions tab, or the
-   notification to the environment's reviewers). GitHub asks only after
-   the tag passed `validate-tag` and all quality gates.
+   When an RC and the final version are on the same commit, push the
+   final tag only after the RC's release run has finished: the Go
+   toolchain stamps the binaries' module version from the tags on the
+   commit and may otherwise embed the final version in the RC binaries
+   (`go version -m`).
+
+5. Approve the `release` deployment when GitHub asks. GitHub asks only
+   after the tag passed `validate-tag` and all quality gates. With a
+   single maintainer, the maintainer is the required reviewer and
+   self-review is allowed: open the waiting run (Actions tab, or the
+   e-mail notification), choose "Review deployments", tick `release`,
+   and choose "Approve and deploy" (or "Reject", which leaves no release;
+   the module version stays public, see above). Administrators cannot
+   bypass this step.
 
 6. Check the published release page, then make the module version known
    to the Go proxy and pkg.go.dev:
@@ -141,13 +169,16 @@ exists and is protected.
 
 Never move or delete a pushed tag: the Go checksum database records the
 content of every version it has seen, so a re-tagged version fails
-verification for everyone. Fix a bad release with a new patch version,
-and mark the bad one with a `retract` directive in `go.mod`
-(`retract vX.Y.Z // reason`) in that next release.
+verification for everyone (the `release tags` ruleset refuses both).
+Fix a bad release with a new patch version, and mark the bad one with a
+`retract` directive in `go.mod` (`retract vX.Y.Z // reason`) in that
+next release.
 
 ## What the release workflow does
 
-`release.yml` runs on a pushed tag matching `v*.*.*`:
+`release.yml` runs on a pushed tag matching `v*.*.*`. It gates the
+GitHub release and its binaries; the Go module version is already
+public at this point (see [Cutting a release](#cutting-a-release)).
 
 1. **Tag validation** (`validate-tag` job, read-only, first): the tag is
    canonical SemVer without build metadata, a `v2+` tag matches the
@@ -183,11 +214,32 @@ and mark the bad one with a `retract` directive in `go.mod`
    - only then publishes the draft (`gh release edit --draft=false`), so
      a release is never visible without its attestation. If a step fails,
      the draft stays unpublished; rerunning the workflow replaces it.
+     Publishing sets both flags explicitly: a pre-release is never
+     marked "Latest", and a final release is "Latest" only if no higher
+     final `vX.Y.Z` tag exists (a backport patch of an older line is
+     not). If a higher tag exists whose release was never published,
+     mark the right release by hand: `gh release edit vX.Y.Z --latest`.
+     With immutable releases, the published release's assets and tag
+     cannot be changed afterwards.
+
+The `publish` job's write and OIDC permissions apply to all of its
+steps, including `go run ./modcheck` and the GoReleaser build. This is
+accepted: every action is pinned by SHA, Go dependencies are verified
+against `go.sum`, GoReleaser runs no hooks, and the job runs only after
+approval. Splitting build, attestation and upload into separate jobs
+would narrow it further.
+
+`goreleaser-action` verifies the downloaded GoReleaser archive against
+the checksum file of the same GoReleaser release, which protects only
+against corruption in transit (its cosign signature check is skipped
+because cosign is not installed). The pinned GoReleaser release is an
+immutable GitHub release, which is the remaining protection.
 
 The GoReleaser version is pinned once, in `.github/goreleaser-version`,
 and read by both `ci.yml` (snapshot) and `release.yml`. The govulncheck
-pin appears in `ci.yml` and `vulncheck.yml` (weekly scan of `main`); the
-lint job fails if the two differ.
+pin appears in `ci.yml` and `vulncheck.yml` (weekly scan of `main`), the
+staticcheck pin in `ci.yml`, and both in `CONTRIBUTING.md`; the lint job
+fails if they differ.
 
 The workflow uses only the automatic `GITHUB_TOKEN` and a short-lived
 OIDC token; there are no stored secrets. All actions are pinned to full
@@ -205,12 +257,22 @@ and commit are embedded by the Go toolchain and can be read with
 # checksums (Linux; on macOS use: shasum -a 256 --ignore-missing -c checksums.txt)
 sha256sum --ignore-missing -c checksums.txt
 
-# build provenance (GitHub CLI): which workflow, commit and tag built it
-gh attestation verify fpgrowth_X.Y.Z_linux_amd64.tar.gz --repo dimchansky/fpgrowth-go
+# build provenance (GitHub CLI): built by release.yml of this repository
+# from the tag vX.Y.Z on a GitHub-hosted runner
+gh attestation verify fpgrowth_X.Y.Z_linux_amd64.tar.gz \
+  --repo dimchansky/fpgrowth-go \
+  --signer-workflow dimchansky/fpgrowth-go/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
 
 # embedded build information of the binary
 go version -m ./fpgrowth
 ```
+
+Without `--signer-workflow` and `--source-ref`, an attestation from any
+workflow of the repository, or from any ref, would be accepted. The
+attestations cover the archives listed in `checksums.txt`, not
+`checksums.txt` itself.
 
 ## Go module proxy notes
 
@@ -228,26 +290,41 @@ go version -m ./fpgrowth
 
 ## Repository settings
 
-Required once, by a repository administrator:
+Configured once by a repository administrator (in place since
+2026-10-17); keep them when changing the workflows:
 
-- **Environment `release`** (Settings, Environments): required reviewers
-  (the maintainer), "Prevent self-review" off for a single maintainer,
-  deployment branches and tags limited to tags matching `v*.*.*`.
-- **Tag protection** (Settings, Rules, rulesets): restrict creation,
-  update and deletion of `v*` tags to maintainers; block force pushes.
-- **Branch protection for `main`**: require pull requests and the CI
-  status checks; block force pushes.
+- **Environment `release`** (Settings, Environments): required reviewer
+  `dimchansky`, "Prevent self-review" off (single maintainer),
+  administrators cannot bypass, deployments only from tags matching
+  `v*.*.*`.
+- **Ruleset `main`** (Settings, Rules, rulesets; the default branch, no
+  bypass actors): pull request required (0 approvals, conversations
+  resolved), 15 required status checks from GitHub Actions (the job
+  names of `ci.yml`: lint, govulncheck, the seven test legs, coverage,
+  cross-build, fuzz smoke, the two C reference legs and the GoReleaser
+  snapshot; renaming a job requires updating the ruleset), no force
+  pushes, no deletion. Branches need not be up to date before merging,
+  hence the check in step 4 above.
+- **Ruleset `release tags`** (`refs/tags/v*`, no bypass actors): tags
+  cannot be updated (moved), deleted or force-pushed; creating them
+  needs write access.
+- **Releases**: immutable releases enabled, so a published release's
+  assets and tag cannot be changed.
 - **Actions** (Settings, Actions, General): default `GITHUB_TOKEN`
-  permissions read-only; allow only actions pinned to a full commit SHA
-  (if available); do not allow Actions to create or approve pull
-  requests.
-- **Security** (Settings, Code security): enable private vulnerability
-  reporting, Dependabot alerts and security updates.
+  permissions read-only; Actions cannot create or approve pull requests;
+  only GitHub-owned actions and `goreleaser/goreleaser-action` are
+  allowed, pinned to a full commit SHA; workflows from fork pull
+  requests need approval for all external contributors.
+- **Security** (Settings, Code security): private vulnerability
+  reporting (the channel in [SECURITY.md](../SECURITY.md)), Dependabot
+  alerts and security updates, secret scanning and push protection.
 
 ## Do not re-run a successful release
 
-Re-running a successful release workflow run makes GoReleaser update the
-already published release (as a draft, with `mode: replace`). If a
+Re-running a successful release workflow run makes GoReleaser try to
+update the already published release (`mode: replace`); with immutable
+releases GitHub refuses to change its assets, so the rerun is expected
+to fail (not yet exercised). If a
 release needs a fix, publish a new patch version instead. When an RC and
 the final version share a commit, the workflow passes the triggering tag
 to GoReleaser (`GORELEASER_CURRENT_TAG`) and fails if `dist/metadata.json`
