@@ -144,6 +144,7 @@ filled in section 6.
 | INF-11 | Low | confirmed | OIDC and write token visible to every step of `publish` | Accept; documented (all steps are pinned, no untrusted input) |
 | INF-12 | Low | confirmed | `gh attestation verify` instructions do not pin signer workflow/ref | Fix docs |
 | NEW-2 | Medium | confirmed | Found during remediation ([t4-performance.md](t4-performance.md) §B): `-At -tc -n` on a long single chain is quadratic in Go only (100k items: 21.4 s, C 0.46 s); the M5 extension check copies the whole covering transaction per check | Fix (exact single-cover shortcut) |
+| NEW-3 | Info | confirmed | Review of #6 (PR6-2): a long first cover transaction followed by short ones keeps the closed check quadratic (one 50 000-item line plus 50 000 one-item lines, `-As -tc -s-2 -n1`: Go 6.8 s, C 3.4 s; C is quadratic too) | Deferred (start candidates from the shortest cover transaction) |
 | NEW-1 | Low | confirmed | Found during remediation (§A of the same report): on the T4 reproducer (long chain, `-n1`) mining is quadratic in upstream C and Go alike (100k items: 34.9 s vs 31.2 s CPU, identical output) | Document; optimization deferred |
 
 Info (no action needed before v0.1.0, recorded in the detailed reports):
@@ -204,6 +205,7 @@ review reports are in [reviews/](reviews/).
 | [#3](https://github.com/dimchansky/fpgrowth-go/pull/3) | API fixes with regression tests | API-1 (High), API-2..5, API-7..9, docs API-3/10/13/16, DIF-9 | [pr3-review.md](reviews/pr3-review.md): accept; delta [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept with condition D-1 (latency bound), applied before merge |
 | [#5](https://github.com/dimchansky/fpgrowth-go/pull/5) | Regression tests for avoided upstream crashes and CLI rows | M10, O11, C10, C2, C7 (DIF-4/6 follow-up) | [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept |
 | [#4](https://github.com/dimchansky/fpgrowth-go/pull/4) | Documentation corrections | DIF-1..7, ALG-1..4, TST-1..7, PERF-2/3, M5A-1..4, FEAT-1/2, NEW-1 | [pr4-review.md](reviews/pr4-review.md): approve with changes; re-review of the fixes: approve (R-1..R-3 applied before merge) |
+| [#6](https://github.com/dimchansky/fpgrowth-go/pull/6) | Candidate probes before the closed scan copies the cover transaction | NEW-2 | [pr6-review.md](reviews/pr6-review.md) (by the M5 auditor, who did not write it): accept; PR6-1 (C time quoted where C crashes) fixed before merge; PR6-2 (remaining quadratic shape, also in C) recorded as NEW-3 |
 | this PR | Changelog, progress log, `AGENTS.md`, this record | D-3, D-8 of the PR #4 review | — |
 
 Repository settings (§5) were verified independently in

@@ -27,8 +27,8 @@ linked documents.
 
 ## Next steps
 
-1. Finish Phase 2: documentation corrections (PR #4) and the `-At -tc -n`
-   extension-check slowdown (NEW-2); acceptance decision (Gate A).
+1. Phase 2 acceptance decision (Gate A) once #6 and this record are
+   merged.
 2. **Gate C — stop:** the maintainer must explicitly authorize the first
    public tag `v0.1.0-rc.1`. Then follow `docs/releasing.md`: changelog
    section, fresh-clone pre-tag checks, annotated tag, deployment
@@ -42,4 +42,4 @@ linked documents.
   weights (ALG-1, `docs/differences.md` N1), `fpgpsp` and `-z`, faster
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
-  too), independent measure formulas in the oracle (TST-3).
+  too), the remaining quadratic closed-check shape (NEW-3), independent measure formulas in the oracle (TST-3).
