@@ -73,7 +73,8 @@ Every difference is intentional and listed with its kind (upstream
 defect fix, platform difference, improvement, new or preserved behavior),
 evidence and tests in
 [docs/differences.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/differences.md);
-33 of them fix confirmed upstream defects. In summary:
+they fix 33 distinct, confirmed upstream defects and avoid 2 upstream
+crashes. In summary:
 
 - Fixed mining results: `-At` crashes or wrong item names (M1), `-s0` and
   zero-frequency items (M2), generators missed with `-m ≥ 2` (M3), maximal
