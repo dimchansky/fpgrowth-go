@@ -59,7 +59,12 @@
 // Results come in upstream's deterministic order, which depends on the
 // data, the options (including the order of Options.Items) and the
 // [Algorithm]; the sets and supports themselves do not depend on the
-// algorithm or the [Tuning]. The order is the same for the same data,
+// algorithm or the [Tuning], with one exception inherited from upstream:
+// an item set evaluated with [AggregateFirst] uses the rule whose head is
+// its first item in the internal item order, so its Value, and with
+// Evaluation.Filter whether it is reported, can depend on the algorithm,
+// the tuning and the target ([AggregateMin], [AggregateMax] and
+// [AggregateAverage] do not). The order is the same for the same data,
 // options and version of this module, but it is not part of the
 // compatibility promise and may change between versions; the sets, rules
 // and supports are. Without an [Evaluation], Itemset.Value and Rule.Value

@@ -616,7 +616,7 @@ exploration on 20,000 transactions (`s20000x500`, ≤ 60 ms), and on
 time and +73 MB RSS (§7.1, `671474e`). After
 fix S3-1 (compact bit sets, probed closed scans) the limited runs there
 take 1.1–1.2× (closed) and 1.3–1.6× (maximal) the unlimited ones and
-+20 MB; Go is then 2.3–3.2× C, whose limited runs perform no check (and
++20 MB; Go is then 2.2–3.2× C, whose limited runs perform no check (and
 are not exact in general, B5). That bounded overhead is accepted for the
 removal of the exponential worst case. Without a relevant limit nothing
 changes.

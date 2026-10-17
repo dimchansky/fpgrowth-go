@@ -73,7 +73,7 @@ All upstream rows were verified at the end of Stage 1 (review
 | Flexible table format (`-r -f -b -C`) | `trd_*` (tabread.c), `esc_*` (escape.c) | [cli §5] | `internal/tabread` | C fixtures, fuzz | verified |
 | Option grammar, defaults, messages, exit codes | `main` (fpgrowth.c) | 34 options, exit codes 0–24 [cli §2–§4] | `cmd/fpgrowth`, `internal/cconv` | golden CLI tests | verified |
 | stdin/stdout via `-` / empty name | `main`, `trd_open`, `isr_open` | [cli §3] | `cmd/fpgrowth` | CLI tests | verified |
-| `fpgpsp` program (pattern spectrum from surrogate data, for significance filtering via `-F`) | `fpgpsp.c` | `fpgpsp.c` is in the archive, but it needs `tars.c` (surrogate data), `pspest.c` (spectrum estimation) and pthreads; `tars.c` and `pspest.c` are not in the archive | — | — | deferred past v0.1.0 |
+| `fpgpsp` program (pattern spectrum from surrogate data, for significance filtering via `-F`) | `fpgpsp.c` | `fpgpsp.c` is in the archive, but it needs `tars.c` (surrogate data) and `pspest.c` (spectrum estimation), which are not in the archive (it also uses the system's pthreads library) | — | — | deferred past v0.1.0 |
 | zlib output (`-z`) | `USE_ZLIB` | zlib (RFC 1950) compression of the item set/rule output; not compiled into upstream's default build, which rejects `-z` like the Go CLI | — | — | deferred past v0.1.0 |
 
 ## New in the Go port (Stage 2 and later)

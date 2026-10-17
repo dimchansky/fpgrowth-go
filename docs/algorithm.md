@@ -182,10 +182,11 @@ the projection is exactly right, and the reporter ignores such items.
 
 `Algorithm` (`-A`) selects how FP-trees are represented and processed.
 Without an evaluation threshold, all variants report the same sets with
-the same supports; they differ in speed and in result order. With an
-evaluation threshold and the default aggregation `AggregateFirst` (`-ax`)
-the filtered item sets can differ, because the rule that evaluates a set
-depends on the internal item order (section 12; deviation list P6).
+the same supports; they differ in speed and in result order. With the
+default aggregation `AggregateFirst` (`-ax`) the evaluation values of
+item sets can differ, and with an evaluation threshold so can the
+reported sets, because the rule that evaluates a set depends on the
+internal item order (section 12, "Rule measures"; deviation list P6).
 
 **Simple** (`-As`). Nodes have only a parent link, a successor link (the
 next node of the same item) and a support. A new path shares an existing
@@ -364,7 +365,12 @@ small.
   supports of body ∪ head, body, head and the total weight. For rules the
   measure of the rule itself is used. For an item set `S` the measure is
   aggregated over the rules `S \ {h} -> h` (first rule, minimum, maximum or
-  average, `-a`). With "invalidate below expected support" (`-i`), a rule
+  average, `-a`). "First" (`AggregateFirst`, `-ax`, the default) is the
+  rule whose head is the first item of `S` in the miner's internal item
+  order. That order comes from the item codes (`-q`), the variant and its
+  reordering, and the target, so the value of an item set, and with a
+  threshold whether it is reported, can depend on them (deviation list
+  P6); minimum, maximum and average do not. With "invalidate below expected support" (`-i`), a rule
   whose support is not above the expected support gets the measure's
   worst value.
 - **Values without filtering** (library only, `Evaluation` without
