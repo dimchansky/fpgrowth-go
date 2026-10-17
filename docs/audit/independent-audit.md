@@ -206,7 +206,7 @@ review reports are in [reviews/](reviews/).
 | [#5](https://github.com/dimchansky/fpgrowth-go/pull/5) | Regression tests for avoided upstream crashes and CLI rows | M10, O11, C10, C2, C7 (DIF-4/6 follow-up) | [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept |
 | [#4](https://github.com/dimchansky/fpgrowth-go/pull/4) | Documentation corrections | DIF-1..7, ALG-1..4, TST-1..7, PERF-2/3, M5A-1..4, FEAT-1/2, NEW-1 | [pr4-review.md](reviews/pr4-review.md): approve with changes; re-review of the fixes: approve (R-1..R-3 applied before merge) |
 | [#6](https://github.com/dimchansky/fpgrowth-go/pull/6) | Candidate probes before the closed scan copies the cover transaction | NEW-2 | [pr6-review.md](reviews/pr6-review.md) (by the M5 auditor, who did not write it): accept; PR6-1 (C time quoted where C crashes) fixed before merge; PR6-2 (remaining quadratic shape, also in C) recorded as NEW-3 |
-| this PR | Changelog, progress log, `AGENTS.md`, this record | D-3, D-8 of the PR #4 review | — |
+| [#7](https://github.com/dimchansky/fpgrowth-go/pull/7) | Changelog, progress log, `AGENTS.md`, this record | D-3, D-8 of the PR #4 review | — |
 
 Repository settings (§5) were verified independently in
 [pr2-settings-review.md](reviews/pr2-settings-review.md): every claimed
@@ -226,4 +226,33 @@ control is that the approver checks the run's commit is the tagged
 
 ## 7. Acceptance
 
-Pending the independent review of the fixes.
+**Gate A (independent audit) — accepted, 2026-10-17**, at `main`
+`ff3db2a` (merge of #6), by the orchestrator on the evidence above:
+
+- The only Critical and High findings were INF-1, INF-2, INF-3 (fixed in
+  the repository settings and verified by a separate reviewer) and API-1
+  (fixed in #3, accepted by a separate reviewer who reproduced the panic
+  on `f7bb606` and confirmed the fix by mutation). No Critical or High
+  finding remains open.
+- Every Medium finding is fixed (API-2, NEW-2, DIF-2/TST-1, INF-4,
+  INF-5) or documented with a recorded decision (ALG-1, API-3, TST-2,
+  INF-6). Low findings are fixed or documented except those accepted in
+  §4 (API-6, INF-8, INF-9, INF-11).
+- Each fix PR had an independent review; all 15 required checks passed
+  on each PR before merge.
+- Remaining limitations are documented in `docs/differences.md`
+  (Numeric limits N1–N3, Preserved P1–P6), `docs/benchmarks.md` and the
+  deferred list in `docs/PROGRESS.md` (ALG-1 exact arithmetic, M5A-1,
+  NEW-1, NEW-3, TST-3, fpgpsp, `-z`).
+
+Not verified before a real tag run (release-only paths): the `publish`
+job, environment approval, attestation, undraft with explicit
+prerelease/Latest flags, and immutable-release behavior on rerun. They
+are covered by Gate D.
+
+**Gate B (repository protection) — accepted**: §5, verified in
+[reviews/pr2-settings-review.md](reviews/pr2-settings-review.md); no
+owner-only action is outstanding.
+
+**Gate C — not crossed.** No tag or release exists. Creating
+`v0.1.0-rc.1` needs the maintainer's explicit authorization.

@@ -19,21 +19,19 @@ linked documents.
   and performance, CI and release), each in its own clean clone of
   `f7bb606`. Report: `docs/audit/independent-audit.md` (detailed reports
   and checker sources alongside). No mining correctness defect; M5 sound.
-- **Phase 2 — remediation: in progress.** Fixes go through pull requests
-  with an independent reviewer per PR (record in
-  `docs/audit/independent-audit.md` §6).
-- **Phase 3 — repository hardening: done, independently verified**
-  (`docs/audit/independent-audit.md` §5; review of PR #2 and settings).
+- **Phase 2 — remediation: done; Gate A accepted.** PRs #2–#6, each
+  with an independent reviewer (`docs/audit/independent-audit.md` §6,
+  §7). No Critical or High finding open.
+- **Phase 3 — repository hardening: done; Gate B accepted**
+  (`docs/audit/independent-audit.md` §5, independently verified).
 
 ## Next steps
 
-1. Phase 2 acceptance decision (Gate A) once #6 and this record are
-   merged.
-2. **Gate C — stop:** the maintainer must explicitly authorize the first
+1. **Gate C — stop:** the maintainer must explicitly authorize the first
    public tag `v0.1.0-rc.1`. Then follow `docs/releasing.md`: changelog
    section, fresh-clone pre-tag checks, annotated tag, deployment
    approval, artifact and attestation checks, external consumer test.
-3. **Gate E — stop:** separate explicit authorization for `v0.1.0`.
+2. **Gate E — stop:** separate explicit authorization for `v0.1.0`.
 
 ## Open problems
 
@@ -42,4 +40,5 @@ linked documents.
   weights (ALG-1, `docs/differences.md` N1), `fpgpsp` and `-z`, faster
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
-  too), the remaining quadratic closed-check shape (NEW-3), independent measure formulas in the oracle (TST-3).
+  too), the remaining quadratic closed-check shape (NEW-3), independent
+  measure formulas in the oracle (TST-3).
