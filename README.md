@@ -39,7 +39,7 @@ Go, fixes confirmed upstream defects (listed in
 | 1 | Faithful port of the mining core, reporter, rule evaluation, item set tree, table reader, text output and CLI; C reference build and differential tests | done |
 | 2 | Public library API: generic items, replayable sources (memory, generated, table files, CSV, spooled readers), streaming results, cancellation | done |
 | 3 | Benchmarks against the C reference, profiling, measured optimizations, exact closed/maximal size limits (see [Memory and performance](#memory-and-performance) and [docs/benchmarks.md](docs/benchmarks.md)) | done |
-| 4 | CI, release automation, contribution and security policies | done |
+| 4 | CI, release automation, contribution and security policies | in review |
 
 The results (item sets, rules, supports and evaluation values) are checked
 against Christian Borgelt's C program, built from the unmodified sources,
