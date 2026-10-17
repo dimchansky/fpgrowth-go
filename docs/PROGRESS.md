@@ -4,7 +4,7 @@ Durable project state so work can resume after a context reset. Keep this
 short: current status, next steps, open problems. Details belong in the
 linked documents.
 
-## Current status (2026-10-16)
+## Current status (2026-10-17)
 
 - **Stage 0 (preparation): done.** Toolchain Go 1.27.2 (`toolchain`
   directive; language level 1.26), clang, staticcheck 2026.2.2,
@@ -31,16 +31,26 @@ linked documents.
   (`reference/bench`), report `docs/benchmarks.md` (Go/C geometric mean
   1.72 → 1.60), M5 resolved with a complete extension check
   (`docs/m5-investigation.md`).
-- **Stage 4 (CI/CD, releases, OSS files): implemented** (`62b8b17`);
-  Stage 4 critic review pending.
+- **Stage 4 (CI/CD, releases, OSS files): accepted and closed**
+  (`docs/reviews/stage4-review-{1,2}.md`): iteration 1 rejected (C1
+  uncommitted golden fixtures, C2 Windows-reserved file name breaking the
+  module zip; fixed in `e70d1ce`), iteration 2 accepted with conditions
+  (N1 release tag selection etc.; fixed). CI, release, vulncheck
+  workflows; `reference/modcheck` module-zip and tag gate.
+- **All four stages closed.** Remaining work needs the GitHub repository
+  (owner actions below).
 
-## Next steps
+## Next steps (owner actions; cannot be done locally)
 
-1. Stage 4 review; then the final report.
-2. Owner actions after creating the GitHub repository: `release`
-   environment with reviewers, tag/branch protection, read-only default
-   token, private vulnerability reporting, Dependabot alerts; rename
-   CHANGELOG `[Unreleased]` before the first tag.
+1. Create the public repository `dimchansky/fpgrowth-go`, add the remote,
+   push `main`, confirm all CI jobs pass (especially Windows).
+2. Create the `release` environment (required reviewer, tag rule
+   `v*.*.*`); rulesets protecting `v*` tags and `main`; read-only default
+   `GITHUB_TOKEN`; private vulnerability reporting and Dependabot alerts.
+3. Before the first tag: rename `## [Unreleased]` in CHANGELOG to
+   `## [0.1.0] - <date>`, run the pre-tag checklist in
+   `docs/releasing.md`, push an annotated tag, approve the deployment,
+   verify the attestation and `go list -m ...@v0.1.0` via the proxy.
 
 ## Open problems
 

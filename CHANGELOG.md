@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the major version is 0, minor versions may contain incompatible API
-changes (see [docs/releasing.md](docs/releasing.md)).
+changes (see [docs/releasing.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/releasing.md)).
 
 The release workflow publishes the section whose heading matches the tag
 (`## [0.1.0] - <date>` for `v0.1.0`) as the release notes.
@@ -54,7 +54,7 @@ implementation.
   parsers, the transaction bag, the miner, the CSV source and the CLI
   option parser.
 - Benchmarks of the library and the CLI against the C reference
-  ([docs/benchmarks.md](docs/benchmarks.md)).
+  ([docs/benchmarks.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/benchmarks.md)).
 - CI (tests on Linux, macOS and Windows with Go 1.26 and 1.27, race
   detector, static analysis, vulnerability scan, fuzz smoke tests,
   differential tests) and GoReleaser-based release automation.
@@ -62,7 +62,7 @@ implementation.
 ### Differences from upstream
 
 Every difference is intentional, tested and listed with its evidence in
-[docs/differences.md](docs/differences.md). In summary:
+[docs/differences.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/differences.md). In summary:
 
 - Fixed mining results: `-At` crashes or wrong item names (M1), `-s0` and
   zero-frequency items (M2), generators missed with `-m ≥ 2` (M3), maximal

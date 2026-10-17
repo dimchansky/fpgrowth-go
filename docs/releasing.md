@@ -243,3 +243,12 @@ Required once, by a repository administrator:
   requests.
 - **Security** (Settings, Code security): enable private vulnerability
   reporting, Dependabot alerts and security updates.
+
+## Do not re-run a successful release
+
+Re-running a successful release workflow run makes GoReleaser update the
+already published release (as a draft, with `mode: replace`). If a
+release needs a fix, publish a new patch version instead. When an RC and
+the final version share a commit, the workflow passes the triggering tag
+to GoReleaser (`GORELEASER_CURRENT_TAG`) and fails if `dist/metadata.json`
+names a different tag.

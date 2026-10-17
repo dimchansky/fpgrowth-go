@@ -101,6 +101,18 @@ jobs:
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GoReleaser otherwise picks the highest tag on HEAD, which is a
+          # pre-release when an RC and its final tag share a commit.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+      - name: Check the released tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          built=$(jq -r .tag dist/metadata.json)
+          if [ "$built" != "$TAG" ]; then
+            echo "::error::GoReleaser built $built, expected $TAG"
+            exit 1
+          fi
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

@@ -51,8 +51,11 @@ jobs:
             echo "::error::GOVULNCHECK_VERSION differs: ci.yml '$a', vulncheck.yml '$b'"
             exit 1
           fi
-          grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' .github/goreleaser-version ||
-            { echo "::error::.github/goreleaser-version must hold one vX.Y.Z line"; exit 1; }
+          if [ "$(wc -l < .github/goreleaser-version | tr -d ' ')" != 1 ] ||
+            ! grep -Exq 'v[0-9]+\.[0-9]+\.[0-9]+' .github/goreleaser-version; then
+            echo "::error::.github/goreleaser-version must hold one vX.Y.Z line"
+            exit 1
+          fi
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
