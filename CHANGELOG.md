@@ -86,7 +86,8 @@ crashes. In summary:
 - Rules and evaluation: `-eb` selects the imbalance ratio for rules (R1),
   `-p` prunes as documented (R2), head-only items stay out of rule bodies
   (R3), `-S` applies to the same support as `-s` (R8), and measure edge
-  cases are corrected (R4-R7, R9-R11; R10 and R11 are latent).
+  cases are corrected (R4-R7, R9, R11; R9c and R11 are latent; R10 fixes the project's
+  patched C reference only).
 - Floating point: values are bit-identical to the C reference built
   without fused multiply-add, except log-based values, which can differ in
   the last bit from the platform's C library (F-1).

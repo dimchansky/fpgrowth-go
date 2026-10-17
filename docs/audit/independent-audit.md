@@ -180,8 +180,8 @@ INF-13..19.
 
 ## 5. Repository hardening applied (Phase 3)
 
-Applied with `gh api` on 2026-10-17 by the orchestrator; to be verified
-independently.
+Applied with `gh api` on 2026-10-17 by the orchestrator; verified
+independently (§6).
 
 | Setting | Value |
 | --- | --- |
@@ -201,7 +201,7 @@ review reports are in [reviews/](reviews/).
 | PR | Content | Findings | Review |
 | --- | --- | --- | --- |
 | [#1](https://github.com/dimchansky/fpgrowth-go/pull/1) | This report, detailed reports, archived checkers | — | (evidence only) |
-| [#2](https://github.com/dimchansky/fpgrowth-go/pull/2) | Release workflow: explicit prerelease/Latest on undraft, fuzz listing failures fail, vulncheck concurrency, pin check; `docs/releasing.md` | INF-6, INF-8, INF-10..13, INF-15, INF-16, INF-18 | [pr2-settings-review.md](reviews/pr2-settings-review.md): accept; P-1 and S-1 applied before merge |
+| [#2](https://github.com/dimchansky/fpgrowth-go/pull/2) | Release workflow: explicit prerelease/Latest on undraft, fuzz listing failures fail, vulncheck concurrency, pin check; `docs/releasing.md` (also documents the accepted INF-8 and INF-11) | INF-6, INF-10..13, INF-15, INF-16, INF-18 | [pr2-settings-review.md](reviews/pr2-settings-review.md): accept; P-1 and S-1 applied before merge |
 | [#3](https://github.com/dimchansky/fpgrowth-go/pull/3) | API fixes with regression tests | API-1 (High), API-2..5, API-7..9, docs API-3/10/13/16, DIF-9 | [pr3-review.md](reviews/pr3-review.md): accept; delta [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept with condition D-1 (latency bound), applied before merge |
 | [#5](https://github.com/dimchansky/fpgrowth-go/pull/5) | Regression tests for avoided upstream crashes and CLI rows | M10, O11, C10, C2, C7 (DIF-4/6 follow-up) | [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept |
 | [#4](https://github.com/dimchansky/fpgrowth-go/pull/4) | Documentation corrections | DIF-1..7, ALG-1..4, TST-1..7, PERF-2/3, M5A-1..4, FEAT-1/2, NEW-1 | [pr4-review.md](reviews/pr4-review.md): approve with changes; re-review of the fixes: approve (R-1..R-3 applied before merge) |
@@ -213,7 +213,7 @@ Repository settings (§5) were verified independently in
 setting is live, the 15 required check names equal the CI job names, the
 tag and environment patterns match `v0.1.0-rc.1` and `v0.1.0`, and no
 configuration deadlocks a solo maintainer. A direct push to `main` was
-not attempted (the orchestrator's tooling refused it as a merge without
+not tested (the orchestrator's tooling refused it as a merge without
 review); enforcement evidence is the active rules on `main`
 (`gh api repos/dimchansky/fpgrowth-go/rules/branches/main`) and the
 `BLOCKED` merge state of every PR until its checks passed.
