@@ -502,7 +502,11 @@ func (c *extChecker) scanClosed() bool {
 	if len(nz) == 0 {
 		return true // an empty cover (support 0) cannot occur for a reported set
 	}
-	c.initCand(nz[0]*64 + int32(bits.TrailingZeros64(cover[0])))
+	t0 := nz[0]*64 + int32(bits.TrailingZeros64(cover[0]))
+	if c.probeCand(t0) {
+		return false
+	}
+	c.initCand(t0)
 	for p, last := 1, 0; p < scanProbes && len(c.cand) > 0; p++ {
 		if i := p * len(nz) / scanProbes; i != last { // small covers: words repeat
 			c.keepCand(nz[i]*64 + int32(bits.TrailingZeros64(cover[i])))
@@ -524,6 +528,48 @@ func (c *extChecker) scanClosed() bool {
 // scanProbes is the number of spread cover transactions that scanClosed
 // intersects first.
 const scanProbes = 8
+
+// candProbes is the number of candidates that probeCand tests against
+// the cover.
+const candProbes = 4
+
+// probeCand reports whether one of the first candProbes items of the
+// first cover transaction t that are not in the marked set is in every
+// cover transaction (covers), which proves the set not closed. It probes
+// only if t is long compared to the cover (more than candProbes items
+// per non-zero cover word), so that the probes cost at most about as
+// much as copying the candidates (initCand); otherwise it reports false.
+//
+// Exactness: the cover holds the transactions of positive weight that
+// contain the set (weight 0 is left out when the checker is built), and
+// supp(X ∪ {j}) = supp(X) iff j is in every one of them. A true result
+// names such a j ∉ X, so X is not closed; a false result decides
+// nothing, and scanClosed goes on with the full scan. In particular, if
+// the cover is a single transaction t, the first item of t that is not
+// in X is in the whole cover: the check stops after at most |X| + 1
+// items of t (codes in t are distinct) instead of copying all of t, and
+// if no item is left, t = X and initCand finds no candidate, so X is
+// closed. This keeps a long single chain with a small maximum size
+// linear (docs/m5-investigation.md §4).
+func (c *extChecker) probeCand(t int32) bool {
+	items := c.txItems[c.txOff[t]:c.txOff[t+1]]
+	if len(items) <= candProbes*len(c.nz) {
+		return false
+	}
+	p := 0
+	for _, it := range items {
+		if c.inSet[it] == c.setStamp {
+			continue
+		}
+		if c.covers(it) {
+			return true
+		}
+		if p++; p == candProbes {
+			break
+		}
+	}
+	return false
+}
 
 // initCand sets the candidates to the items of transaction t that are
 // not in the marked set (ascending).
