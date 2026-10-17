@@ -180,9 +180,13 @@ the projection is exactly right, and the reporter ignores such items.
 
 ## 6. Tree variants
 
-`Algorithm` (`-A`) selects how FP-trees are represented and processed. All
-variants report the same sets with the same supports; they differ in speed
-and in result order.
+`Algorithm` (`-A`) selects how FP-trees are represented and processed.
+Without an evaluation threshold, all variants report the same sets with
+the same supports; they differ in speed and in result order. With the
+default aggregation `AggregateFirst` (`-ax`) the evaluation values of
+item sets can differ, and with an evaluation threshold so can the
+reported sets, because the rule that evaluates a set depends on the
+internal item order (section 12, "Rule measures"; deviation list P6).
 
 **Simple** (`-As`). Nodes have only a parent link, a successor link (the
 next node of the same item) and a support. A new path shares an existing
@@ -289,11 +293,24 @@ back to MAFIA (Burdick, Calimlim and Gehrke, 2001). `Tuning.NoHeadUnionTail`
 (`-u`) disables it.
 
 **Size limits (deviation M5).** Upstream limits the search depth to one
-item more than the maximum size. The repository then lacks supersets below
-the limit, and non-closed or non-maximal sets can be reported. The port
-searches closed and maximal sets without the depth limit and applies the
-maximum size only when reporting, so the results match the definition. With
-a small maximum size on large data this costs time compared with upstream.
+item more than the maximum size. The repository then lacks the supersets
+beyond the limit, and non-closed or non-maximal sets can be reported. The
+port also limits the search: it stops where no set of at most the maximum
+size can follow (`xable2` and `deeper` in `internal/fpg/mine.go`). Every
+set that passes the repository and the support and size gates is then
+checked against **all** items of the database, with supports computed from
+the cover of the set in the transaction bag (`internal/fpg/extcheck.go`):
+a closed set must have no one-item extension of the same support, a
+maximal set no frequent one-item extension. One item suffices, so this
+complete one-item extension check makes the results equal to the
+definition. Without a maximum size below the longest transaction the
+search is unlimited and no check is installed (the repository alone is
+exact there). The proof, the minimized counterexample of an earlier
+attempt and the test evidence are in `docs/m5-investigation.md`; the
+measured cost is in `docs/benchmarks.md` ("M5: size-limited
+closed/maximal"): faster than C on dense data with a small maximum size,
+2.2–3.2× C on large sparse data, and slowest for dense maximal sets of
+exactly the maximum size, whose check must count every cover transaction.
 
 ## 10. Generators
 
@@ -348,7 +365,12 @@ small.
   supports of body ∪ head, body, head and the total weight. For rules the
   measure of the rule itself is used. For an item set `S` the measure is
   aggregated over the rules `S \ {h} -> h` (first rule, minimum, maximum or
-  average, `-a`). With "invalidate below expected support" (`-i`), a rule
+  average, `-a`). "First" (`AggregateFirst`, `-ax`, the default) is the
+  rule whose head is the first item of `S` in the miner's internal item
+  order. That order comes from the item codes (`-q`), the variant and its
+  reordering, and the target, so the value of an item set, and with a
+  threshold whether it is reported, can depend on them (deviation list
+  P6); minimum, maximum and average do not. With "invalidate below expected support" (`-i`), a rule
   whose support is not above the expected support gets the measure's
   worst value.
 - **Values without filtering** (library only, `Evaluation` without
@@ -366,6 +388,12 @@ small.
 Several measures are corrected for edge cases where upstream returns 0,
 NaN or slightly wrong values (deviations R4-R7, R9).
 
+All measures are computed in float64. The statistical ones (chi², Yates,
+information and G-test, Fisher, certainty factor, and `-i`) lose
+precision at very large total transaction weights and are reliable only
+below about 10^12; a value exactly on a threshold may fall on either side
+for any measure (deviations N1 and F-1).
+
 ## 13. Order of the results
 
 The order of the reported sets is a property of the algorithm: the item
@@ -373,8 +401,11 @@ codes (from the item order and its tie breaking), the variant, the loop
 direction, reordering, where perfect extensions are found and the order in
 which the reporter expands them. The port reproduces all of these, so its
 output order equals upstream's for every variant. The order is
-deterministic for given data and options; it is not sorted. Different
-variants or tuning settings report the same sets in a different order.
+deterministic for given data and options; it is not sorted, and it is not
+part of the library's compatibility promise. Different variants or tuning
+settings report the same sets in a different order (with an evaluation
+threshold under `AggregateFirst`, possibly also different sets, section
+6).
 
 ## 14. Memory layout, limits and cancellation
 
@@ -418,9 +449,12 @@ variants or tuning settings report the same sets in a different order.
   still be reported after the cancellation. The latency is the work
   between two checks: a single projection, merge or transaction
   insertion, each proportional to the tree it processes, so it grows with
-  the input and is not a hard bound (measured on 4 million transactions
-  of 20 items out of 1000: usually 10 ms or less, up to 0.35 s when a
-  node arena of several GB is grown, i.e. copied, by one insertion).
+  the input and is not a hard bound (measured once, with a program that
+  is not committed, on 4 million transactions of 20 items out of 1000:
+  usually 10 ms or less, up to 0.35 s when a node arena of several GB is
+  grown, i.e. copied, by one insertion; the independent audit's own probe
+  of that shape measured 54 µs to 104 ms). The tests assert only 500 ms
+  (50 ms while the top-level tree is built).
 
 ## 15. References
 

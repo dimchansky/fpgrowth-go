@@ -125,6 +125,17 @@ are unchanged.
   medians; the wall-time column also shows min–max. Pattern counts are
   checked: **all 96 rows matched** (count = other program's count = output
   file lines).
+- **Summary statistics:** the geometric means and ranges quoted below were
+  computed by hand from the per-configuration medians; no committed tool computes them (`bench/compare` prints
+  medians and min–max only). No significance test or confidence interval
+  was computed for the Go/C ratios (n = 5 per side), and `compare.sh`
+  records the load (`uptime`) once per run, not per configuration. The
+  32-configuration headline excludes the 15 size-limited closed/maximal
+  rows ([M5](#m5-size-limited-closedmaximal)), where Go is both much
+  faster (dense data) and slower (large sparse data) than C. The
+  independent audit reproduced the headline under load 13–17: geometric
+  mean of the medians 1.596, of the per-configuration minima 1.601, range
+  1.11–2.07; on `large-[cm]-n[23]` it measured Go/C 1.71–2.99.
 - **Noise:** the machine had other load (see [Environment](#environment)).
   Most time spreads are 1–5 %; a few rows reach 8–14 % (marked in the
   appendix) and should be re-measured before being used to judge a
@@ -529,7 +540,8 @@ different days and are only indicative):
 | long-c | `-tc -s2.5` | 34,285 | 584.0 | 690.0 | 1.18 / 1.22 | 1.21 | 756.2 → 690.0 | 560 / 690 | 344.1 / 86.6 | 2.43 |
 | weighted-s | `-w -s0.2` | 10,343 | 25.4 | 50.5 | 1.99 / 1.93 | 2.02 | 49.9 → 50.5 | 20 / 40 | 11.4 / 22.1 | 3.44 |
 
-Across all 32 configurations: Go/C wall time geometric mean **1.60**
+Across all 32 configurations (computed by hand, without the M5 rows; see
+[Methodology](#methodology)): Go/C wall time geometric mean **1.60**
 (count mode; range 1.12–2.08; baseline 1.72, 1.15–2.16), **1.61**
 (`/dev/null`; 1.14–1.96; baseline 1.75), **1.60** (file; 1.14–2.03;
 baseline 1.73). The Go binary executes 2.1–3.9× the instructions of the
@@ -616,6 +628,20 @@ cover). The interleaved before/after comparison (n = 10) is in attempt
 14 and [M5 §7.1](m5-investigation.md#71-cost-on-large-sparse-data-stage-3-fix-s3-1)
 (the `-tm -n3` medians above, 876 vs 903 ms, are two separate runs; the
 interleaved comparison shows no significant difference, p = 0.85).
+These rows (Go/C 2.2–3.2) are not part of the 32-configuration
+geometric mean.
+
+**Dense maximal sets near the maximum size (independent audit, M5A-1).**
+The worst observed ratio to C is dense data with many maximal sets of
+exactly the maximum size: on 20,000 transactions of 200 items with
+density 0.3, `-tm -s2 -n3` (1,313,400 sets) took Go 99.7 s / 110.8 MB
+and C 39.0 s / 1,258.5 MB (C's output is not exact in general, B5),
+while `-tc` on the same data took Go 12.1 s and C 46.2 s. A maximal set's
+check must show every one-item extension infrequent, so it cannot stop
+early and counts the whole cover per set. The dataset is not part of
+`configs.txt`; the measurement is the audit's
+([audit/m5.md](audit/m5.md)). Sharing the work among sibling
+sets is a possible optimization, deferred.
 
 ### Profiles after optimization
 
