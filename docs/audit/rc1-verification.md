@@ -70,7 +70,7 @@ that field first.
 
 | ID | Severity | Finding | Resolution |
 | --- | --- | --- | --- |
-| RC-1 | Medium | The release has no notes. `.goreleaser.yaml` set `changelog.disable: true`, and in GoReleaser v2.18.3 the changelog pipe is the one that loads `--release-notes`; snapshots always skip that pipe, so the pre-tag snapshot could not show it | Fixed in [#9](https://github.com/dimchansky/fpgrowth-go/pull/9): changelog enabled, and the workflow checks the draft's notes before attesting and publishing. Needs a new release candidate to confirm on a real run. The rc.1 release itself is immutable and stays as published |
+| RC-1 | Medium | The release has no notes. `.goreleaser.yaml` set `changelog.disable: true`, and in GoReleaser v2.18.3 the changelog pipe is the one that loads `--release-notes`; snapshots always skip that pipe, so the pre-tag snapshot could not show it | Fixed in [#9](https://github.com/dimchansky/fpgrowth-go/pull/9): changelog enabled, and the workflow checks the draft's notes before attesting and publishing. Independent review: [reviews/pr9-review.md](reviews/pr9-review.md) (approve; cause reproduced locally with GoReleaser v2.18.3; one Low nit applied). Needs a new release candidate to confirm on a real run. The rc.1 release itself is immutable and stays as published |
 | RC-2 | Info | If the context is canceled inside `OnStart` and the database has no frequent item, `MineItemsets` returns nil (nothing remained to mine) rather than `ctx.Err()` | Recorded; no change before v0.1.0 |
 
 No defect was found in the binaries, the library, the attestations or
