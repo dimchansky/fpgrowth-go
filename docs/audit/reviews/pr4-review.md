@@ -224,3 +224,52 @@ Either prefix P2–P5 with "documented; test:", or redefine the column as
 - **README API statements vs fix/api-audit** (throwaway probe test): TableFormat rejection, the SpoolTable error, nil SourceFunc, NaN item matching both errors, Count(0)/Count(0) rejected, `-0.0`/`+0.0` one item, `any(1)`/`any(int64(1))` two items, empty `Items` meaning no restriction, `Value` NaN. Each matches, except the wording in D-6.
 - **Proof vs testing.** m5-investigation keeps "Randomized testing is evidence"; the README says "the argument and the test evidence". No overclaim of proof.
 - **Markdown.** A script checked every table row's column count and every relative link and anchor in the 7 changed files: 0 problems. I sanity-tested the script with a broken sample.
+
+## Re-review of 5d5c9dd
+
+Scope: the merge 68c94b2 (parents 02a035f and main 350df77) and the fix
+commit 5d5c9dd (`git diff 68c94b2 5d5c9dd`: 6 files, +64/-39).
+
+**Verdict: approve.** No blocking findings remain. The open items are
+outside the diff (D-3, D-8) and are minor (R-1 to R-3).
+
+### Merge integrity
+
+The merge did no conflict damage:
+
+- All 7 PR doc files at 68c94b2 are blob-identical to 02a035f. Main had not changed them since f7bb606.
+- `doc.go` at 68c94b2 is identical to main.
+- `git diff 350df77 68c94b2` touches only the 7 doc files.
+- There are no conflict markers, and `git diff --check` is clean.
+
+### Status of D-1 to D-15, P-1 and P-2
+
+| ID | Status | Evidence |
+| --- | --- | --- |
+| D-1 | resolved | #3 is merged. The README API statements match main: `checkRange` (options.go:298-307, including the 4ε fraction tolerance the README now describes), `TableFormat.validate` (table.go:70, applied in `TableReader` and `SpoolTable`), `CSVFormat.validate` (csv.go:54, applied in `SpoolCSV`), `isNilSource`, and the dual-error `checkItems`. |
+| D-2 | resolved | O5 now says "exact up to 64 (2^64−1), saturates from 65" and cites 62/63/64/100. This matches the test and my CLI check. |
+| D-3 | **open** | CHANGELOG.md is unchanged: line 75 still says "R9-R11", line 87 "sources are missing", line 52 "produced by the C reference", plus the O1-O10/C1-C9 ranges. |
+| D-4 | resolved | doc.go:61-67 now states the AggregateFirst exception. `go vet .` and `go test -count=1 .` pass (ok, 8.4 s). |
+| D-5 | resolved | README:150-156, algorithm.md §6/§12 and P6 now cover `Value`. I reproduced the new example with both programs on test1.tab (`-s20 -m3 -n3 -el -d0 -v' %e'`): `a b c` 1.14286 (-q2) / 1.11111 (-q-2), `a b d` 0.857143 / 1.25, identical in C and Go. |
+| D-6 | resolved | README:808-814 matches `checkRange`. |
+| D-7 | resolved; author is right | The committed `cmd/fpgrowth/testdata/golden/dev-bigw.exit` is `138`. The audit's diff line "`-138 +139`" (testing.md:207) means that regeneration gave 139. The README's "came out as 139 instead of the committed 138" is correct. My original "138 vs 139" wording was ambiguous. |
+| D-8 | **open** | PROGRESS.md:17-18 ("30 000+ cases") and 70-71 ("1.7× ... follow-up: incremental covers") and AGENTS.md:31 are unchanged. |
+| D-9 | resolved | m5-investigation.md:619 now says 2.2–3.2×. |
+| D-10 | resolved | algorithm.md §12 now explains "First". |
+| D-11 | resolved | The R9 Kind cell now marks R9b as policy. |
+| D-12 | resolved, differently | The Summary keeps the audit's count, and the O8 row explains why O8 is preserved, not platform. Acceptable. |
+| D-13 | partly | The README now links `docs/audit/independent-audit.md`, which exists on main. See R-1. |
+| D-14 | resolved | README:1194-1196 and feature-matrix.md reworded. |
+| D-15 | resolved | The P table has separate Status and Test columns, and the Status definition now fits every row. |
+| P-1/P-2 | resolved | The newly cited tests exist and pass (`go test -run 'TestMain_closedStdout\|TestLogTimesWallClock\|TestBorderEmptyValue\|TestParseArgs\|TestGolden' ./cmd/fpgrowth` ok; `TestItemBase_BuildBag_longSharedPrefix` ok): M10 `TestItemBase_BuildBag_longSharedPrefix` (internal/tract/bag_test.go:649); O11 goldens `dev-prefmt` (golden and golden-go, deviations.txt:33 O11) and `prefmt-N` (C golden, cases.txt:161); C10 `TestMain_closedStdout` (main_test.go:150); C2 `TestBorderEmptyValue` plus the `TestParseArgs` cases "border empty value B16"/"border without value B16" (options_test.go:182, 187) and golden `F-trailing`; C7 `TestLogTimesWallClock` (run_test.go:418). |
+
+Markdown: the column-count and link/anchor checker reports 0 problems in
+the 7 files.
+
+### New findings
+
+| ID | Sev | Location | Finding |
+| --- | --- | --- | --- |
+| R-1 | Low | docs/differences.md:16; docs/benchmarks.md:643 | `docs/audit/` is on main now, so "on the audit branch" is stale. Use relative links: `[docs/audit/differences.md](audit/differences.md)` and `[docs/audit/m5.md](audit/m5.md)`. |
+| R-2 | Low | docs/differences.md:71 (M10) | The row first says C exits 139 on the reproducer and then "C 31.2 s CPU time, with identical output", which reads as a contradiction. Both are true only with different stack limits. With the default stack (`ulimit -s` = 8176 KB) C crashes in "sorting and reducing transactions". With `ulimit -s 65520` it completes: `[100001 set(s)]`, 29.9 s user. Suggested: "C 31.2 s CPU time with the stack limit raised (`ulimit -s 65520`; with the default limit it crashes)". |
+| R-3 | Info | docs/differences.md:71 (M10) | "completes (100,000 sets)": with the construction that `TestItemBase_BuildBag_longSharedPrefix` uses (the one-item transactions use a new item n), both programs report `100001 set(s)` (Go 33.6 s user). The audit's 100,000 presumably used a different construction. Either give the exact input, or say "about 100,000". |
