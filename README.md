@@ -38,13 +38,18 @@ Go, fixes confirmed upstream defects (listed in
 | --- | --- | --- |
 | 1 | Faithful port of the mining core, reporter, rule evaluation, item set tree, table reader, text output and CLI; C reference build and differential tests | done |
 | 2 | Public library API: generic items, replayable sources (memory, generated, table files, CSV, spooled readers), streaming results, cancellation | done |
-| 3 | Performance work (profiling, benchmarks against the C reference, the closed/maximal size-limit cost described under [Memory and performance](#memory-and-performance)) | pending |
+| 3 | Benchmarks against the C reference, profiling, measured optimizations, exact closed/maximal size limits (see [Memory and performance](#memory-and-performance) and [docs/benchmarks.md](docs/benchmarks.md)) | done |
+| 4 | CI, release automation, contribution and security policies | done |
 
 The results (item sets, rules, supports and evaluation values) are checked
 against Christian Borgelt's C program, built from the unmodified sources,
-and against a brute-force oracle (see [Testing](#testing)). Performance has
-not been measured or tuned yet, so this README makes no performance
-claims. There is no tagged release yet; the API may still change.
+and against a brute-force oracle (see [Testing](#testing)). Performance
+figures in this README and in `docs/benchmarks.md` are measurements on one
+machine (Apple M1 Max); on that machine the Go CLI took 1.12–2.08× the C
+program's wall time across the benchmark configurations (geometric mean
+1.60×), and was faster than C for dense closed/maximal mining with a small
+size limit. Validate on your own workloads. There is no tagged release yet;
+the API may still change before v1.
 
 ## Installation
 
@@ -61,6 +66,10 @@ Command-line program:
 ```bash
 go install github.com/dimchansky/fpgrowth-go/cmd/fpgrowth@latest
 ```
+
+Once releases are published, prebuilt CLI archives for Linux, macOS and
+Windows (amd64, arm64) with SHA-256 checksums are attached to each GitHub
+release; see [docs/releasing.md](docs/releasing.md).
 
 ## Quick start
 
