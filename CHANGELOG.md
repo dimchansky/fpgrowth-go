@@ -37,8 +37,15 @@ implementation.
     weights, item selection, rule item appearances, 25 rule evaluation
     measures with aggregation for item sets, `Stats`, `Summary` and the
     pattern spectrum.
-  - Option validation with `ErrInvalidOptions` naming the field; size
-    limits reported as `ErrTooLarge`.
+  - Option validation with `ErrInvalidOptions` naming the field
+    (including a non-zero `TableFormat` without record separators, a
+    nil `SourceFunc`, and a maximum support below the minimum of the
+    same kind; `SpoolTable`/`SpoolCSV` check the format before copying
+    any input); size limits reported as `ErrTooLarge`. Callback errors
+    of any type, comparable or not, are returned unchanged.
+  - `Value` is NaN when no evaluation measure is set; results are
+    deterministic for the same data, options and version, but their
+    order is not part of the compatibility promise.
 - Command-line program `cmd/fpgrowth`, compatible with upstream
   `fpgrowth` 6.21: same options, input and output formats, messages and
   exit codes, apart from the documented differences below. Standard input
@@ -49,8 +56,9 @@ implementation.
   manifest, a scripted C reference build (release, debug, sanitizer and
   native variants), and a randomized differential test suite against the
   C program with a brute-force checker.
-- Golden fixtures produced by the C reference, property tests against a
-  brute-force oracle, and fuzz targets for the table reader, the C number
+- Golden fixtures produced by the C reference (plus Go output snapshots
+  for the documented differences), property tests against a brute-force
+  oracle, and fuzz targets for the table reader, the C number
   parsers, the transaction bag, the miner, the CSV source and the CLI
   option parser.
 - Benchmarks of the library and the CLI against the C reference
@@ -61,18 +69,23 @@ implementation.
 
 ### Differences from upstream
 
-Every difference is intentional, tested and listed with its evidence in
-[docs/differences.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/differences.md). In summary:
+Every difference is intentional and listed with its kind (upstream
+defect fix, platform difference, improvement, new or preserved behavior),
+evidence and tests in
+[docs/differences.md](https://github.com/dimchansky/fpgrowth-go/blob/main/docs/differences.md);
+33 of them fix confirmed upstream defects. In summary:
 
 - Fixed mining results: `-At` crashes or wrong item names (M1), `-s0` and
   zero-frequency items (M2), generators missed with `-m ≥ 2` (M3), maximal
   sets missed (M4, M9), non-closed or non-maximal sets with `-n` (M5).
   Negative weights are rejected (M6), supports are 64-bit with an
-  overflow check (M7), out-of-range thresholds are clamped (M8).
+  overflow check (M7), out-of-range thresholds are clamped (M8), a sort
+  recursion crash on long shared prefixes is avoided (M10), and item
+  counts saturate instead of overflowing (M11).
 - Rules and evaluation: `-eb` selects the imbalance ratio for rules (R1),
   `-p` prunes as documented (R2), head-only items stay out of rule bodies
   (R3), `-S` applies to the same support as `-s` (R8), and measure edge
-  cases are corrected (R4-R7, R9-R11).
+  cases are corrected (R4-R7, R9-R11; R10 and R11 are latent).
 - Floating point: values are bit-identical to the C reference built
   without fused multiply-add, except log-based values, which can differ in
   the last bit from the platform's C library (F-1).
@@ -80,11 +93,17 @@ Every difference is intentional, tested and listed with its evidence in
   spurious empty-set line, count-only mode honors `-n`, write errors are
   reported, escapes, non-ASCII separators, long fields and a last record
   without a newline are handled, NaN thresholds are rejected, log times
-  are wall-clock times (O1-O10, I1-I8, C1-C9).
+  are wall-clock times, a pre-formatting overflow crash is avoided
+  (O1-O11, I1-I8, C1-C10).
+- Numeric limits: the statistical rule measures lose precision at total
+  transaction weights above about 1e12, and thresholds tolerate rounding
+  above 2^52 (N1-N3).
+- Upstream behavior kept on purpose is listed as P1-P6.
 
 ### Not included
 
-- The `fpgpsp` program (its sources are missing from the upstream
-  archive) and zlib-compressed output (`-z`).
+- The `fpgpsp` program (`fpgpsp.c` is in the upstream archive, but the
+  modules it needs, `tars.c` and `pspest.c`, are not) and
+  zlib-compressed output (`-z`, off in upstream's default build).
 
 [Unreleased]: https://github.com/dimchansky/fpgrowth-go/commits/main

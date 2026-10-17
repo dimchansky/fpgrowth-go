@@ -143,6 +143,8 @@ filled in section 6.
 | INF-10 | Low | hypothesis | Undrafting without `--latest` may mark a backport release as Latest | Fix in release workflow |
 | INF-11 | Low | confirmed | OIDC and write token visible to every step of `publish` | Accept; documented (all steps are pinned, no untrusted input) |
 | INF-12 | Low | confirmed | `gh attestation verify` instructions do not pin signer workflow/ref | Fix docs |
+| NEW-2 | Medium | confirmed | Found during remediation ([t4-performance.md](t4-performance.md) §B): `-At -tc -n` on a long single chain is quadratic in Go only (100k items: 21.4 s, C 0.46 s); the M5 extension check copies the whole covering transaction per check | Fix (exact single-cover shortcut) |
+| NEW-1 | Low | confirmed | Found during remediation (§A of the same report): on the T4 reproducer (long chain, `-n1`) mining is quadratic in upstream C and Go alike (100k items: 34.9 s vs 31.2 s CPU, identical output) | Document; optimization deferred |
 
 Info (no action needed before v0.1.0, recorded in the detailed reports):
 ALG-4 (any measure can fall either side of an exact `-d` threshold),
@@ -192,7 +194,33 @@ independently.
 
 ## 6. Remediation record
 
-Filled in as pull requests land.
+Every pull request had an independent reviewer that did not write it;
+review reports are in [reviews/](reviews/).
+
+| PR | Content | Findings | Review |
+| --- | --- | --- | --- |
+| [#1](https://github.com/dimchansky/fpgrowth-go/pull/1) | This report, detailed reports, archived checkers | — | (evidence only) |
+| [#2](https://github.com/dimchansky/fpgrowth-go/pull/2) | Release workflow: explicit prerelease/Latest on undraft, fuzz listing failures fail, vulncheck concurrency, pin check; `docs/releasing.md` | INF-6, INF-8, INF-10..13, INF-15, INF-16, INF-18 | [pr2-settings-review.md](reviews/pr2-settings-review.md): accept; P-1 and S-1 applied before merge |
+| [#3](https://github.com/dimchansky/fpgrowth-go/pull/3) | API fixes with regression tests | API-1 (High), API-2..5, API-7..9, docs API-3/10/13/16, DIF-9 | [pr3-review.md](reviews/pr3-review.md): accept; delta [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept with condition D-1 (latency bound), applied before merge |
+| [#5](https://github.com/dimchansky/fpgrowth-go/pull/5) | Regression tests for avoided upstream crashes and CLI rows | M10, O11, C10, C2, C7 (DIF-4/6 follow-up) | [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept |
+| [#4](https://github.com/dimchansky/fpgrowth-go/pull/4) | Documentation corrections | DIF-1..7, ALG-1..4, TST-1..7, PERF-2/3, M5A-1..4, FEAT-1/2, NEW-1 | [pr4-review.md](reviews/pr4-review.md): approve with changes; pending |
+| this PR | Changelog, progress log, `AGENTS.md`, this record | D-3, D-8 of the PR #4 review | — |
+
+Repository settings (§5) were verified independently in
+[pr2-settings-review.md](reviews/pr2-settings-review.md): every claimed
+setting is live, the 15 required check names equal the CI job names, the
+tag and environment patterns match `v0.1.0-rc.1` and `v0.1.0`, and no
+configuration deadlocks a solo maintainer. A direct push to `main` was
+not attempted (the orchestrator's tooling refused it as a merge without
+review); enforcement evidence is the active rules on `main`
+(`gh api repos/dimchansky/fpgrowth-go/rules/branches/main`) and the
+`BLOCKED` merge state of every PR until its checks passed.
+
+Residual risk accepted by the settings review (S-1): the `release`
+environment gates only workflows that declare it, and a tag runs the
+workflow file of the tagged commit. With a single collaborator the
+control is that the approver checks the run's commit is the tagged
+`main` commit (`docs/releasing.md`, step 5).
 
 ## 7. Acceptance
 
