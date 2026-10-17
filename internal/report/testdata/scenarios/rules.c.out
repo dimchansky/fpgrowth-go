@@ -1,0 +1,19 @@
+add 3 7 -> 1
+rule 3 <- : 7 10 7 e=0.25
+add 1 5 -> 1
+rule 1 <- 3 : 5 7 6 e=1.5
+rule 3 <- 1 : 5 6 7 e=-0.5
+add 0 4 -> 1
+rule 0 <- 3 1 : 4 5 6 e=2
+rule 1 <- 3 0 : 4 4 6 e=0
+add 4 3 -> 1
+add 2 2 -> 1
+all: 5
+  0: 0
+  1: 1
+  2: 2
+  3: 2
+psp 1 7 1
+psp 2 5 2
+psp 3 4 2
+psp sigcnt=3 total=5

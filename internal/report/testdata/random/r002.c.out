@@ -1,0 +1,16 @@
+addpex 2 -> 0
+tail 3 1 0 -> 0
+xable 2 -> 1
+add 3 1 -> 1
+set 3 2 : 1 w=0 e=0
+add 1 1 -> 1
+set 1 2 : 1 w=0 e=0
+add 0 2 -> 1
+set 0 2 : 2 w=0 e=0
+all: 3
+  0: 0
+  1: 0
+  2: 3
+psp 2 1 2
+psp 2 2 1
+psp sigcnt=2 total=3

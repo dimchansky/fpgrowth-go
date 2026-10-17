@@ -1,0 +1,17 @@
+xable 3 -> 1
+xable 4 -> 0
+add 3 4 -> 1
+xable 2 -> 1
+xable 3 -> 0
+add 2 3 -> 1
+xable 1 -> 1
+xable 2 -> 0
+add 1 2 -> 1
+xable 0 -> 1
+xable 1 -> 0
+set 3 2 : 3 w=0 e=0
+set 3 : 4 w=0 e=0
+all: 2
+  0: 0
+  1: 1
+  2: 1

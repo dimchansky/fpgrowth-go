@@ -1,0 +1,21 @@
+d %b %h %c %y %l %L %123S %.2S %-5S %%
+c d %b %h %c %y %l %L %123S %.2S %-5S %%
+c %b %h %c %y %l %L %123S %.2S %-5S %%
+b c %b %h %c %y %l %L %123S %.2S %-5S %%
+b d c %b %h %c %y %l %L %123S %.2S %-5S %%
+b d %b %h %c %y %l %L %123S %.2S %-5S %%
+b %b %h %c %y %l %L %123S %.2S %-5S %%
+a b %b %h %c %y %l %L %123S %.2S %-5S %%
+a c b %b %h %c %y %l %L %123S %.2S %-5S %%
+a c %b %h %c %y %l %L %123S %.2S %-5S %%
+a d b %b %h %c %y %l %L %123S %.2S %-5S %%
+a d c b %b %h %c %y %l %L %123S %.2S %-5S %%
+a d c %b %h %c %y %l %L %123S %.2S %-5S %%
+a d %b %h %c %y %l %L %123S %.2S %-5S %%
+a %b %h %c %y %l %L %123S %.2S %-5S %%
+e a d %b %h %c %y %l %L %123S %.2S %-5S %%
+e a %b %h %c %y %l %L %123S %.2S %-5S %%
+e c d %b %h %c %y %l %L %123S %.2S %-5S %%
+e c %b %h %c %y %l %L %123S %.2S %-5S %%
+e d %b %h %c %y %l %L %123S %.2S %-5S %%
+e %b %h %c %y %l %L %123S %.2S %-5S %%

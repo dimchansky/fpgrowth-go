@@ -1,0 +1,28 @@
+xable 2 -> 1
+add 5 4 -> 1
+addpex 0 -> 0
+addpex 1 -> 0
+addpex 2 -> 0
+addpex 4 -> 0
+add 3 3 -> 1
+add 4 5 -> 1
+addpex 1 -> 0
+addpex 2 -> 0
+xable 2 -> 1
+add 3 4 -> 1
+add 0 3 -> 0
+add 0 4 -> 0
+add 3 5 -> 1
+addpex 2 -> 0
+xable 2 -> 1
+add 1 4 -> 0
+add 0 4 -> 1
+uses 4 -> 0
+add 2 6 -> 1
+xable 2 -> 1
+add 1 5 -> 0
+add 0 5 -> 1
+add 1 6 -> 1
+add 0 5 -> 1
+add 0 6 -> 1
+all: 0

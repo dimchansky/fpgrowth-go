@@ -1,0 +1,13 @@
+addpex 5 -> 0
+add 0 6 -> 1
+addpex 1 -> 0
+set 0 5 1 : 6 w=0 e=0
+add 2 4 -> 1
+addpex 3 -> 0
+addpex 4 -> 0
+set 5 : 9 w=9 e=0
+all: 2
+  0: 0
+  1: 1
+  2: 0
+  3: 1

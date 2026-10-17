@@ -1,0 +1,16 @@
+addpex 1 -> 0
+addpex 4 -> 0
+addpex 5 -> 0
+addpex 7 -> 0
+xable 2 -> 1
+add 6 2 -> 1
+add 3 1 -> 1
+add 3 2 -> 1
+xable 2 -> 1
+add 2 1 -> 1
+addpex 0 -> 0
+add 0 1 -> 0
+add 2 1 -> 0
+add 0 1 -> 0
+all: 0
+psp sigcnt=0 total=0

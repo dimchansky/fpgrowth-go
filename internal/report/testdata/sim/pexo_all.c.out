@@ -1,0 +1,38 @@
+xable 2 -> 1
+add 0 2 -> 1
+set 0 : 2 w=0 e=0
+add 1 2 -> 1
+addpex 0 -> 0
+set 1 0 : 2 w=0 e=0
+set 1 : 2 w=0 e=0
+add 2 2 -> 1
+addpex 1 -> 0
+addpex 0 -> 0
+set 2 1 0 : 2 w=0 e=0
+set 2 1 : 2 w=0 e=0
+set 2 0 : 2 w=0 e=0
+set 2 : 2 w=0 e=0
+add 3 3 -> 1
+xable 2 -> 1
+add 0 2 -> 1
+set 3 0 : 2 w=0 e=0
+add 1 2 -> 1
+addpex 0 -> 0
+set 3 1 0 : 2 w=0 e=0
+set 3 1 : 2 w=0 e=0
+add 2 2 -> 1
+addpex 1 -> 0
+addpex 0 -> 0
+set 3 2 1 0 : 2 w=0 e=0
+set 3 2 1 : 2 w=0 e=0
+set 3 2 0 : 2 w=0 e=0
+set 3 2 : 2 w=0 e=0
+set 3 : 3 w=0 e=0
+add 4 2 -> 1
+set 4 : 2 w=0 e=0
+all: 16
+  0: 0
+  1: 5
+  2: 6
+  3: 4
+  4: 1

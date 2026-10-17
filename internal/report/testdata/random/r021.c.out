@@ -1,0 +1,48 @@
+xable 2 -> 1
+add 0 9 -> 1
+add 1 12 -> 1
+add 0 6 -> 1
+xable 2 -> 1
+add 2 7 -> 1
+xable 2 -> 1
+add 0 4 -> 1
+uses 2 -> 1
+add 1 4 -> 1
+add 0 1 -> 1
+add 3 12 -> 1
+xable 2 -> 1
+add 0 6 -> 1
+uses 1 -> 0
+add 1 9 -> 1
+cnt -> 2
+add 0 3 -> 1
+add 2 6 -> 1
+xable 2 -> 0
+add 0 3 -> 1
+add 1 3 -> 1
+add 4 13 -> 1
+xable 2 -> 1
+add 0 7 -> 1
+add 1 10 -> 1
+add 0 4 -> 1
+uses 4 -> 1
+add 2 7 -> 0
+add 3 12 -> 0
+all: 18
+  0: 0
+  1: 5
+  2: 8
+  3: 5
+psp 1 7 1
+psp 1 9 1
+psp 1 12 2
+psp 1 13 1
+psp 2 4 2
+psp 2 6 3
+psp 2 7 1
+psp 2 9 1
+psp 2 10 1
+psp 3 1 1
+psp 3 3 3
+psp 3 4 1
+psp sigcnt=12 total=18

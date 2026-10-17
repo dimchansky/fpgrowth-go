@@ -9,10 +9,10 @@ CLAUDE.local.md
 /cmd/fpgrowth/fpgrowth
 /dist/
 /reference/build/
-*.test
-*.out
-*.prof
-coverage.*
+/*.test
+/*.out
+/*.prof
+/coverage.*
 
 # OS/editor noise
 .DS_Store

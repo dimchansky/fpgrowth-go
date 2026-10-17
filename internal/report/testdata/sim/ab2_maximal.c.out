@@ -1,0 +1,4 @@
+addpex 0 -> 0
+addpex 1 -> 0
+all: 0
+psp sigcnt=0 total=0

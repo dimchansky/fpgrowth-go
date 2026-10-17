@@ -1,0 +1,66 @@
+add 23 40 -> 1
+addpex 0 -> 0
+addpex 1 -> 0
+addpex 2 -> 0
+addpex 3 -> 0
+addpex 4 -> 0
+addpex 5 -> 0
+addpex 6 -> 0
+addpex 7 -> 0
+addpex 8 -> 0
+addpex 9 -> 0
+add 22 30 -> 1
+addpex 10 -> 0
+addpex 11 -> 0
+addpex 12 -> 0
+addpex 13 -> 0
+addpex 14 -> 0
+addpex 15 -> 0
+addpex 16 -> 0
+addpex 17 -> 0
+addpex 18 -> 0
+addpex 19 -> 0
+all: 1043392
+  0: 0
+  1: 0
+  2: 0
+  3: 65
+  4: 310
+  5: 1350
+  6: 5097
+  7: 15714
+  8: 38880
+  9: 77565
+ 10: 125980
+ 11: 167961
+ 12: 184756
+ 13: 167960
+ 14: 125970
+ 15: 77520
+ 16: 38760
+ 17: 15504
+psp 3 30 20
+psp 3 40 45
+psp 4 30 190
+psp 4 40 120
+psp 5 30 1140
+psp 5 40 210
+psp 6 30 4845
+psp 6 40 252
+psp 7 30 15504
+psp 7 40 210
+psp 8 30 38760
+psp 8 40 120
+psp 9 30 77520
+psp 9 40 45
+psp 10 30 125970
+psp 10 40 10
+psp 11 30 167960
+psp 11 40 1
+psp 12 30 184756
+psp 13 30 167960
+psp 14 30 125970
+psp 15 30 77520
+psp 16 30 38760
+psp 17 30 15504
+psp sigcnt=24 total=1043392

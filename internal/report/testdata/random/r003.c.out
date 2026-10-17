@@ -1,0 +1,27 @@
+xable 2 -> 1
+add 0 5 -> 1
+getsupp -> 5
+add 1 7 -> 1
+uses 4 -> 0
+add 2 9 -> 1
+xable 2 -> 1
+add 0 3 -> 1
+set 2 0 : 3 w=0 e=0
+add 1 6 -> 1
+add 3 4 -> 1
+xable 2 -> 1
+add 0 3 -> 1
+set 3 0 : 3 w=0 e=0
+add 2 3 -> 1
+addpex 0 -> -1
+set 3 2 : 3 w=0 e=0
+add 4 4 -> 1
+addpex 1 -> -1
+add 2 3 -> 1
+set 4 2 : 3 w=0 e=0
+all: 4
+  0: 0
+  1: 0
+  2: 4
+psp 2 3 4
+psp sigcnt=1 total=4

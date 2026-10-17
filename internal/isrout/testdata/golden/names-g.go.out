@@ -1,0 +1,57 @@
+"x$y" "it'em" 3
+"x$y" 3
+"c\\d" "it'em" "x$y" 2
+"c\\d" "it'em" 2
+"c\\d" "x$y" 2
+"c\\d" 2
+"a\"b" "c\\d" "it'em" "x$y" 1
+"a\"b" "c\\d" "it'em" 1
+"a\"b" "c\\d" "x$y" 1
+"a\"b" "c\\d" 1
+"a\"b" "it'em" "x$y" 2
+"a\"b" "it'em" 2
+"a\"b" "x$y" 2
+"a\"b" 2
+"café" "it'em" "a\"b" "c\\d" "x$y" 1
+"café" "it'em" "a\"b" "c\\d" 1
+"café" "it'em" "a\"b" "x$y" 1
+"café" "it'em" "a\"b" 1
+"café" "it'em" "c\\d" "x$y" 1
+"café" "it'em" "c\\d" 1
+"café" "it'em" "x$y" 1
+"café" "it'em" 1
+"café" "a\"b" "c\\d" "x$y" 1
+"café" "a\"b" "c\\d" 1
+"café" "a\"b" "x$y" 1
+"café" "a\"b" 1
+"café" "c\\d" "x$y" 1
+"café" "c\\d" 1
+"café" "x$y" 1
+"café" 1
+"g\x01h" "it'em" "a\"b" "x$y" 1
+"g\x01h" "it'em" "a\"b" 1
+"g\x01h" "it'em" "x$y" 1
+"g\x01h" "it'em" 1
+"g\x01h" "a\"b" "x$y" 1
+"g\x01h" "a\"b" 1
+"g\x01h" "x$y" 1
+"g\x01h" 1
+"e\x7ff" "it'em" "g\x01h" "a\"b" "x$y" 1
+"e\x7ff" "it'em" "g\x01h" "a\"b" 1
+"e\x7ff" "it'em" "g\x01h" "x$y" 1
+"e\x7ff" "it'em" "g\x01h" 1
+"e\x7ff" "it'em" "a\"b" "x$y" 1
+"e\x7ff" "it'em" "a\"b" 1
+"e\x7ff" "it'em" "x$y" 1
+"e\x7ff" "it'em" 1
+"e\x7ff" "g\x01h" "a\"b" "x$y" 1
+"e\x7ff" "g\x01h" "a\"b" 1
+"e\x7ff" "g\x01h" "x$y" 1
+"e\x7ff" "g\x01h" 1
+"e\x7ff" "a\"b" "x$y" 1
+"e\x7ff" "a\"b" 1
+"e\x7ff" "x$y" 1
+"e\x7ff" 1
+q "it'em" 1
+q 1
+"it'em" 4

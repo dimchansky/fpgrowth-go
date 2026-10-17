@@ -1,0 +1,7 @@
+add 3 5 -> 1
+pexcnt -> 0
+uses 0 -> 0
+set 3 : 5 w=0 e=0
+all: 1
+  0: 0
+  1: 1

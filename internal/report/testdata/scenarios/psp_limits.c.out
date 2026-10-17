@@ -1,0 +1,17 @@
+add 0 6 -> 1
+add 1 4 -> 1
+addpex 2 -> 0
+set 0 1 2 : 4 w=0 e=0
+set 0 1 : 4 w=0 e=0
+add 3 2 -> 1
+set 0 3 : 2 w=0 e=0
+set 0 : 6 w=0 e=0
+add 4 3 -> 1
+set 4 : 3 w=0 e=0
+all: 5
+  0: 0
+  1: 2
+  2: 2
+  3: 1
+psp 2 4 1
+psp sigcnt=1 total=1

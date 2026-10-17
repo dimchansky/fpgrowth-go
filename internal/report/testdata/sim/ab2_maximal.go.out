@@ -1,0 +1,9 @@
+addpex 0 -> 0
+addpex 1 -> 0
+set 0 1 : 2 w=2 e=0
+all: 1
+  0: 0
+  1: 0
+  2: 1
+psp 2 2 1
+psp sigcnt=1 total=1

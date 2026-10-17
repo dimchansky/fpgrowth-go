@@ -1,0 +1,30 @@
+addpex 5 -> 0
+xable 2 -> 1
+add 4 3 -> 1
+xable 1 -> 1
+xable 2 -> 1
+add 2 2 -> 1
+xable 3 -> 1
+addpex 1 -> 0
+set 4 2 5 1 : 2 w=0 e=0
+getsupp -> 2
+add 1 2 -> 0
+add 0 2 -> 1
+set 4 0 5 : 2 w=0 e=0
+set 4 5 : 3 w=0 e=0
+add 3 3 -> 1
+add 2 2 -> 1
+set 3 2 5 : 2 w=0 e=0
+set 3 5 : 3 w=0 e=0
+add 2 3 -> 1
+add 1 2 -> 0
+set 2 5 : 3 w=0 e=0
+add 1 2 -> 0
+add 0 2 -> 0
+set 5 : 5 w=5 e=0
+all: 7
+  0: 0
+  1: 1
+  2: 3
+  3: 2
+  4: 1

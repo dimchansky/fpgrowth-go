@@ -1,0 +1,57 @@
+addpex 3 -> 0
+tail 7 6 5 4 2 1 0 -> 0
+xable 2 -> 1
+add 7 3 -> 1
+tail 6 5 4 2 1 0 -> 0
+xable 2 -> 1
+add 6 2 -> 1
+tail 4 1 0 -> 0
+xable 2 -> 0
+add 4 1 -> 1
+addpex 0 -> 0
+add 1 1 -> 1
+add 0 1 -> 0
+getsupp -> 2
+add 5 2 -> 1
+addpex 2 -> 0
+tail 4 1 0 -> 0
+xable 2 -> 0
+add 4 1 -> 0
+add 1 1 -> 0
+add 0 1 -> 0
+add 4 1 -> 0
+add 2 2 -> 1
+getsupp -> 2
+tail 1 0 -> 0
+xable 2 -> 0
+add 1 1 -> 0
+add 0 1 -> 0
+xable 1 -> 1
+add 1 1 -> 0
+add 0 2 -> 1
+add 6 5 -> 1
+addpex 2 -> 0
+addpex 5 -> 0
+tail 4 1 0 -> 0
+xable 2 -> 1
+add 4 3 -> 1
+addpex 0 -> 0
+tail 1 -> 0
+add 1 2 -> 1
+add 1 4 -> 1
+tail 0 -> 1
+add 0 4 -> 1
+add 5 5 -> 1
+addpex 2 -> 0
+tail 4 1 0 -> 1
+add 4 3 -> 1
+addpex 0 -> 0
+addpex 2 -> 0
+tail 1 -> 1
+add 2 5 -> 1
+tail 1 0 -> 1
+add 1 4 -> 1
+tail 0 -> 1
+add 0 5 -> 1
+all: 0
+psp sigcnt=0 total=0

@@ -1,0 +1,24 @@
+addpex 4 -> -1
+add 0 6 -> 1
+addpex 1 -> -1
+add 1 6 -> 1
+add 0 6 -> 0
+add 0 4 -> 1
+set 1 0 : 4 w=0 e=0
+add 2 5 -> 1
+add 0 3 -> 1
+set 2 0 : 3 w=0 e=0
+add 1 3 -> 1
+add 0 3 -> 0
+add 0 2 -> 1
+set 2 1 0 : 2 w=0 e=0
+set 2 1 : 3 w=0 e=0
+add 3 2 -> 1
+add 2 2 -> 1
+add 0 2 -> 0
+set 3 2 : 2 w=0 e=0
+all: 5
+  0: 0
+  1: 0
+  2: 4
+  3: 1

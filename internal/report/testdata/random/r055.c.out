@@ -1,0 +1,25 @@
+xable 2 -> 1
+add 7 8 -> 1
+cnt -> 1
+add 6 6 -> 1
+set 7 : 8 w=0 e=0
+add 6 13 -> 1
+add 1 6 -> 1
+set 6 : 13 w=0 e=0
+add 5 6 -> 1
+set 5 : 6 w=0 e=0
+add 4 6 -> 1
+set 4 : 6 w=0 e=0
+cnt -> 1
+add 3 7 -> 1
+set 3 : 7 w=0 e=0
+add 1 8 -> 1
+set 1 : 8 w=0 e=0
+all: 6
+  0: 0
+  1: 6
+psp 1 6 2
+psp 1 7 1
+psp 1 8 2
+psp 1 13 1
+psp sigcnt=4 total=6

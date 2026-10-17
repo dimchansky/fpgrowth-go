@@ -1,0 +1,24 @@
+addpex 0 -> -1
+addpex 6 -> -1
+xable 2 -> 1
+add 1 8 -> 1
+set 1 : 8 w=0 e=0
+add 2 9 -> 1
+set 2 : 9 w=0 e=0
+add 3 9 -> 1
+addpex 2 -> -1
+set 3 : 9 w=0 e=0
+xable 1 -> 1
+add 4 7 -> 1
+set 4 : 7 w=0 e=0
+add 5 6 -> 1
+set 5 : 6 w=0 e=0
+uses 3 -> 0
+all: 5
+  0: 0
+  1: 5
+psp 1 6 1
+psp 1 7 1
+psp 1 8 1
+psp 1 9 2
+psp sigcnt=4 total=5

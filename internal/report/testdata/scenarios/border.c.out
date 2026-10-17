@@ -1,0 +1,23 @@
+add 0 7 -> 1
+addpex 1 -> 0
+add 2 5 -> 1
+set 0 2 1 : 5 w=0 e=0
+set 0 2 : 5 w=0 e=0
+add 3 3 -> 1
+addpex 4 -> 0
+addpex 5 -> 0
+set 0 3 1 4 5 : 3 w=0 e=0
+set 0 3 1 4 : 3 w=0 e=0
+set 0 3 1 5 : 3 w=0 e=0
+set 0 3 4 5 : 3 w=0 e=0
+set 0 3 : 3 w=0 e=0
+set 0 1 : 7 w=0 e=0
+set 0 : 7 w=0 e=0
+add 2 5 -> 1
+all: 9
+  0: 0
+  1: 1
+  2: 3
+  3: 1
+  4: 3
+  5: 1

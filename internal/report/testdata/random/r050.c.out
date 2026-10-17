@@ -1,0 +1,8 @@
+addpex 0 -> 0
+addpex 1 -> 0
+addpex 3 -> 0
+tail 2 -> 0
+add 2 2 -> 1
+pexcnt -> 3
+all: 0
+psp sigcnt=0 total=0

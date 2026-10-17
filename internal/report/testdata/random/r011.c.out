@@ -1,0 +1,11 @@
+add 1 5 -> 1
+add 2 3 -> 1
+add 2 3 -> 1
+all: 3
+  0: 0
+  1: 2
+  2: 1
+psp 1 3 1
+psp 1 5 1
+psp 2 3 1
+psp sigcnt=3 total=3

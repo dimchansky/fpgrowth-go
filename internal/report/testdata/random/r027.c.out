@@ -1,0 +1,120 @@
+xable 2 -> 1
+add 0 4 -> 1
+set 0 : 4 w=0 e=0
+add 1 5 -> 1
+add 0 2 -> 1
+set 1 0 : 2 w=0 e=0
+set 1 : 5 w=0 e=0
+add 2 2 -> 1
+uses 7 -> 0
+xable 2 -> 1
+add 0 1 -> 1
+uses 3 -> 0
+set 2 0 : 1 w=0 e=0
+xable 3 -> 1
+add 1 1 -> 1
+set 2 1 : 1 w=0 e=0
+set 2 : 2 w=0 e=0
+add 3 4 -> 1
+xable 2 -> 1
+add 0 1 -> 1
+set 3 0 : 1 w=0 e=0
+add 1 2 -> 1
+set 3 1 : 2 w=0 e=0
+add 2 1 -> 1
+addpex 1 -> -1
+set 3 2 : 1 w=0 e=0
+set 3 : 4 w=0 e=0
+add 4 5 -> 1
+xable 2 -> 1
+add 0 3 -> 1
+set 4 0 : 3 w=0 e=0
+add 1 2 -> 1
+add 0 1 -> 1
+set 4 1 0 : 1 w=0 e=0
+set 4 1 : 2 w=0 e=0
+add 2 1 -> 1
+pexcnt -> 0
+addpex 0 -> -1
+set 4 2 : 1 w=0 e=0
+getsupp -> 1
+add 3 1 -> 1
+addpex 0 -> -1
+set 4 3 : 1 w=0 e=0
+set 4 : 5 w=0 e=0
+add 5 6 -> 1
+xable 2 -> 1
+add 0 3 -> 1
+set 5 0 : 3 w=0 e=0
+add 1 3 -> 1
+add 0 1 -> 1
+set 5 1 0 : 1 w=0 e=0
+set 5 1 : 3 w=0 e=0
+add 2 2 -> 0
+add 3 4 -> 0
+add 4 2 -> 1
+addpex 0 -> -1
+xable 2 -> 1
+add 2 1 -> 0
+add 3 1 -> 0
+set 5 4 : 2 w=0 e=0
+cnt -> 2
+set 5 : 6 w=0 e=0
+add 6 3 -> 1
+xable 2 -> 1
+add 0 1 -> 1
+cnt -> 2
+set 6 0 : 1 w=0 e=0
+add 2 1 -> 1
+addpex 0 -> -1
+set 6 2 : 1 w=0 e=0
+uses 2 -> 1
+add 3 1 -> 1
+set 6 3 : 1 w=0 e=0
+add 4 2 -> 1
+getsupp -> 2
+xable 2 -> 1
+add 0 1 -> 0
+add 2 1 -> 0
+set 6 4 : 2 w=0 e=0
+pexcnt -> 0
+add 5 2 -> 1
+xable 2 -> 1
+add 0 1 -> 0
+add 2 1 -> 0
+add 3 1 -> 0
+add 4 1 -> 1
+addpex 2 -> -1
+addpex 0 -> -1
+set 6 5 4 : 1 w=0 e=0
+set 6 5 : 2 w=0 e=0
+set 6 : 3 w=0 e=0
+add 7 4 -> 1
+addpex 5 -> -1
+xable 2 -> 1
+add 0 2 -> 1
+set 7 0 : 2 w=0 e=0
+add 1 3 -> 1
+add 0 1 -> 1
+getsupp -> 1
+set 7 1 0 : 1 w=0 e=0
+set 7 1 : 3 w=0 e=0
+add 2 1 -> 1
+addpex 1 -> -1
+set 7 2 : 1 w=0 e=0
+add 3 3 -> 1
+xable 2 -> 1
+add 0 1 -> 0
+add 1 2 -> 0
+add 2 1 -> 0
+set 7 3 : 3 w=0 e=0
+add 4 1 -> 1
+addpex 3 -> -1
+addpex 0 -> -1
+set 7 4 : 1 w=0 e=0
+set 7 : 4 w=0 e=0
+all: 35
+  0: 0
+  1: 8
+  2: 23
+  3: 4

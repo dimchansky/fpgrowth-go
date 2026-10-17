@@ -41,7 +41,7 @@ trailing-sep-blank-eof      trans input/trailing-sep-blank-eof.txt
 trailing-blank-eof          trans input/trailing-blank-eof.txt
 empty-field                 trans input/empty-field.txt
 space-comma-space           trans input/space-comma-space.txt
-nul                         trans input/nul.txt
+nul                         trans input/nul-byte.txt
 nul-last-field              trans input/nul-last-field.txt
 nul-first-field             trans input/nul-first-field.txt
 high-bytes                  trans input/high-bytes.txt

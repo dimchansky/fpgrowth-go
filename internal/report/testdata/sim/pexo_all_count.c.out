@@ -1,0 +1,29 @@
+xable 2 -> 1
+add 0 2 -> 1
+add 1 2 -> 1
+addpex 0 -> 0
+add 2 2 -> 1
+addpex 1 -> 0
+addpex 0 -> 0
+add 3 3 -> 1
+xable 2 -> 1
+add 0 2 -> 1
+add 1 2 -> 1
+addpex 0 -> 0
+add 2 2 -> 1
+addpex 1 -> 0
+addpex 0 -> 0
+add 4 2 -> 1
+add 3 1 -> 1
+all: 17
+  0: 1
+  1: 5
+  2: 7
+  3: 4
+psp 0 4 1
+psp 1 2 4
+psp 1 3 1
+psp 2 1 1
+psp 2 2 6
+psp 3 2 4
+psp sigcnt=6 total=17

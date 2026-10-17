@@ -1,0 +1,22 @@
+xable 2 -> 1
+add 4 3 -> 1
+addpex 3 -> 0
+add 3 7 -> 1
+xable 2 -> 0
+add 2 4 -> 1
+add 1 4 -> 1
+add 0 4 -> 1
+set 3 : 7 w=0 e=0
+add 2 7 -> 1
+xable 2 -> 0
+add 1 6 -> 1
+add 0 4 -> 1
+set 2 : 7 w=0 e=0
+add 1 7 -> 1
+add 0 5 -> 1
+set 1 : 7 w=0 e=0
+add 0 6 -> 1
+set 0 : 6 w=0 e=0
+all: 4
+  0: 0
+  1: 4

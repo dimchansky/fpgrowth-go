@@ -1,0 +1,12 @@
+xable 2 -> 1
+add 0 1 -> 1
+add 1 1 -> 1
+add 2 1 -> 1
+uses 5 -> 0
+addpex 1 -> -1
+add 4 1 -> 1
+add 6 1 -> 1
+addpex 4 -> -1
+all: 6
+  0: 1
+  1: 5
