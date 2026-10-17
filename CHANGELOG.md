@@ -12,7 +12,9 @@ The release workflow publishes the section whose heading matches the tag
 
 ## [Unreleased]
 
-First public version, planned as v0.1.0. A pure Go port and further
+## [0.1.0] - 2026-10-17
+
+First public version. A pure Go port and further
 development of Christian Borgelt's FP-Growth 6.21 (2022-11-22) C
 implementation.
 
@@ -102,10 +104,24 @@ crashes. In summary:
   above 2^52 (N1-N3).
 - Upstream behavior kept on purpose is listed as P1-P6.
 
+### Known limitations
+
+- **Statistical rule measures at very large total weights** (audit
+  finding ALG-1, `docs/differences.md` N1): chi², Yates, the G-test and
+  information, the Fisher tests, the certainty factor and `-i` are
+  computed in float64 as upstream does, and lose precision once the total
+  transaction weight exceeds about 10^12 (about 1–40 % error from
+  10^12–10^13, meaningless by 10^14–10^16). Item sets, supports,
+  confidence and the other measures are not affected. Exact arithmetic
+  is not used yet because it would change the last bits of these values
+  against the C reference on ordinary data; whether to implement it is
+  decided before the final release.
+
 ### Not included
 
 - The `fpgpsp` program (`fpgpsp.c` is in the upstream archive, but the
   modules it needs, `tars.c` and `pspest.c`, are not) and
   zlib-compressed output (`-z`, off in upstream's default build).
 
-[Unreleased]: https://github.com/dimchansky/fpgrowth-go/commits/main
+[Unreleased]: https://github.com/dimchansky/fpgrowth-go/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/dimchansky/fpgrowth-go/releases/tag/v0.1.0

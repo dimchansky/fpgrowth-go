@@ -1174,7 +1174,8 @@ plus two upstream crashes that it avoids and five latent defects
   on dense data with a small size limit, but 2.2–3.2× slower on large
   sparse data and up to 2.6× slower for dense maximal sets of exactly the
   maximum size.
-- Numeric limits for very large weights (`docs/differences.md`, N1-N3):
+- Numeric limits for very large weights (`docs/differences.md`, N1-N3;
+  N1 is the known limitation ALG-1 of the independent audit):
   the statistical evaluation measures (chi², Yates, G-test and
   information, Fisher, certainty factor, and `-i`) are reliable only
   below a total transaction weight of about 10^12; above about 2^52 the
