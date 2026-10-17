@@ -75,7 +75,9 @@ release:
     name: fpgrowth-go
   prerelease: auto
   # Created as a draft; release.yml publishes it after the provenance
-  # attestation succeeds. A rerun replaces a leftover draft.
+  # attestation succeeds and sets "prerelease" and "Latest" explicitly
+  # then (a draft cannot be Latest, so make_latest is not set here).
+  # A rerun replaces a leftover draft.
   draft: true
   replace_existing_draft: true
   mode: replace
@@ -83,5 +85,7 @@ release:
     ---
     Verify a download: `sha256sum --ignore-missing -c checksums.txt`
     (macOS: `shasum -a 256 --ignore-missing -c checksums.txt`), and its
-    build provenance: `gh attestation verify <file> --repo dimchansky/fpgrowth-go`.
+    build provenance: `gh attestation verify <file> --repo dimchansky/fpgrowth-go
+    --signer-workflow dimchansky/fpgrowth-go/.github/workflows/release.yml
+    --source-ref refs/tags/{{ .Tag }} --deny-self-hosted-runners`.
     The library is installed with `go get github.com/dimchansky/fpgrowth-go@{{ .Tag }}`.

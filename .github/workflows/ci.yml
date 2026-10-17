@@ -43,12 +43,18 @@ jobs:
           cache-dependency-path: |
             go.mod
             reference/go.mod
-      - name: Tool pins agree across workflows
+      - name: Tool pins agree across workflows and CONTRIBUTING.md
         run: |
           pin() { sed -n "s/^ *GOVULNCHECK_VERSION: *\([^ #]*\).*/\1/p" "$1"; }
           a=$(pin .github/workflows/ci.yml) b=$(pin .github/workflows/vulncheck.yml)
           if [ -z "$a" ] || [ "$a" != "$b" ]; then
             echo "::error::GOVULNCHECK_VERSION differs: ci.yml '$a', vulncheck.yml '$b'"
+            exit 1
+          fi
+          doc() { grep -Eo "/cmd/$1@v[0-9]+\.[0-9]+\.[0-9]+" CONTRIBUTING.md | sed 's/.*@//' | sort -u; }
+          s=$(doc staticcheck) g=$(doc govulncheck)
+          if [ "$s" != "$STATICCHECK_VERSION" ] || [ "$g" != "$a" ]; then
+            echo "::error::CONTRIBUTING.md pins staticcheck '$s', govulncheck '$g'; ci.yml: $STATICCHECK_VERSION, $a"
             exit 1
           fi
           if [ "$(wc -l < .github/goreleaser-version | tr -d ' ')" != 1 ] ||
@@ -246,11 +252,17 @@ jobs:
             reference/go.mod
       - name: Run every fuzz target briefly
         # -fuzz accepts one target per package run, so the targets are
-        # listed per package and run one at a time.
+        # listed per package and run one at a time. The listings run
+        # outside the for word lists, where a failure would be ignored.
         run: |
           n=0
-          for pkg in $(go list ./...); do
-            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
+          pkgs=$(go list ./...)
+          for pkg in $pkgs; do
+            if ! list=$(go test -list '^Fuzz' "$pkg"); then
+              echo "::error::go test -list failed for $pkg"
+              exit 1
+            fi
+            for target in $(grep '^Fuzz' <<< "$list" || true); do
               echo "::group::$pkg $target"
               go test -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" "$pkg"
               echo "::endgroup::"
