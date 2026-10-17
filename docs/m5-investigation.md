@@ -350,6 +350,23 @@ reached, accepted by the repository (3.4) and passes the check.
   - testing every item against the cover (closed: subset test, items in
     descending frequency, stop at the first item rarer than the set;
     maximal: weighted popcount via weight bit planes).
+  - Candidate probes (closed scan, `probeCand`). Before the candidates
+    are copied from the first cover transaction t, up to 4 of its items
+    outside the set are tested against the cover (`covers`); one in
+    every cover transaction proves the set not closed. This is exact
+    because the cover holds exactly the positive-weight transactions
+    that contain the set (weight 0 is dropped when the checker is
+    built), so supp(X ∪ {j}) = supp(X) iff j is in all of them; a failed
+    probe decides nothing and the full scan follows. The probes run
+    only if t has more than 4 items per non-zero cover word, so they
+    cost at most about as much as the copy. Without them a long chain
+    with a small maximum size was quadratic: with `-At -tc -n1` on 17
+    identical transactions of n items each of the n item checks copied
+    all n items (22.0 s at n = 100,000, now 0.30 s; C 0.24 s, same
+    machine). For a single-transaction cover the first item of t
+    outside the set always succeeds, so a check reads at most |X| + 1
+    items of t; the maximal scan already stopped at the first frequent
+    extension and is unchanged.
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
   unlimited as before); `xable2`/`deeper` are the size gates. The miner

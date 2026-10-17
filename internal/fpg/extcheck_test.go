@@ -686,3 +686,165 @@ func TestExtCheckBits(t *testing.T) {
 		}
 	}
 }
+
+// chainTxs returns r copies of the chain c0..c(n-1) (weight w each),
+// n+10 transactions {x} and the extra transactions.
+func chainTxs(n, r int, w tract.Supp, extra ...oracle.Transaction) []oracle.Transaction {
+	chain := make([]string, n)
+	for i := range chain {
+		chain[i] = "c" + strconv.Itoa(i)
+	}
+	var txs []oracle.Transaction
+	for range r {
+		txs = append(txs, oracle.Transaction{Items: chain, Weight: w})
+	}
+	for range n + 10 {
+		txs = append(txs, oracle.Transaction{Items: []string{"x"}, Weight: 1})
+	}
+	return append(txs, extra...)
+}
+
+// newTestChecker builds the item base, bag and checker of txs.
+func newTestChecker(t *testing.T, txs []oracle.Transaction, target report.Target,
+	smin tract.Supp, rows rowMode,
+) (*extChecker, *tract.ItemBase[string]) {
+	t.Helper()
+	ib := tract.NewItemBase[string]()
+	if err := ib.Count(scanOf(txs)); err != nil {
+		t.Fatal(err)
+	}
+	ib.Recode(1, 0)
+	bag, err := ib.BuildBag(scanOf(txs), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := newExtChecker(bag, target, smin, rows, func() error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, ib
+}
+
+// TestExtCheckSingleCover cross-checks the closed scan's candidate probes
+// (probeCand) with a brute force on long transactions: covers of a single
+// transaction (closed and not closed), covers whose first transaction is
+// long, and transactions of weight 0 (which are in no cover); for the
+// closed and the maximal target, every form of the bit sets, and both
+// the scan and the vertical tests.
+func TestExtCheckSingleCover(t *testing.T) {
+	const n = 40
+	tx := func(w tract.Supp, items ...string) oracle.Transaction {
+		return oracle.Transaction{Items: items, Weight: w}
+	}
+	chain := chainTxs(n, 1, 1)[0].Items
+	data := [][]oracle.Transaction{
+		chainTxs(n, 1, 2),
+		chainTxs(n, 3, 2, tx(0, "c0", "c1"), tx(0, "c0", "z"), tx(1, "z")),
+		chainTxs(n, 1, 5, tx(1, chain[:n-1]...), tx(0, "c5"), tx(3, "c5", "z"), tx(0, "z", "c39")),
+		chainTxs(n, 2, 1, tx(1, append(slices.Clone(chain[1:]), "z")...), tx(0, chain[:7]...)),
+	}
+	for di, txs := range data {
+		supp := func(names []string) tract.Supp {
+			var s tract.Supp
+			for _, tx := range txs {
+				if !slices.ContainsFunc(names, func(it string) bool { return !slices.Contains(tx.Items, it) }) {
+					s += tx.Weight
+				}
+			}
+			return s
+		}
+		for _, rows := range []rowMode{rowsAuto, rowsSparse, rowsMixed} {
+			for _, tg := range []report.Target{report.TargetClosed, report.TargetMaximal} {
+				const smin = 2
+				c, ib := newTestChecker(t, txs, tg, smin, rows)
+				k := tract.Item(len(c.freq))
+				var sets [][]tract.Item
+				for i := range k {
+					sets = append(sets, []tract.Item{i})
+					for j := i + 1; j < k; j++ {
+						sets = append(sets, []tract.Item{i, j})
+					}
+				}
+				for _, names := range [][]string{chain, chain[:n-1], chain[1:], append(slices.Clone(chain[1:]), "z")} {
+					var set []tract.Item
+					for _, nm := range names {
+						if code, ok := ib.Code(nm); ok && code >= 0 {
+							set = append(set, code)
+						}
+					}
+					sets = append(sets, set)
+				}
+				checked, closed := 0, 0
+				for _, set := range sets {
+					names := make([]string, len(set))
+					for i, it := range set {
+						names[i] = ib.ID(it)
+					}
+					s := supp(names)
+					if s == 0 || (tg == report.TargetMaximal && s < smin) {
+						continue // never reported
+					}
+					want := true
+					for j := range k {
+						if slices.Contains(set, j) {
+							continue
+						}
+						sj := supp(append(slices.Clone(names), ib.ID(j)))
+						if (tg == report.TargetClosed && sj >= s) || (tg == report.TargetMaximal && sj >= smin) {
+							want = false
+							break
+						}
+					}
+					got := c.check(set, s)
+					c.markSet(set)
+					c.bitCover(set)
+					h, v := c.scanClosed(), c.vertClosed(s)
+					if tg == report.TargetMaximal {
+						h, v = c.scanMaximal(), c.vertMaximal()
+					}
+					if got != want || h != want || v != want {
+						t.Fatalf("data %d rows %d target %v set %v (supp %d): check %v, scan %v, vertical %v, want %v",
+							di, rows, tg, names, s, got, h, v, want)
+					}
+					checked++
+					if want {
+						closed++
+					}
+				}
+				if checked < len(sets)/2 || closed == 0 || closed == checked {
+					t.Fatalf("data %d rows %d target %v: %d of %d sets checked, %d closed/maximal",
+						di, rows, tg, checked, len(sets), closed)
+				}
+			}
+		}
+	}
+}
+
+// TestExtCheckChainScaling guards the cost of the closed check of the
+// items of a long chain (a cover of one transaction with n items, or of
+// identical ones): each check must stop after a few items instead of
+// copying the whole transaction into the candidates, which made the
+// checks quadratic in n before probeCand. The cost is measured by the
+// candidate buffer, not by wall time.
+func TestExtCheckChainScaling(t *testing.T) {
+	const n = 20000
+	for _, r := range []int{1, 17} {
+		txs := chainTxs(n, r, 1, oracle.Transaction{Items: []string{"c0", "c1"}, Weight: 0})
+		c, ib := newTestChecker(t, txs, report.TargetClosed, 1, rowsAuto)
+		x, _ := ib.Code("x")
+		for i := range tract.Item(len(c.freq)) {
+			if i == x {
+				continue
+			}
+			if c.checkPath([]tract.Item{i}, []tract.Item{i}, tract.Supp(r)) {
+				t.Fatalf("r %d: {%s} reported closed", r, ib.ID(i))
+			}
+			if cap(c.cand) > 64 {
+				t.Fatalf("r %d: {%s}: candidate buffer grew to %d (whole transaction copied)", r, ib.ID(i), cap(c.cand))
+			}
+		}
+		if !c.checkPath([]tract.Item{x}, []tract.Item{x}, tract.Supp(n+10)) {
+			t.Fatalf("r %d: {x} reported not closed", r)
+		}
+	}
+}
