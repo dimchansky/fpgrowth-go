@@ -4,7 +4,7 @@ Durable project state so work can resume after a context reset. Keep this
 short: current status, next steps, open problems. Details belong in the
 linked documents.
 
-## Current status (2026-10-17)
+## Current status (2026-10-17, v0.1.0 released)
 
 - **Development stages 0–4: closed** (`docs/reviews/`). Stage 1 faithful
   port; Stage 2 idiomatic API, sources, streaming; Stage 3 benchmarks and
@@ -32,16 +32,16 @@ linked documents.
   attestations, immutable pre-release, external install through the
   public proxy with Go 1.26 and 1.27 (`docs/audit/rc2-verification.md`).
 
-- **Phase 5 — v0.1.0: authorized (Gate E).** The maintainer decided to
-  ship ALG-1 as a documented known limitation and to defer its fix and
-  RC-2 to a future release; no numerical or functional changes after
-  rc.2. This PR is documentation only.
+- **Phase 5 — v0.1.0: released.** Tag on `e99628c`, approved by the
+  maintainer, published as Latest and immutable; notes, checksums,
+  attestations, proxy, `go get`/`go install` and pkg.go.dev verified
+  (`docs/audit/release-v0.1.0.md`). ALG-1 ships as a documented known
+  limitation.
 
 ## Next steps
 
-1. Merge this PR; fresh-clone checks; tag the green `main` commit
-   `v0.1.0`; stop at the deployment approval for the maintainer; then
-   verify as for rc.2.
+- Future releases: the deferred items below, through pull requests with
+  independent review, following `docs/releasing.md`.
 
 ## Open problems
 
