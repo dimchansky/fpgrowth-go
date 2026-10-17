@@ -1,0 +1,83 @@
+# GoReleaser configuration for the fpgrowth command-line program
+# (docs/releasing.md). The library itself is distributed through the Go
+# module proxy; release archives only carry the CLI.
+#
+# Check:    goreleaser check
+# Snapshot: goreleaser release --snapshot --clean --skip=publish
+version: 2
+
+project_name: fpgrowth
+
+builds:
+  - id: fpgrowth
+    main: ./cmd/fpgrowth
+    binary: fpgrowth
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # No -X flags: cmd/fpgrowth has no version variable. Its banner prints
+    # the upstream version line, like the C program, and stays unchanged
+    # for upstream compatibility. The build's module version and VCS
+    # revision are embedded by the Go toolchain: go version -m fpgrowth.
+    ldflags:
+      - -s -w
+    # Reproducible builds: file times from the commit, not the build time.
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: fpgrowth
+    ids: [fpgrowth]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    wrap_in_directory: true
+    # Fixed metadata so that archives do not depend on the build machine.
+    builds_info:
+      owner: root
+      group: root
+      mode: 0o755
+      mtime: '{{ .CommitDate }}'
+    files:
+      - src: LICENSE
+        info: &fileinfo
+          owner: root
+          group: root
+          mode: 0o644
+          mtime: '{{ .CommitDate }}'
+      - src: README.md
+        info: *fileinfo
+      - src: CHANGELOG.md
+        info: *fileinfo
+      - src: reference/upstream/PROVENANCE.md # upstream C source provenance
+        strip_parent: true
+        info: *fileinfo
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}'
+
+# The release notes come from CHANGELOG.md (--release-notes in
+# release.yml), not from the commit log.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: dimchansky
+    name: fpgrowth-go
+  prerelease: auto
+  mode: replace
+  footer: |
+    ---
+    Verify a download: `sha256sum --ignore-missing -c checksums.txt`
+    (macOS: `shasum -a 256 --ignore-missing -c checksums.txt`), and its
+    build provenance: `gh attestation verify <file> --repo dimchansky/fpgrowth-go`.
+    The library is installed with `go get github.com/dimchansky/fpgrowth-go@{{ .Tag }}`.

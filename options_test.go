@@ -19,6 +19,12 @@ func intPtr(n int) *int { return &n }
 func TestOptionsValidation(t *testing.T) {
 	t.Parallel()
 	ok := Options[string]{MinSupport: Count(1)}
+	// math.MaxInt exceeds the size limit fpg.MaxSize (math.MaxInt32) only
+	// on 64-bit platforms; on 32-bit ones it is the limit and valid.
+	hugeMinSize := "MinSize"
+	if math.MaxInt <= fpg.MaxSize {
+		hugeMinSize = ""
+	}
 	tests := []struct {
 		name  string
 		edit  func(o *Options[string])
@@ -44,7 +50,7 @@ func TestOptionsValidation(t *testing.T) {
 		{"negative max size", func(o *Options[string]) { o.MaxSize = -1 }, "MaxSize"},
 		{"max below min", func(o *Options[string]) { o.MinSize, o.MaxSize = 3, 2 }, "MaxSize"},
 		{"max equals min", func(o *Options[string]) { o.MinSize, o.MaxSize = 3, 3 }, ""},
-		{"huge min size", func(o *Options[string]) { o.MinSize = math.MaxInt }, "MinSize"},
+		{"huge min size", func(o *Options[string]) { o.MinSize = math.MaxInt }, hugeMinSize},
 		{"huge max size", func(o *Options[string]) { o.MaxSize = math.MaxInt }, ""},
 		{"include empty", func(o *Options[string]) { o.IncludeEmpty = true }, ""},
 		{"include empty min 1", func(o *Options[string]) { o.IncludeEmpty, o.MinSize = true, 1 }, ""},

@@ -1,0 +1,3 @@
+# Keep golden files and test inputs byte-exact on every platform
+# (CRLF/LF differences are part of the tested input formats).
+* -text

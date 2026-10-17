@@ -460,7 +460,9 @@ func TestFits(t *testing.T) {
 		{"one beyond", math.MaxInt32 - 3, 4, false},
 		{"full", math.MaxInt32, 1, false},
 		{"full, nothing added", math.MaxInt32, 0, true},
-		{"huge request", 0, math.MaxInt32 + 1, false},
+		// math.MaxInt32+1 is not an int on 32-bit platforms; there the
+		// largest request is the limit itself, which fits an empty arena.
+		{"huge request", 0, int(min(int64(math.MaxInt32)+1, math.MaxInt)), math.MaxInt == math.MaxInt32},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

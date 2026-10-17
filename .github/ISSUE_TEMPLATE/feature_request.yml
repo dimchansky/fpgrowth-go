@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest an API addition, a new option or another improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The command-line program follows upstream fpgrowth 6.21 closely;
+        options that upstream does not have are unlikely to be added to it,
+        but may fit the library API.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Library (package fpgrowth)
+        - Command-line program (cmd/fpgrowth)
+        - Documentation
+        - Build, CI or release artifacts
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The API, option or behavior you suggest, ideally with a usage example.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: compat
+    attributes:
+      label: Compatibility
+      options:
+        - label: I checked docs/differences.md and the README's Limitations section.

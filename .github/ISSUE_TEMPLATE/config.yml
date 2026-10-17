@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/dimchansky/fpgrowth-go/security/advisories/new
+    about: Please report vulnerabilities privately, not as public issues.
+  - name: Upstream fpgrowth (C program)
+    url: https://borgelt.net/fpgrowth.html
+    about: Questions about the original C implementation by Christian Borgelt.

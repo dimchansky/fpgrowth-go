@@ -444,7 +444,7 @@ func BenchmarkReport(b *testing.B) {
 			rep.SetTarget(bc.target, report.ModeNoFilter, -1)
 			rep.SetSupport(40, report.MaxSupp)
 			rep.Setup()
-			rep.SetSink(&errSink{n: 1 << 60})
+			rep.SetSink(&errSink{n: math.MaxInt})
 			b.ReportAllocs()
 			for b.Loop() {
 				if err := tr.Report(rep, bc.target); err != nil {

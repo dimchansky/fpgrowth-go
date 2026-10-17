@@ -2,6 +2,7 @@ package tract
 
 import (
 	"bufio"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -147,8 +148,8 @@ func TestItemComparator(t *testing.T) {
 		{name: "q 0 identifiers", order: 0, want: []int32{0, 1, 3, 2}},
 		{name: "q 1 descending frq", order: 1, want: []int32{1, 0, 3, 2}},
 		{name: "q 2 descending xfq", order: 2, want: []int32{3, 0, 1, 2}},
-		{name: "q min int", order: -1 << 63, want: []int32{1, 0, 3, 2}},
-		{name: "q max int", order: 1<<63 - 1, want: []int32{3, 0, 1, 2}},
+		{name: "q min int", order: math.MinInt, want: []int32{1, 0, 3, 2}},
+		{name: "q max int", order: math.MaxInt, want: []int32{3, 0, 1, 2}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,0 +1,27 @@
+# Weekly dependency updates, one grouped pull request per ecosystem.
+# The Go modules have no third-party requirements today. Tool versions
+# pinned in the workflows (staticcheck, govulncheck, GoReleaser) and the
+# Go toolchain (docs/decisions.md D3) are bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /reference
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      go-modules:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']

@@ -1,0 +1,306 @@
+# Quality gates for the library, the CLI and the nested reference module.
+# Also called by release.yml (workflow_call) before a release is built.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # "ci-" keeps this group distinct from the caller's group when the
+  # workflow runs via workflow_call (github.workflow is the caller's name).
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Tool versions (bump deliberately; Dependabot does not see these).
+  STATICCHECK_VERSION: v0.8.2 # staticcheck 2026.2.2
+  GOVULNCHECK_VERSION: v1.9.0
+  GORELEASER_VERSION: v2.18.3
+  FUZZTIME: 20s
+
+jobs:
+  lint:
+    name: Lint (gofmt, vet, staticcheck, tidy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod # toolchain directive (docs/decisions.md D3)
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed for:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: |
+          go vet ./...
+          (cd reference && go vet ./...)
+      - name: staticcheck
+        run: |
+          go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+          staticcheck ./...
+          (cd reference && staticcheck ./...)
+      - name: go mod tidy
+        run: |
+          go mod tidy -diff
+          (cd reference && go mod tidy -diff)
+
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: govulncheck
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          govulncheck ./...
+          (cd reference && govulncheck ./...)
+
+  test:
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.26.x: minimum supported release (go directive 1.26.0).
+        # 1.27.x: latest release (toolchain directive go1.27.2 or newer).
+        # ubuntu-latest and windows-latest are amd64; macos-latest and
+        # ubuntu-24.04-arm are arm64.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        go: ['1.26.x', '1.27.x']
+        exclude:
+          - os: ubuntu-24.04-arm
+            go: '1.26.x'
+    steps:
+      - name: Keep LF line endings on Windows
+        # Golden files and fixtures are compared byte for byte.
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - run: go version
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test -shuffle=on ./...
+      - name: Test with the race detector
+        if: runner.os != 'Windows'
+        run: go test -race -shuffle=on ./...
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: Test with coverage
+        run: |
+          go test -covermode=atomic -coverprofile=coverage.out ./... | tee coverage-test.log
+          go tool cover -func=coverage.out > coverage-func.txt
+          go tool cover -html=coverage.out -o coverage.html
+      - name: Job summary
+        run: |
+          {
+            echo "## Coverage"
+            echo
+            echo "Total (statements): **$(awk '/^total:/ {print $NF}' coverage-func.txt)**"
+            echo
+            echo "| Package | Coverage |"
+            echo "| --- | ---: |"
+            awk '$1 == "ok" && /coverage:/ {
+              for (i = 1; i <= NF; i++) if ($i == "coverage:") print "| `" $2 "` | " $(i + 1) " |"
+            }' coverage-test.log
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage-func.txt
+            coverage.html
+          retention-days: 14
+
+  cross-build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: Build and vet for each target
+        # go vet type-checks the test files too, so constants that do not
+        # fit a 32-bit int are caught for 386 and arm.
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          targets="linux/amd64 linux/arm64 linux/386 linux/arm linux/riscv64
+            darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 windows/386
+            freebsd/amd64 wasip1/wasm"
+          for t in $targets; do
+            echo "::group::$t"
+            GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+            GOOS=${t%/*} GOARCH=${t#*/} go vet ./...
+            echo "::endgroup::"
+          done
+      - name: Test on linux/386 (32-bit int)
+        env:
+          CGO_ENABLED: '0'
+          GOARCH: '386'
+        run: go test ./...
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: Run every fuzz target briefly
+        # -fuzz accepts one target per package run, so the targets are
+        # listed per package and run one at a time.
+        run: |
+          n=0
+          for pkg in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
+              echo "::group::$pkg $target"
+              go test -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" "$pkg"
+              echo "::endgroup::"
+              n=$((n + 1))
+            done
+          done
+          echo "ran $n fuzz targets for $FUZZTIME each"
+          [ "$n" -gt 0 ]
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/**'
+          retention-days: 14
+
+  reference:
+    name: C reference + differential tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest] # gcc on amd64, Apple clang on arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: Toolchain
+        run: |
+          cc --version
+          make --version | head -n 1
+      - name: Build the C reference (release)
+        working-directory: reference
+        run: ./build.sh release
+      - name: Differential tests
+        working-directory: reference
+        # -artifacts keeps the inputs and outputs of failing cases.
+        run: |
+          mkdir -p "$RUNNER_TEMP/difftest-artifacts"
+          go test -count=1 -artifacts -outputdir "$RUNNER_TEMP/difftest-artifacts" ./...
+      - name: Upload build log and failing cases
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: difftest-${{ matrix.os }}
+          path: |
+            reference/build/release/build.log
+            reference/build/release/smoke.log
+            ${{ runner.temp }}/difftest-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+
+  goreleaser:
+    name: GoReleaser snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --snapshot --clean --skip=publish
+      - name: List artifacts
+        run: |
+          ls -l dist
+          cat dist/checksums.txt

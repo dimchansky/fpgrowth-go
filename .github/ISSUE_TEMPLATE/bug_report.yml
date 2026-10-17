@@ -1,0 +1,69 @@
+name: Bug report
+description: Wrong results, a crash, an error or a difference from the upstream fpgrowth program.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security issues must be reported privately
+        (see SECURITY.md), not here. Before reporting a difference from
+        Christian Borgelt's C program, check docs/differences.md: many
+        differences are intentional fixes.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Library (package fpgrowth)
+        - Command-line program (cmd/fpgrowth)
+        - Documentation
+        - Build, CI or release artifacts
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Module version or commit (`go list -m github.com/dimchansky/fpgrowth-go`), or the release archive name.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Go version and platform
+      description: Output of `go version` (and the OS if it is not shown).
+      placeholder: go version go1.27.2 linux/amd64
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        A minimal program, or the exact `fpgrowth` command line, with a small
+        input file (paste it or attach it).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Output, error message, exit status or panic with stack trace.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: |
+        What you expected, and why. If the upstream C program (fpgrowth 6.21)
+        behaves differently, include its output.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
