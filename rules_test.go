@@ -320,7 +320,6 @@ func FuzzMineRules(f *testing.F) {
 			k := 30 + b.take(6)
 			smax, maxSupp = float64(k), Fraction(float64(k)/100)
 		}
-		smax, maxSupp = orderedMax(smin, minSupp, smax, maxSupp)
 		conf := confidences[b.take(3)%len(confidences)] / 100
 		opt := RuleOptions[string]{
 			MinSupport:      minSupp,
@@ -363,6 +362,10 @@ func FuzzMineRules(f *testing.F) {
 			}
 		}
 		got, sum, err := CollectRules(context.Background(), sourceOf(txs), opt)
+		if invertedRange(minSupp, maxSupp) {
+			checkInvertedRange(t, minSupp, maxSupp, err)
+			return
+		}
 		if err != nil {
 			t.Fatalf("%+v: %v", opt, err)
 		}

@@ -47,6 +47,12 @@ func TestOptionsValidation(t *testing.T) {
 		{"max count 0 with min count 0", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Count(0), Count(0) }, "MaxSupport"},
 		{"max fraction below min fraction", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Fraction(0.4) }, "MaxSupport"},
 		{"max fraction equal to min fraction", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Fraction(0.5) }, ""},
+		{"max fraction within the tolerance below min", func(o *Options[string]) {
+			o.MinSupport, o.MaxSupport = Fraction(math.Nextafter(0.3, 1)), Fraction(0.3)
+		}, ""},
+		{"max fraction just beyond the tolerance below min", func(o *Options[string]) {
+			o.MinSupport, o.MaxSupport = Fraction(0.3), Fraction(0.3*(1-1e-14))
+		}, "MaxSupport"},
 		{"mixed kinds unchecked", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Count(1) }, ""},
 		{"border negative", func(o *Options[string]) { o.Border = []Support{Count(1), Count(-2)} }, "Border[1]"},
 		{"border zero entry", func(o *Options[string]) { o.Border = []Support{{}, Fraction(0.5)} }, ""},

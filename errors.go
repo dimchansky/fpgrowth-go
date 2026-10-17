@@ -36,7 +36,9 @@ var (
 	// them) are checked, once per distinct item when it is first read
 	// rather than per occurrence; ignored items (outside Options.Items, or
 	// not in RuleOptions.Appearance with DefaultAppearance AppearNone) are
-	// never registered and are checked at every occurrence.
+	// never registered and are checked at every occurrence. An invalid
+	// entry of Options.Items is an error that matches both ErrInvalidItem
+	// and ErrInvalidOptions.
 	ErrInvalidItem = errors.New("fpgrowth: invalid item")
 )
 

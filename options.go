@@ -287,14 +287,20 @@ func (s Support) validate(field string) error {
 }
 
 // checkRange rejects a maximum support below the minimum one when both
-// are of the same kind; a Count minimum below 1 acts as 1. Mixed kinds
-// (a Count and a Fraction) can only be compared once the total weight is
-// known and are not checked: such a range may report nothing.
+// are of the same kind; a Count minimum below 1 acts as 1. Fractions are
+// rejected only if the range is empty for every total weight W after the
+// tolerant conversion (minAbs, maxAbs): f·W·(1-ε) of the minimum above
+// g·W·(1+ε) of the maximum, with a margin of a few ε for the rounding of
+// that arithmetic, so Fraction(0.30000000000000004) to Fraction(0.3) is
+// still valid (both are 3 of W = 10). Mixed kinds (a Count and a
+// Fraction) can only be compared once the total weight is known and are
+// not checked: such a range may report nothing.
 func checkRange(minSupp, maxSupp Support) error {
 	switch {
 	case minSupp.kind == supportCount && maxSupp.kind == supportCount && maxSupp.count < max(minSupp.count, 1):
 		return invalid("MaxSupport", "%v below MinSupport %v", maxSupp, minSupp)
-	case minSupp.kind == supportFraction && maxSupp.kind == supportFraction && maxSupp.frac < minSupp.frac:
+	case minSupp.kind == supportFraction && maxSupp.kind == supportFraction &&
+		maxSupp.frac*(1+4*dblEpsilon) < minSupp.frac*(1-4*dblEpsilon):
 		return invalid("MaxSupport", "%v below MinSupport %v", maxSupp, minSupp)
 	}
 	return nil
@@ -384,8 +390,8 @@ type Options[T comparable] struct {
 	// MaxSupport is the maximum support of a reported item set; the zero
 	// value means no limit. If MinSupport and MaxSupport are both Count
 	// or both Fraction, MaxSupport must not be below MinSupport (a Count
-	// minimum below 1 counts as 1); a Count and a Fraction are not
-	// compared.
+	// minimum below 1 counts as 1; fractions are compared with the
+	// tolerance of Fraction); a Count and a Fraction are not compared.
 	MaxSupport Support
 	// MinSize is the minimum number of items of a reported set; 0 means 1.
 	// The empty set is reported only with IncludeEmpty.

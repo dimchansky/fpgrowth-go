@@ -347,6 +347,7 @@ func TestThresholdBoundaries(t *testing.T) {
 		{"max count 3", Count(1), Count(3), []string{"a"}},
 		{"max count equal to min", Count(3), Count(3), []string{"a"}},
 		{"max fraction equal to min", Fraction(0.7), Fraction(0.7), []string{"b"}},
+		{"max fraction 1 ulp below min", Fraction(math.Nextafter(0.3, 1)), Fraction(0.3), []string{"a"}},
 		{"max fraction 1", Count(1), Fraction(1), []string{"a", "b", "c"}},
 	}
 	for _, tt := range tests {
@@ -942,8 +943,16 @@ const treeBuildLatencyLimit = 100 * time.Millisecond
 // of rules and rule-based evaluations) must return context.Canceled
 // promptly, without reporting anything, instead of first building the
 // whole tree.
+//
+// The test and its subtests do not run in parallel: between the
+// cancellation and the return there is only O(items) work (the reporter
+// set-up and the check at the start of Miner.Mine), so every latency
+// beyond a few milliseconds is the goroutine waiting for a CPU or doing
+// GC work while other parallel tests run. Measured with -cpu 1,
+// GOMEMLIMIT=300MiB and the whole package in parallel: 62 ms and 184 ms
+// spent in Reporter (normally 1 us); a hosted macOS runner showed 241 ms.
+// A sequential top-level test runs while all parallel tests are paused.
 func TestCancelTreeBuild(t *testing.T) {
-	t.Parallel()
 	n := 300_000
 	if raceEnabled {
 		n = 100_000
@@ -968,7 +977,6 @@ func TestCancelTreeBuild(t *testing.T) {
 	}})
 	for _, r := range runs {
 		t.Run(r.name, func(t *testing.T) {
-			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var canceled time.Time
@@ -1569,6 +1577,10 @@ func FuzzMineItemsets(f *testing.F) {
 			}
 		}
 		got, sum, err := CollectItemsets(context.Background(), sourceOf(txs), opt)
+		if invertedRange(c.minSupp, c.maxSupp) {
+			checkInvertedRange(t, c.minSupp, c.maxSupp, err)
+			return
+		}
 		if err != nil {
 			t.Fatalf("%+v: %v", opt, err)
 		}

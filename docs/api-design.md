@@ -219,8 +219,10 @@ have no effect.
   nil. An invalid item in `Options.Items` matches both
   `ErrInvalidOptions` and `ErrInvalidItem`. `MaxSupport` below
   `MinSupport` is rejected when both are `Count` (a minimum below 1
-  counts as 1) or both `Fraction`; a `Count`/`Fraction` mix is resolved
-  only after pass 1 and not checked. A nil `Source`, also a nil
+  counts as 1) or both `Fraction` and the range is empty for every total
+  weight after the tolerant conversion (a few ulps apart is accepted);
+  a `Count`/`Fraction` mix is resolved only after pass 1 and not
+  checked. A nil `Source`, also a nil
   `SourceFunc`, is `ErrInvalidOptions`. A callback error is returned
   unchanged whatever its dynamic type (it is never compared, so
   non-comparable error types are fine).
