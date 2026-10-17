@@ -157,8 +157,11 @@ for every change), so tag only a commit of `main` whose own CI run on
    self-review is allowed: open the waiting run (Actions tab, or the
    e-mail notification), choose "Review deployments", tick `release`,
    and choose "Approve and deploy" (or "Reject", which leaves no release;
-   the module version stays public, see above). Administrators cannot
-   bypass this step.
+   the module version stays public, see above). Before approving, check
+   that the run's commit SHA is the `main` commit you tagged: the
+   environment gates only workflows that declare it, and a tag runs the
+   workflow file of the tagged commit, so this check is what ties the
+   approval to reviewed code. Administrators cannot bypass this step.
 
 6. Check the published release page, then make the module version known
    to the Go proxy and pkg.go.dev:

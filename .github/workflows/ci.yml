@@ -51,7 +51,7 @@ jobs:
             echo "::error::GOVULNCHECK_VERSION differs: ci.yml '$a', vulncheck.yml '$b'"
             exit 1
           fi
-          doc() { grep -Eo "/cmd/$1@v[0-9]+\.[0-9]+\.[0-9]+" CONTRIBUTING.md | sed 's/.*@//' | sort -u; }
+          doc() { grep -Eo "/cmd/$1@v[0-9]+\.[0-9]+\.[0-9]+" CONTRIBUTING.md | sed 's/.*@//' | sort -u || true; }
           s=$(doc staticcheck) g=$(doc govulncheck)
           if [ "$s" != "$STATICCHECK_VERSION" ] || [ "$g" != "$a" ]; then
             echo "::error::CONTRIBUTING.md pins staticcheck '$s', govulncheck '$g'; ci.yml: $STATICCHECK_VERSION, $a"
