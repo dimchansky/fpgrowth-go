@@ -13,8 +13,10 @@ release only; there are no maintenance branches.
 
 Supported Go versions follow the Go release policy: the two most recent
 major Go releases (currently 1.26 and 1.27). Vulnerabilities in the Go
-standard library are fixed by Go itself; the release binaries are rebuilt
-with a fixed toolchain when one affects them.
+standard library are fixed by Go itself. When one affects the release
+binaries, a new patch release is cut with the fixed toolchain (released
+versions and their artifacts are never rebuilt in place). `main` is
+scanned with govulncheck on every change and weekly.
 
 ## Reporting a vulnerability
 

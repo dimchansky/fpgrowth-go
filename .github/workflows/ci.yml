@@ -25,7 +25,7 @@ env:
   # Tool versions (bump deliberately; Dependabot does not see these).
   STATICCHECK_VERSION: v0.8.2 # staticcheck 2026.2.2
   GOVULNCHECK_VERSION: v1.9.0
-  GORELEASER_VERSION: v2.18.3
+  # GoReleaser: .github/goreleaser-version (shared with release.yml).
   FUZZTIME: 20s
 
 jobs:
@@ -43,6 +43,16 @@ jobs:
           cache-dependency-path: |
             go.mod
             reference/go.mod
+      - name: Tool pins agree across workflows
+        run: |
+          pin() { sed -n "s/^ *GOVULNCHECK_VERSION: *\([^ #]*\).*/\1/p" "$1"; }
+          a=$(pin .github/workflows/ci.yml) b=$(pin .github/workflows/vulncheck.yml)
+          if [ -z "$a" ] || [ "$a" != "$b" ]; then
+            echo "::error::GOVULNCHECK_VERSION differs: ci.yml '$a', vulncheck.yml '$b'"
+            exit 1
+          fi
+          grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' .github/goreleaser-version ||
+            { echo "::error::.github/goreleaser-version must hold one vX.Y.Z line"; exit 1; }
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
@@ -64,6 +74,13 @@ jobs:
         run: |
           go mod tidy -diff
           (cd reference && go mod tidy -diff)
+      - name: Module zip (as built by the Go proxy)
+        # Fails on files the Go command refuses in a module zip
+        # (Windows-reserved or case-colliding names, size limits); lists
+        # the omitted files and the zip size. The checkout is fresh, so
+        # only committed files are checked.
+        working-directory: reference
+        run: go run ./modcheck zip ..
 
   vulncheck:
     name: govulncheck
@@ -123,6 +140,16 @@ jobs:
       - name: Test with the race detector
         if: runner.os != 'Windows'
         run: go test -race -shuffle=on ./...
+      - name: Tests leave the checkout unchanged
+        # The tests run on a fresh checkout, so they pass only with
+        # committed files; they also must not create or modify any.
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [ -n "$changes" ]; then
+            echo "::error::the tests changed the working tree:"
+            echo "$changes"
+            exit 1
+          fi
 
   coverage:
     name: Coverage
@@ -295,10 +322,13 @@ jobs:
           cache-dependency-path: |
             go.mod
             reference/go.mod
+      - name: GoReleaser version
+        id: goreleaser
+        run: echo "version=$(tr -d '[:space:]' < .github/goreleaser-version)" >> "$GITHUB_OUTPUT"
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
-          version: ${{ env.GORELEASER_VERSION }}
+          version: ${{ steps.goreleaser.outputs.version }}
           args: release --snapshot --clean --skip=publish
       - name: List artifacts
         run: |

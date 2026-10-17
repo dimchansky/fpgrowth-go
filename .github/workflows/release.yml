@@ -1,7 +1,9 @@
 # Builds and publishes a GitHub release for a pushed SemVer tag
-# (docs/releasing.md). The quality gates of ci.yml run first; the publish
-# job runs in the protected "release" environment and is the only job
-# with write access.
+# (docs/releasing.md). The tag is validated first (validate-tag), then the
+# quality gates of ci.yml run; only then does the publish job ask for
+# approval in the protected "release" environment. publish is the only job
+# with write access. The release stays a draft until its provenance
+# attestation exists.
 name: Release
 
 on:
@@ -19,19 +21,51 @@ defaults:
   run:
     shell: bash
 
-env:
-  GORELEASER_VERSION: v2.18.3
-
 jobs:
+  validate-tag:
+    name: Validate the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the ancestry check needs main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: SemVer, module path and CHANGELOG.md section
+        working-directory: reference
+        env:
+          TAG: ${{ github.ref_name }}
+        # reference/modcheck (golang.org/x/mod/semver): canonical SemVer
+        # 2.0.0 with a leading v, no build metadata; a vN tag (N >= 2)
+        # needs a /vN module path; the release notes section must exist.
+        run: |
+          go run ./modcheck tag "$TAG" ..
+          go run ./modcheck notes "$TAG" ../CHANGELOG.md
+      - name: Tagged commit is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG ($GITHUB_SHA) is not on main"
+            exit 1
+          fi
+
   ci:
     name: Quality gates
+    needs: validate-tag
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   publish:
     name: Publish release
-    needs: ci
+    needs: [validate-tag, ci]
     if: github.repository == 'dimchansky/fpgrowth-go'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -39,57 +73,31 @@ jobs:
       name: release
       url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
     permissions:
-      contents: write # create the release and upload its assets
+      contents: write # create the release, upload its assets, undraft it
       id-token: write # sign the build provenance attestation (OIDC, short-lived)
       attestations: write # store the attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # GoReleaser needs the tags; the ancestry check needs main
+          fetch-depth: 0 # GoReleaser needs the tags
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod # the pinned toolchain (docs/decisions.md D3)
           cache: false # never build release binaries from a restored cache
-      - name: Check the tag
+      - name: Release notes and GoReleaser version
+        id: prep
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          # SemVer 2.0.0 with a leading v, as the Go module system requires.
-          if ! [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::tag $TAG is not a SemVer version vMAJOR.MINOR.PATCH[-PRERELEASE]"
-            exit 1
-          fi
-          # v2+ needs a /vN module path (docs/releasing.md).
-          major=${BASH_REMATCH[1]}
-          module=$(go list -m)
-          if [ "$major" -ge 2 ] && [[ $module != */v$major ]]; then
-            echo "::error::tag $TAG needs module path suffix /v$major, go.mod has $module"
-            exit 1
-          fi
-          # Release only commits that are on main.
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$TAG ($GITHUB_SHA) is not on main"
-            exit 1
-          fi
-      - name: Extract release notes from CHANGELOG.md
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version=${TAG#v}
-          awk -v head="## [$version]" '
-            /^## \[/ { if (found) exit; if (index($0, head) == 1) { found = 1; next } }
-            found
-          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
-          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
-            echo "::error::CHANGELOG.md has no section '## [$version]'"
-            exit 1
-          fi
+          (cd reference && go run ./modcheck notes "$TAG" ../CHANGELOG.md) > "$RUNNER_TEMP/release-notes.md"
           cat "$RUNNER_TEMP/release-notes.md"
+          echo "goreleaser=$(tr -d '[:space:]' < .github/goreleaser-version)" >> "$GITHUB_OUTPUT"
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
-          version: ${{ env.GORELEASER_VERSION }}
+          version: ${{ steps.prep.outputs.goreleaser }}
+          # .goreleaser.yaml publishes the release as a draft.
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,3 +105,8 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

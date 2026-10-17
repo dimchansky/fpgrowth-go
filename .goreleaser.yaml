@@ -74,6 +74,10 @@ release:
     owner: dimchansky
     name: fpgrowth-go
   prerelease: auto
+  # Created as a draft; release.yml publishes it after the provenance
+  # attestation succeeds. A rerun replaces a leftover draft.
+  draft: true
+  replace_existing_draft: true
   mode: replace
   footer: |
     ---

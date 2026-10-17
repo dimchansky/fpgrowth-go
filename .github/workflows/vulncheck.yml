@@ -1,0 +1,40 @@
+# Weekly govulncheck of main: new advisories can affect an unchanged
+# dependency set or the pinned Go toolchain (SECURITY.md).
+name: Vulncheck
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOVULNCHECK_VERSION: v1.9.0 # keep equal to ci.yml
+
+jobs:
+  govulncheck:
+    name: govulncheck (main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            reference/go.mod
+      - name: govulncheck
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          govulncheck ./...
+          (cd reference && govulncheck ./...)

@@ -9,7 +9,15 @@ every release); the build configuration is `.goreleaser.yaml`.
 
 Releases follow [Semantic Versioning 2.0.0](https://semver.org/) with the
 `v` prefix that Go modules require: `vMAJOR.MINOR.PATCH`, optionally with
-a pre-release suffix (`v0.2.0-rc.1`).
+a pre-release suffix (`v0.2.0-rc.1`). The tag must be canonical: no
+leading zeros, no empty or numeric-with-leading-zero pre-release
+identifiers (`v1.2.3-rc.01` is refused), and no build metadata
+(`+build`). The workflow checks this with `golang.org/x/mod/semver`
+(`reference/modcheck`); to check a tag before pushing it:
+
+```bash
+(cd reference && go run ./modcheck tag vX.Y.Z)
+```
 
 One version covers both deliverables of the module
 `github.com/dimchansky/fpgrowth-go`: the library API (package `fpgrowth`)
@@ -86,15 +94,31 @@ exists and is protected.
 2. Update [CHANGELOG.md](../CHANGELOG.md): rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it,
    and update the comparison links at the bottom. The release notes are
-   taken from this section; the workflow fails if it is missing.
+   taken from this section; the workflow fails if it is missing or empty.
+   A pre-release tag (`vX.Y.Z-rc.N`) uses its own `## [X.Y.Z-rc.N]`
+   section if there is one, and otherwise falls back to the `## [X.Y.Z]`
+   section, so a release candidate can be cut from the prepared final
+   section. Check what will be used:
+   `(cd reference && go run ./modcheck notes vX.Y.Z)`.
    Commit ("Prepare vX.Y.Z") and merge it to `main` like any change.
 
-3. Check locally (optional; CI does the same):
+3. Pre-tag checklist, on a **fresh clone** of the commit to tag (only
+   committed files count; a test that passes only because of an
+   uncommitted fixture fails here, as it would for users and CI):
 
    ```bash
+   tmp=$(mktemp -d) && git clone --quiet . "$tmp/fpgrowth-go" && cd "$tmp/fpgrowth-go"
+   go test ./...
+   (cd reference && go run ./modcheck zip ..)   # module zip as the Go proxy builds it
+   (cd reference && go run ./modcheck tag vX.Y.Z)
    goreleaser check
    goreleaser release --snapshot --clean --skip=publish
    ```
+
+   `modcheck zip` fails on any file the Go command refuses in a module
+   zip (Windows-reserved names such as `nul.txt`, case collisions, size
+   limits) and lists the omitted files (`.git`, the nested `reference/`
+   module) and the zip size. CI runs it in the lint job.
 
 4. Tag the merged commit on `main` with an annotated (ideally signed)
    tag and push the tag:
@@ -105,7 +129,8 @@ exists and is protected.
    ```
 
 5. Approve the `release` deployment when GitHub asks (Actions tab, or the
-   notification to the environment's reviewers).
+   notification to the environment's reviewers). GitHub asks only after
+   the tag passed `validate-tag` and all quality gates.
 
 6. Check the published release page, then make the module version known
    to the Go proxy and pkg.go.dev:
@@ -124,19 +149,24 @@ and mark the bad one with a `retract` directive in `go.mod`
 
 `release.yml` runs on a pushed tag matching `v*.*.*`:
 
-1. **Quality gates** (`ci` job): calls `ci.yml` with read-only
-   permissions: lint (gofmt, vet, staticcheck, `go mod tidy`),
+1. **Tag validation** (`validate-tag` job, read-only, first): the tag is
+   canonical SemVer without build metadata, a `v2+` tag matches the
+   module path, `CHANGELOG.md` has a non-empty section for it (with the
+   pre-release fallback above), and the tagged commit is on `main`. The
+   other jobs depend on it, so an invalid tag never reaches the approval
+   step.
+2. **Quality gates** (`ci` job): calls `ci.yml` with read-only
+   permissions: lint (gofmt, vet, staticcheck, `go mod tidy`, the
+   module zip check),
    govulncheck, tests on Linux/macOS/Windows with Go 1.26 and 1.27 and the
    race detector, coverage, cross-builds (including 32-bit), fuzz smoke
    tests, the C reference build with the differential tests on Linux and
    macOS, and a GoReleaser snapshot.
-2. **Publish** (`publish` job, only after all gates pass, only in the
-   repository `dimchansky/fpgrowth-go`): runs in the protected `release`
-   environment and is the only job with `contents: write` (plus
+3. **Publish** (`publish` job, only after both jobs above pass, only in
+   the repository `dimchansky/fpgrowth-go`): runs in the protected
+   `release` environment and is the only job with `contents: write` (plus
    `id-token: write` and `attestations: write` for the provenance
    attestation). It
-   - checks that the tag is valid SemVer, that a `v2+` tag matches the
-     module path, and that the tagged commit is on `main`;
    - extracts the tag's section of `CHANGELOG.md` as the release notes;
    - runs GoReleaser with the pinned Go toolchain and no restored build
      cache: `fpgrowth` binaries for linux, darwin and windows on amd64 and
@@ -146,10 +176,18 @@ and mark the bad one with a `retract` directive in `go.mod`
    - packs each binary with `LICENSE`, `README.md`, `CHANGELOG.md` and
      the upstream `PROVENANCE.md` into `fpgrowth_<version>_<os>_<arch>`
      (`.tar.gz`, `.zip` for Windows) with fixed owner, mode and times;
-   - writes `checksums.txt` (SHA-256) and publishes the GitHub release
-     (pre-release for versions with a suffix);
+   - writes `checksums.txt` (SHA-256) and creates the GitHub release as
+     a **draft** (pre-release for versions with a suffix);
    - creates a signed build provenance attestation for every archive
-     listed in `checksums.txt` (GitHub artifact attestations, Sigstore).
+     listed in `checksums.txt` (GitHub artifact attestations, Sigstore);
+   - only then publishes the draft (`gh release edit --draft=false`), so
+     a release is never visible without its attestation. If a step fails,
+     the draft stays unpublished; rerunning the workflow replaces it.
+
+The GoReleaser version is pinned once, in `.github/goreleaser-version`,
+and read by both `ci.yml` (snapshot) and `release.yml`. The govulncheck
+pin appears in `ci.yml` and `vulncheck.yml` (weekly scan of `main`); the
+lint job fails if the two differ.
 
 The workflow uses only the automatic `GITHUB_TOKEN` and a short-lived
 OIDC token; there are no stored secrets. All actions are pinned to full
