@@ -640,7 +640,7 @@ while `-tc` on the same data took Go 12.1 s and C 46.2 s. A maximal set's
 check must show every one-item extension infrequent, so it cannot stop
 early and counts the whole cover per set. The dataset is not part of
 `configs.txt`; the measurement is the audit's
-(`docs/audit/m5.md` on the audit branch). Sharing the work among sibling
+([audit/m5.md](audit/m5.md)). Sharing the work among sibling
 sets is a possible optimization, deferred.
 
 ### Profiles after optimization
