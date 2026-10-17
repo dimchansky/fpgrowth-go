@@ -3,6 +3,8 @@ package fpg
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"math/bits"
 	"math/rand/v2"
 	"os"
 	"slices"
@@ -98,12 +100,99 @@ func genM5Case(seed uint64) (m5Case, error) {
 // cloMaxTargets are the targets with the closed/maximal repository.
 var cloMaxTargets = targets[1:3]
 
+// m5Source computes supports from a case's source transactions (item
+// names, with the item selection applied), independently of the
+// checker's storage of the bag.
+type m5Source struct {
+	txs   []oracle.Transaction
+	sel   []string
+	sink  *collectSink // its item base maps the codes (set by run)
+	ready bool
+	sets  []map[string]bool // the items of each transaction
+	items []string          // every item (sorted)
+}
+
+// newSource returns the source of txs and sel for the run with sink.
+func newSource(txs []oracle.Transaction, sel []string, sink *collectSink) *m5Source {
+	return &m5Source{txs: txs, sel: sel, sink: sink}
+}
+
+func (s *m5Source) init() {
+	if s.ready {
+		return
+	}
+	s.ready = true
+	var keep map[string]bool
+	if s.sel != nil {
+		keep = map[string]bool{}
+		for _, it := range s.sel {
+			keep[it] = true
+		}
+	}
+	all := map[string]bool{}
+	for _, tx := range s.txs {
+		set := map[string]bool{}
+		for _, it := range tx.Items {
+			if keep == nil || keep[it] {
+				set[it], all[it] = true, true
+			}
+		}
+		s.sets = append(s.sets, set)
+	}
+	s.items = slices.Sorted(maps.Keys(all))
+}
+
+// names returns the item names of the codes of set.
+func (s *m5Source) names(set []tract.Item) []string {
+	out := make([]string, len(set))
+	for k, it := range set {
+		out[k] = s.sink.ib.ID(it)
+	}
+	return out
+}
+
+// supp returns the weight of the source transactions that contain all
+// of names.
+func (s *m5Source) supp(names []string) tract.Supp {
+	s.init()
+	var sum tract.Supp
+	for t, set := range s.sets {
+		ok := true
+		for _, it := range names {
+			if !set[it] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			sum += s.txs[t].Weight
+		}
+	}
+	return sum
+}
+
+// m5Check makes a replacement extension check for one run from the
+// run's checker, reporter and source transactions.
+type m5Check func(*extChecker, *report.Reporter, *m5Source) report.CloMaxCheck
+
+// withSource returns the hooks and the sink of a run of txs and sel whose
+// extension check is check (nil: the miner's own).
+func withSource(check m5Check, txs []oracle.Transaction, sel []string, rows rowMode) (testHooks, *collectSink) {
+	sink := &collectSink{}
+	hooks := testHooks{rows: rows}
+	if check != nil {
+		src := newSource(txs, sel, sink)
+		hooks.cloMaxCheck = func(chk *extChecker, rep *report.Reporter) report.CloMaxCheck {
+			return check(chk, rep, src)
+		}
+	}
+	return hooks, sink
+}
+
 // checkM5Case compares the closed and maximal sets of every variant with
 // the oracle; check, if not nil, replaces the extension check. It returns
 // the number of comparisons and the names of the differing runs.
-func checkM5Case(t *testing.T, c m5Case,
-	check func(*extChecker, *report.Reporter) report.CloMaxCheck,
-) (int, []string) {
+func checkM5Case(t *testing.T, c m5Case, check m5Check) (int, []string) {
 	t.Helper()
 	db, err := oracle.New(c.txs, oracle.Options{Selection: c.sel})
 	if err != nil {
@@ -130,8 +219,9 @@ func checkM5Case(t *testing.T, c m5Case,
 		}
 		for _, v := range variants {
 			cfg := c.config(v, tg.target)
-			hooks := testHooks{cloMaxCheck: check, noBits: c.seed%2 == 1} // both forms
-			res, err := run(scanOf(c.txs), cfg, runOpts{border: border, sel: c.sel, hooks: hooks})
+			// every form of the bit sets
+			hooks, sink := withSource(check, c.txs, c.sel, rowMode(c.seed%3))
+			res, err := run(scanOf(c.txs), cfg, runOpts{border: border, sel: c.sel, hooks: hooks, sink: sink})
 			n++
 			name := fmt.Sprintf("%s/%s %s sel=%v border=%v", tg.name, v.name, describe(cfg), c.sel, c.border)
 			if errors.Is(err, ErrNoItems) {
@@ -191,17 +281,18 @@ func TestExtCheckOracle(t *testing.T) {
 // closed/maximal repository for every other item. This is what a miner
 // that collects perfect extensions (conditional supports) at the size
 // limit decides by itself. It is not complete.
-func localCheck(c *extChecker, rep *report.Reporter) report.CloMaxCheck {
+func localCheck(c *extChecker, rep *report.Reporter, src *m5Source) report.CloMaxCheck {
 	return func(set []tract.Item, supp tract.Supp) bool {
 		lo := tract.Item(len(c.freq))
 		if p := rep.Items(); len(p) > 0 {
 			lo = slices.Min(p)
 		}
+		names := src.names(set)
 		for j := range lo {
 			if slices.Contains(set, j) {
 				continue
 			}
-			s := c.bruteSupp(append(slices.Clone(set), j))
+			s := src.supp(append(slices.Clone(names), src.sink.ib.ID(j)))
 			if (!c.maximal && s >= supp) || (c.maximal && s >= c.smin) {
 				return false
 			}
@@ -210,82 +301,52 @@ func localCheck(c *extChecker, rep *report.Reporter) report.CloMaxCheck {
 	}
 }
 
-// bruteSupp computes the support of set by testing every transaction.
-func (c *extChecker) bruteSupp(set []tract.Item) tract.Supp {
-	var s tract.Supp
-	for t, w := range c.txW {
-		ok := true
-		for _, it := range set {
-			var in bool
-			if c.words > 0 {
-				in = c.itemBits(it)[t/64]&(1<<(t%64)) != 0
-			} else {
-				in = slices.Contains(c.txItems[c.txOff[t]:c.txOff[t+1]], it)
-			}
-			if !in {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			s += w
-		}
-	}
-	return s
-}
-
-// bruteCheck decides closedness/maximality from bruteSupp over all items
-// (a test of extChecker.check itself).
-func bruteCheck(c *extChecker, rep *report.Reporter) report.CloMaxCheck {
+// bruteCheck decides closedness/maximality by brute force from the
+// source transactions, over every item of the source (after the
+// selection), and compares it with extChecker.check, checkPath and both
+// paths of a check (the scan and the vertical tests).
+func bruteCheck(c *extChecker, rep *report.Reporter, src *m5Source) report.CloMaxCheck {
 	return func(set []tract.Item, supp tract.Supp) bool {
 		got := c.check(set, supp)
 		if p := c.checkPath(rep.Items(), set, supp); p != got {
 			panic(fmt.Sprintf("checkPath(%v, %v, %d) = %v, check %v", rep.Items(), set, supp, p, got))
 		}
-		if len(set) > 0 && c.words > 0 { // both bit set paths
+		if len(set) > 0 { // both decisions
 			c.markSet(set)
 			c.bitCover(set)
-			c.coverTxs = c.coverTxs[:0]
-			for i, w := range c.nz {
-				for b := range int32(64) {
-					if c.cover[i]&(1<<b) != 0 {
-						c.coverTxs = append(c.coverTxs, w*64+b)
-					}
-				}
-			}
-			h := c.scanCover()
-			v := c.vertClosed(supp)
+			h, v := c.scanClosed(), c.vertClosed(supp)
 			if c.maximal {
-				v = c.vertMaximal()
+				h, v = c.scanMaximal(), c.vertMaximal()
 			}
 			if h != got || v != got {
 				panic(fmt.Sprintf("check(%v, %d): %v, scan %v, vertical %v", set, supp, got, h, v))
 			}
 		}
+		names := src.names(set)
+		if s := src.supp(names); s != supp {
+			panic(fmt.Sprintf("support of %v: reporter %d, brute force %d", names, supp, s))
+		}
 		want := true
-		for j := range tract.Item(len(c.freq)) {
-			if slices.Contains(set, j) {
+		for _, j := range src.items {
+			if slices.Contains(names, j) {
 				continue
 			}
-			s := c.bruteSupp(append(slices.Clone(set), j))
+			s := src.supp(append(slices.Clone(names), j))
 			if (!c.maximal && s >= supp) || (c.maximal && s >= c.smin) {
 				want = false
 				break
 			}
 		}
 		if got != want {
-			panic(fmt.Sprintf("extChecker.check(%v, %d) = %v, brute force %v", set, supp, got, want))
-		}
-		if s := c.bruteSupp(set); s != supp {
-			panic(fmt.Sprintf("support of %v: reporter %d, brute force %d", set, supp, s))
+			panic(fmt.Sprintf("extChecker.check(%v, %d) = %v, brute force %v", names, supp, got, want))
 		}
 		return got
 	}
 }
 
-// TestExtCheckBrute cross-checks extChecker.check (both forms, and with
-// bit sets both the scan and the vertical path) with a brute-force
-// computation on every set it is asked about.
+// TestExtCheckBrute cross-checks extChecker.check (every form of the bit
+// sets, both the scan and the vertical path) on every set it is asked
+// about with a brute-force computation from the source transactions.
 func TestExtCheckBrute(t *testing.T) {
 	t.Parallel()
 	for seed := range uint64(300) {
@@ -361,15 +422,17 @@ func TestExtCheckRegressions(t *testing.T) {
 			want := oracleSets(t, txs, base)
 			var localFails []string
 			for _, v := range variants {
-				for _, mode := range []int{0, 1, 2} { // dense, sparse, local
-					local := mode == 2
+				for mode := range 4 { // rowsAuto, rowsSparse, rowsMixed, local
+					local := mode == 3
 					cfg := base
 					cfg.Algo, cfg.Pack, cfg.Mode = v.algo, v.pack, base.Mode&^v.clear
-					hooks := testHooks{noBits: mode == 1}
+					var check m5Check
+					rows := rowMode(mode)
 					if local {
-						hooks.cloMaxCheck = localCheck
+						check, rows = localCheck, rowsAuto
 					}
-					res, err := run(scanOf(txs), cfg, runOpts{hooks: hooks})
+					hooks, sink := withSource(check, txs, nil, rows)
+					res, err := run(scanOf(txs), cfg, runOpts{hooks: hooks, sink: sink})
 					if err != nil {
 						t.Fatalf("%s: %v", v.name, err)
 					}
@@ -502,4 +565,124 @@ func TestExtCheckUnlimited(t *testing.T) {
 		}
 	}
 	t.Logf("%d size-limited runs equal to the unlimited ones", runs)
+}
+
+// TestSeek compares seek with a linear search.
+func TestSeek(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	for range 2000 {
+		idx := make([]int32, r.IntN(40))
+		v := int32(0)
+		for k := range idx {
+			v += 1 + int32(r.IntN(5))
+			idx[k] = v
+		}
+		i := r.IntN(len(idx) + 1)
+		w := int32(r.IntN(int(v) + 3))
+		want := i
+		for want < len(idx) && idx[want] < w {
+			want++
+		}
+		if got := seek(idx, i, w); got != want {
+			t.Fatalf("seek(%v, %d, %d) = %d, want %d", idx, i, w, got, want)
+		}
+	}
+}
+
+// TestExtCheckBits compares the cover computations of the bit sets
+// (bitCover, i.e. load and and, covers, suppWith) with a direct
+// computation from the stored transactions, on data large enough for
+// word lists of very different lengths, in every row form.
+func TestExtCheckBits(t *testing.T) {
+	for seed := range uint64(12) {
+		r := rand.New(rand.NewPCG(seed, 0xb175))
+		var txs []oracle.Transaction
+		for range 500 + r.IntN(4000) {
+			var tx oracle.Transaction
+			for j := range 40 {
+				if r.IntN(2*(j+1)*(j+1)) < 3*(j/8+1) { // skewed item frequencies
+					tx.Items = append(tx.Items, strconv.Itoa(j))
+				}
+			}
+			tx.Weight = 1
+			if seed%2 == 1 {
+				tx.Weight = tract.Supp(r.IntN(9)) // also 0
+			}
+			txs = append(txs, tx)
+		}
+		ib := tract.NewItemBase[string]()
+		if err := ib.Count(scanOf(txs)); err != nil {
+			t.Fatal(err)
+		}
+		if ib.Recode(1, 0) < 1 {
+			continue
+		}
+		bag, err := ib.BuildBag(scanOf(txs), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, rows := range []rowMode{rowsAuto, rowsSparse, rowsMixed} {
+			c, err := newExtChecker(bag, report.TargetMaximal, 1, rows, func() error { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			k := tract.Item(len(c.freq))
+			for range 300 {
+				set := []tract.Item{tract.Item(r.IntN(int(k)))}
+				for range r.IntN(3) {
+					if it := tract.Item(r.IntN(int(k))); !slices.Contains(set, it) {
+						set = append(set, it)
+					}
+				}
+				var cover []int32 // the transactions that contain set
+				for tx := range c.txW {
+					items := c.txItems[c.txOff[tx]:c.txOff[tx+1]]
+					if !slices.ContainsFunc(set, func(it tract.Item) bool { return !slices.Contains(items, it) }) {
+						cover = append(cover, int32(tx))
+					}
+				}
+				n := c.bitCover(set)
+				var got []int32
+				for i, w := range c.nz {
+					if c.cover[i] == 0 {
+						t.Fatalf("seed %d rows %d set %v: zero cover word %d", seed, rows, set, w)
+					}
+					for x := c.cover[i]; x != 0; x &= x - 1 {
+						got = append(got, w*64+int32(bits.TrailingZeros64(x)))
+					}
+				}
+				if n != len(cover) || !slices.Equal(got, cover) {
+					t.Fatalf("seed %d rows %d set %v: cover %v (n %d), want %v", seed, rows, set, got, n, cover)
+				}
+				// the same cover level by level in the order of set (as
+				// checkPath builds it)
+				lv := []coverLevel{{}, {}}
+				c.load(&lv[0], set[0])
+				for _, it := range set[1:] {
+					c.and(&lv[1], &lv[0], it)
+					lv[0], lv[1] = lv[1], lv[0]
+				}
+				if lv[0].n != n || !slices.Equal(lv[0].nz, c.nz) || !slices.Equal(lv[0].cover, c.cover) {
+					t.Fatalf("seed %d rows %d set %v: path cover differs", seed, rows, set)
+				}
+				for j := range k {
+					var s tract.Supp
+					all := true
+					for _, tx := range cover {
+						if slices.Contains(c.txItems[c.txOff[tx]:c.txOff[tx+1]], j) {
+							s += c.txW[tx]
+						} else {
+							all = false
+						}
+					}
+					if got := c.suppWith(j); got != s {
+						t.Fatalf("seed %d rows %d set %v: suppWith(%d) = %d, want %d", seed, rows, set, j, got, s)
+					}
+					if got := c.covers(j); got != all {
+						t.Fatalf("seed %d rows %d set %v: covers(%d) = %v, want %v", seed, rows, set, j, got, all)
+					}
+				}
+			}
+		}
+	}
 }

@@ -29,6 +29,25 @@ item universe, transaction length range, Zipf skew, planted patterns,
 weights). Randomness comes from a seeded PCG source with this package's own
 bounded-integer and shuffle derivations and integer-only popularity
 weights, so the bytes are identical on every platform and Go version.
+
+The `dNxKdP` datasets (`d2000x40d60`, `d1000x30d80`, `d5000x60d40`) are
+the independent dense items of the size-limited closed/maximal
+investigation ([M5](../../docs/m5-investigation.md) §7): N transactions
+over K items, each item present with probability P % independently
+(`benchSpec.Density`). They are generated exactly like `denseTxs` of
+`internal/fpg/extcheck_bench_test.go` (PCG seeded `(Seed, 1)`, one
+`math/rand/v2` `Float64` per item and transaction; both are exact IEEE
+operations), with seeds 1, 2 and 3; the first two are also the data of
+the in-process `BenchmarkCloMaxLimited`. The files name item `j` `j`,
+`denseTxs` names it `i<j>`.
+
+```bash
+cd reference
+go run ./bench/gen -dataset d2000x40d60 -o d2000x40d60.tab
+go run ./bench/gen -dataset d1000x30d80 -o d1000x30d80.tab
+go run ./bench/gen -dataset d5000x60d40 -o d5000x60d40.tab
+bench/compare.sh -m devnull '^(m5-|large-[cm]-n)'   # the M5 configurations
+```
 `go test ./bench/...` checks that
 
 - the generator code between the `BEGIN`/`END BENCHGEN CORE` markers is
@@ -72,7 +91,12 @@ GO_FPGROWTH=/path/to/fpgrowth bench/compare.sh   # a prebuilt Go binary
 - **Correctness:** the pattern count printed by each program (`[N
   set(s)]`, `[N rule(s)]`) must be equal across programs, runs and modes,
   and equal to the output file's line count in `file` mode; otherwise the
-  row is marked `MISMATCH` and the script exits non-zero.
+  row is marked `MISMATCH` and the script exits non-zero. A configuration
+  id marked with a trailing `*` in `configs.txt` (size-limited
+  closed/maximal sets) may report fewer sets in Go than in C (deviation
+  M5: C reports non-closed/non-maximal sets there): its counts must be
+  equal across the runs and modes of each program and Go's must not
+  exceed C's; the table then shows "C / Go".
 - **Output:** `<outdir>/summary.md` (environment, dataset table and a
   Markdown table with medians and min-max spreads) and `<outdir>/raw.tsv`
   (every measured run).

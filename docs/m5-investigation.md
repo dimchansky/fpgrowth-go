@@ -197,7 +197,28 @@ transactions containing it) in the bag after recoding, item selection
 and the zmin filter (the filter only drops transactions with fewer than
 zmin items, which contain no set of ≥ zmin items, so the supports of all
 checked sets and their one-item extensions are unchanged). How the cover
-and the supports are computed is described in §4.
+and the supports are computed is described in §4; the argument depends
+only on what is computed, not on how:
+
+- The cover used is exactly the set of positive-weight transactions that
+  contain N̂. It is computed as the cover of the prefix `N` (the items
+  the reporter added): every perfect extension p of `N` has
+  supp(N ∪ {p}) = supp(N), so the transactions of the cover of `N`
+  without p have total weight 0 and are not stored; with only positive
+  weights, cover(N) = cover(N̂). Zero-weight transactions change no
+  support (3.1).
+- Every item j ∈ E \ N̂ is decided: the vertical test visits all items
+  (it stops early only at the first item rarer than supp(N̂), resp.
+  smin, which cannot violate the condition, or at a violation); the
+  closed scan keeps every item of the first cover transaction as a
+  candidate (an item in every cover transaction is in the first one) and
+  intersects the candidates with cover transactions until none is left,
+  so a remaining candidate after all of them is in every one; the
+  maximal scan sums the weight of every cover transaction per item and
+  stops only at an item reaching smin. Intersection and sums do not
+  depend on the order in which the cover transactions are visited, and
+  intersecting with a transaction twice changes nothing, so the probe
+  order of the closed scan (§4) does not affect the result.
 
 ### 3.3 Order facts used (all closed/maximal variants)
 
@@ -296,20 +317,43 @@ reached, accepted by the repository (3.4) and passes the check.
 
 ## 4. Implementation
 
-- `internal/fpg/extcheck.go`: `extChecker`. It keeps the items of every
-  transaction of positive weight and either one bit set of transactions
-  per item (if that costs at most 4× the horizontal form or < 64 MiB) or
-  per-item transaction lists. The cover of a set is the AND of its bit
-  sets (visiting only the non-zero words of its sparsest item), or the
-  rarest item's list filtered by containment. Per check it picks the
-  cheaper of scanning the cover transactions (closed: intersect until no
-  candidate is left; maximal: count until an item reaches smin) and
-  testing every item against the cover (closed: subset test, items in
-  descending frequency, stop at the first item rarer than the set;
-  maximal: weighted popcount via weight bit planes).
+- `internal/fpg/extcheck.go`: `extChecker`, built once per run from the
+  bag. It keeps
+  - the items of every transaction of positive weight (horizontal form,
+    ascending codes per transaction, in bag order), and
+  - the bit set of transactions of every item (vertical form; word w
+    holds transactions 64w..64w+63) in compact form: the indices of the
+    item's non-zero words and, for a *sparse* item, their values; a
+    *dense* item has a full row of words instead of the values, for
+    direct access. Every item is dense if the full rows need at most 4×
+    the memory of the horizontal items (all benchmark datasets except
+    `sparse-large`); otherwise the items whose non-zero words fill at
+    least half of the words are dense.
+- Covers. The cover of a reported set is the cover of the reporter's
+  prefix (§3.2). `checkPath` keeps the covers of the prefix's leading
+  items per depth (a depth-first search changes only the end of the
+  prefix) and computes each new level with one AND of the level before
+  and the new item's bit set: a dense item costs one lookup per
+  non-zero cover word; a sparse item merges the two word lists if their
+  lengths are within a factor of 4, else visits the shorter one and
+  searches the other exponentially. `check` (an empty prefix: the set
+  consists of top-level perfect extensions) ANDs the set's bit sets,
+  starting from the item with the fewest non-zero words.
+- Decision. Per check the cheaper of two methods is estimated and used:
+  - scanning the cover transactions (closed: the candidates are the
+    items of the first cover transaction; they are intersected first
+    with the first transactions of 8 cover words spread over the cover,
+    because bag order is lexicographic and neighbouring transactions
+    share most items, then with all cover transactions in order, until
+    no candidate is left; maximal: count supp(X ∪ {j}) until an item
+    reaches smin);
+  - testing every item against the cover (closed: subset test, items in
+    descending frequency, stop at the first item rarer than the set;
+    maximal: weighted popcount via weight bit planes).
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
-  unlimited as before); `xable2`/`deeper` are the size gates.
+  unlimited as before); `xable2`/`deeper` are the size gates. The miner
+  calls `checkPath(rep.Items(), set, supp)`.
 - `internal/fpg/{simple,complex,topdown,fim16}.go`: projections gated by
   `deeper` (the machine `clear`s an item instead of projecting it).
 - `internal/report/report.go`: `Reporter.SetCloMaxCheck`, called in
@@ -317,32 +361,76 @@ reached, accepted by the repository (3.4) and passes the check.
   border, evaluation and sink.
 - The full-exploration path with a limit and the temporary switch used
   for the comparison below were removed. Test hooks (a replacement check,
-  forcing transaction lists) live in an unexported `Miner` field.
+  the form of the bit sets: automatic, all sparse, or mixed) live in an
+  unexported `Miner` field.
+
+History of the checker (all versions exact; only memory and speed
+differ):
+
+| version | cover | vertical form |
+| --- | --- | --- |
+| `3e5d372` | per check from scratch (AND of the set's bit sets) | full rows for every item if they need ≤ 4× the horizontal items **or ≤ 64 MiB**, else per-item transaction lists (the rarest item's list filtered by containment) |
+| `671474e` | incremental per prefix depth (`checkPath`, bit sets only) | as above |
+| Stage 3 fix S3-1 (this version) | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
+
+The 64 MiB floor of the first two versions was a memory-for-speed
+trade-off: on `sparse-large` (2,592 frequent items at `-s0.05`, 3,115
+words) it admitted full rows of 64.6 MB, 9.1× the 7.1 MB of horizontal
+items, because the transaction lists were slower there — measured with
+incremental covers for the lists as well (in-process CLI benchmark,
+n = 5–6, load 5–40): +21 to +31 % time for `-tc`/`-tm` `-s0.05 -n2/-n3`
+at −80 MB allocated. Compact rows remove the trade-off: they bound the
+vertical form relative to the input (§5) and are faster than both
+(§7).
 
 ## 5. Memory and cost of the check
 
-The checker stores every item instance once (4 bytes) plus either the
-bit sets (bounded as above) or a second copy as transaction lists. A
-check costs at most min(Σ |t| over the cover, #items × #non-zero cover
-words) plus the cover computation; closed checks usually stop after a
-few transactions or items. It runs once per set that passes the
-repository and the size/support gates, i.e. at most once per output
-candidate. Full exploration's extra cost, by contrast, is the whole
-closed (maximal) lattice above zmax, which is exponential on dense data.
+Memory, with T distinct transactions of positive weight, W = ⌈T/64⌉
+words, k items, O item occurrences (Σ |t|) and Z ≤ O non-zero words
+(Σ over items):
+
+| part | bytes |
+| --- | --- |
+| horizontal items, offsets, weights | 4·O + 16·T |
+| non-zero word index (every item) | 4·Z |
+| values of sparse items | 8 per non-zero word of a sparse item |
+| full rows of dense items | 8·W per dense item; ≤ 16 per non-zero word (2·nz ≥ W), or ≤ 16·O in all when every item is dense (the 4× rule) |
+| vertical form in all (index + values + rows) | **≤ 20·O** (5× the horizontal items) |
+| weight planes (only if some distinct transaction has weight > 1) | 8·W·⌈log₂(max weight + 1)⌉ |
+| per-depth path cache (`checkPath`) | ≤ 12·W per level (12 bytes per non-zero cover word; level k ⊆ level k−1 ⊆ the first item's words), at most zmax levels (the prefix of a reported set has at most zmax items): ≤ 12·W·zmax |
+| scratch covers of `check` | ≤ 2 · 12·W |
+| per item: frequencies, order, stamps, counts, offsets | ≈ 44·k |
+
+Measured on `sparse-large` at `-s0.05` (k = 2,592, T = 199,337,
+W = 3,115, O = 1,765,336, Z = 924,374; the 4× rule fails, 62 dense
+items, 5 weight planes from merged duplicate transactions): vertical
+form 11.9 MB = 1.7× the 7.1 MB of horizontal items, instead of 64.6 MB
+of full rows plus a 3.7 MB index before. Peak RSS of the CLI (§7):
+126 MB, before 179–181 MB, the unlimited search 106 MB.
+
+A check costs at most min(Σ |t| over the cover, #items × #non-zero cover
+words) plus the cover update; closed checks usually stop after a few
+transactions or items. It runs once per set that passes the repository
+and the size/support gates, i.e. at most once per output candidate.
+Full exploration's extra cost, by contrast, is the whole closed
+(maximal) lattice above zmax, which is exponential on dense data.
 
 ## 6. Test evidence
 
-All on the final code (`go test ./internal/fpg -run
-'TestExtCheck|TestOracle$|TestDeviations' -v` with
+All on the final code, re-run after fix S3-1 with the same counts
+(`go test ./internal/fpg -run
+'TestExtCheck|TestOracle$|TestDeviations|TestSeek' -v` with
 `FPG_M5_CASES=10000 FPG_ORACLE_CASES=5000 FPG_M5_UNLIMITED=300`):
 
 | test | what | result |
 | --- | --- | --- |
-| `TestExtCheckOracle` | 10,000 random datasets (dense: each transaction half to all of 1–12 items; sparse: 0–7 items; 1/10 with 17–20 items for the >16-items paths), unit/small/zero/large weights, `-s` absolute and relative, zmin 0–3, zmax zmin..zmin+3, in 1/6 of the cases 0–7, `-S`, `-x`, `-u`, `-q2 1 0 -1 -2`, borders, item selection in 1/4; closed and maximal × 11 variants (`-As -l0/3/16`, `-Ac` ± `-j` ± `-l0`, `-Ad -l0/3/16`, `-At`); even seeds bit sets, odd seeds transaction lists | **220,000 comparisons, 0 differences** |
+| `TestExtCheckOracle` | 10,000 random datasets (dense: each transaction half to all of 1–12 items; sparse: 0–7 items; 1/10 with 17–20 items for the >16-items paths), unit/small/zero/large weights, `-s` absolute and relative, zmin 0–3, zmax zmin..zmin+3, in 1/6 of the cases 0–7, `-S`, `-x`, `-u`, `-q2 1 0 -1 -2`, borders, item selection in 1/4; closed and maximal × 11 variants (`-As -l0/3/16`, `-Ac` ± `-j` ± `-l0`, `-Ad -l0/3/16`, `-At`); seed mod 3 selects the bit set form: automatic, every item sparse, even items dense and odd ones sparse | **220,000 comparisons, 0 differences** |
 | `TestOracle` (existing) | 5,000 datasets, all four targets × 11 variants | 220,000 comparisons, 0 differences |
 | `TestExtCheckUnlimited` | 300 datasets beyond the oracle (20–40 items, 40–200 transactions): limited run (zmax 1–4) = unlimited run filtered by size, closed/maximal × 11 variants | 26,400 runs equal |
-| `TestExtCheckBrute` | 300 datasets: every call of the check (both forms; with bit sets both the scan and the vertical path) against a brute-force single-item support scan, plus the reporter's support | 6,600 runs, 0 mismatches |
-| `TestExtCheckRegressions` | minimized seed 678 (with/without `-x`, closed/maximal), original seed 678, the B5 reproducers, two-item and depth-2 "above" cases, all variants, both checker forms | complete check: 0 differences; local check fails on every case marked so (e.g. `above closed`: all 11 variants) |
+| `TestExtCheckBrute` | 300 datasets: every call of the check (all three bit set forms; `check`, `checkPath` and both the scan and the vertical path) against a brute-force single-item support scan computed from the **source transactions** (item names, selection applied; independent of the checker's storage and of the bag), plus the reporter's support | 6,600 runs, 0 mismatches |
+| `TestExtCheckBits` | 12 datasets of 500–4,500 transactions over 40 items with skewed frequencies (word lists of very different lengths; weights incl. 0), all three forms: covers of random 1–3-item sets (`bitCover` and level by level in arbitrary order as `checkPath` builds them), `covers` and `suppWith` of every item, against a direct computation | pass |
+| `TestSeek` | 2,000 random cases of the exponential search against a linear one | pass |
+| `TestExtCheckRegressions` | minimized seed 678 (with/without `-x`, closed/maximal), original seed 678, the B5 reproducers, two-item and depth-2 "above" cases, all variants, all three bit set forms | complete check: 0 differences; local check fails on every case marked so (e.g. `above closed`: all 11 variants) |
 | `TestExtCheckLocalSweep` | negative control: the same traversal with a **local** check (only items below the prefix, i.e. the conditional tree's items; repository for the rest) | 5,072 of 33,000 runs (508 of 1,500 datasets) differ from the oracle |
 | `TestReporter_BoundaryPexNotEnough` (report) | minimized case on the reporter simulator: boundary pex alone reports `{b,c}`; with the complete check equal to brute force | pass |
 | `TestReporter_PropertyClosedMaximalZmax` (report) | 1,600 random simulator runs without the chain shortcut, with the complete check | pass |
@@ -415,7 +503,70 @@ n2 4.4 ms, n3 15.0 ms (4.5 MB); maximal within 4 % of closed.
 Earlier versions of the checker, for the record: scanning the rarest
 item's transactions only (no bit sets) made `d5000x60d40 -tm -n3` 3.0 s
 and `s20000x500 -tm -n3` 0.27 s; plain bit sets without the cover-word
-index made the latter 15 s. The final hybrid fixed both.
+index made the latter 15 s. The hybrid of `3e5d372` fixed both.
+
+The `dNxKdP` data of the table above was generated in process before the
+datasets were pinned; `s20000x500` is not reproducible. Since Stage 3
+fix S3-2 the dense datasets are part of `reference/bench/gen` (pinned
+SHA-256, seeds 1, 2, 3; `reference/bench/README.md`), the configurations
+are in `reference/bench/configs.txt` (`m5-*`, `large-[cm]-n*`):
+
+```bash
+cd reference
+bench/compare.sh -n 5 -m devnull '^(m5-|large-)'
+```
+
+### 7.1 Cost on large sparse data (Stage 3 fix S3-1)
+
+`sparse-large` (200,000 transactions, 20,000 items, average length
+11.1; at `-s0.05` 2,592 frequent items) is where the check costs most:
+the sets are many and their covers large. CLI, output to `/dev/null`,
+`bench/compare.sh -n 5 -m devnull` medians (wall ms / peak RSS MB); C
+reports the same counts here. "671474e" is the checker before the fix,
+"fix" the working tree:
+
+| config | sets | C | Go `671474e` | Go fix |
+| --- | ---: | ---: | ---: | ---: |
+| `-tc -s0.05` (unlimited) | 37,504 | 280 / 77 | 575 / 107 | 550 / 107 |
+| `-tm -s0.05` (unlimited) | 11,838 | 279 / 77 | 595 / 106 | 557 / 104 |
+| `-tc -s0.05 -n2` | 12,769 | 277 / 77 | 777 / 181 | 622 / 126 |
+| `-tc -s0.05 -n3` | 25,337 | 288 / 77 | 814 / 181 | 673 / 126 |
+| `-tm -s0.05 -n2` | 4,091 | 272 / 77 | 789 / 179 | 715 / 126 |
+| `-tm -s0.05 -n3` | 8,512 | 280 / 77 | 876 / 180 | 903 / 126 |
+
+(Load 3–6; the C and "fix" columns are one run of `compare.sh`, the
+`671474e` column another.) Before the fix the limited runs took
+1.3–1.5× the unlimited ones' wall time and +73 MB RSS (the full rows of
+§4); C, which performs no check, does not get slower with `-n`. The
+interleaved before/after comparison (10 runs each, `/usr/bin/time -l`,
+benchstat; instructions retired are deterministic):
+
+| config | wall | user+sys | instructions | RSS |
+| --- | --- | --- | --- | --- |
+| `-tc -s0.05 -n2` | −14.3 % (p = 0.001) | −12.3 % | −9.8 % | 181 → 126 MB |
+| `-tc -s0.05 -n3` | −14.1 % (p = 0.000) | −13.9 % | −12.7 % | 181 → 126 MB |
+| `-tm -s0.05 -n2` | ~ (p = 0.68) | ~ | +0.8 % | 179 → 126 MB |
+| `-tm -s0.05 -n3` | ~ (p = 0.85) | ~ | +2.9 % | 179 → 126 MB |
+| `-tc -s0.05` (no limit, control) | ~ | ~ | ~ | ~ |
+
+What remains: closed checks now visit about 3 % of the cover
+transactions (the probes; before the fix the scan visited 57 % of
+the cover on average, 4.9 M transactions for 25,337 checks at `-n3`,
+because neighbouring transactions in bag order share most items). A
+maximal check of a maximal set must count every cover transaction (here
+1.7 M of 2.5 M cover transactions at `-n3`), so `-tm` stays 1.3–1.6×
+the unlimited run. The remaining memory (+20 MB over the unlimited
+run) is the horizontal copy of the bag (7.1 MB items, 3.2 MB offsets and
+weights), the vertical form (11.9 MB, §5) and the per-item arrays.
+
+The other datasets (same interleaved method, base `671474e`): closed
+checks −3 to −13 % wall (`sparse.tab -tc -s0.05 -n2/-n3`, `-s0.02 -n3`,
+`dense.tab -tc -s2 -n3` −12.6 %, `weighted.tab -w -tc -s0.2 -n3`
+−11.9 %); maximal and the small `dNxKdP` runs within noise or slightly
+slower (`dense.tab -tm -s2 -n3` +2.5 %, p = 0.010; `weighted.tab -w -tm`
++4.8 % wall, p = 0.002, user+sys equal; `d5000x60d40` ~ wall, +3–5 %
+user+sys at 10 ms resolution; in-process `CloMaxLimited` ~ to +2.8 %).
+RSS is equal or lower everywhere.
 
 ## 8. Decision
 
@@ -426,12 +577,21 @@ exponential cost of searching beyond zmax: 1,400–2,800× faster and
 50–200× less memory on dense data with small `-n`, and also faster than
 C there (C searches one level deeper, to zmax+1, and its 16-items machine
 has no limit at all). On sparse data, where full exploration is cheap,
-it costs up to 1.7× (≤ 60 ms on 20,000 transactions) for the per-set
-check; that bounded overhead is accepted for the removal of the
-exponential worst case. Without a relevant limit nothing changes.
+the per-set check is a real cost: at `3e5d372` up to 1.7× full
+exploration on 20,000 transactions (`s20000x500`, ≤ 60 ms), and on
+`sparse-large` (200,000 transactions) 1.3–1.5× the unlimited run's wall
+time and +73 MB RSS (§7.1, `671474e`). After
+fix S3-1 (compact bit sets, probed closed scans) the limited runs there
+take 1.1–1.2× (closed) and 1.3–1.6× (maximal) the unlimited ones and
++20 MB; Go is then 2.3–3.2× C, whose limited runs perform no check (and
+are not exact in general, B5). That bounded overhead is accepted for the
+removal of the exponential worst case. Without a relevant limit nothing
+changes.
 
-Not done (possible follow-ups): reusing covers along the search path (the
-cover of a set equals the cover of its prefix, so it could be computed
-incrementally per recursion level) would cut the check cost on sparse
-data further. The pre-change M5 rows in `docs/benchmarks.md` describe the
-old full-exploration path.
+Reusing covers along the search path (`checkPath`, the cover of a set
+is the cover of its prefix) was implemented after this report's first
+version (`docs/benchmarks.md`, attempt 10) and extended to every form of
+the bit sets by fix S3-1. Possible follow-up: maximal checks of maximal
+sets on sparse data still count every cover transaction. The pre-change
+M5 rows in `docs/benchmarks.md` describe the old full-exploration
+path.

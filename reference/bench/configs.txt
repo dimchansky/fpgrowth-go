@@ -1,7 +1,10 @@
 # Configurations of the Go-vs-C comparison (reference/bench/compare.sh).
 # Format: <id> <input file> <fpgrowth options...>
 # Inputs are written by `go run ./bench/gen -all -dir <data>`; thresholds
-# are chosen so that every run reports 10^4 to 10^6 patterns.
+# are chosen so that every run reports 10^4 to 10^6 patterns (except the
+# M5 rows). A trailing "*" on the id marks a size-limited closed/maximal
+# configuration where C may report more sets than Go (deviation M5, bug
+# B5); its counts are checked per program (Go's never above C's).
 
 # sparse: 20,000 transactions, 1,000 items, average length 9.3
 sparse-s        sparse.tab        -s0.1
@@ -15,6 +18,11 @@ sparse-r-lift   sparse.tab        -tr -s0.05 -c50 -el -d150
 large-s         sparse-large.tab  -s0.05
 large-c         sparse-large.tab  -tc -s0.05
 large-m         sparse-large.tab  -tm -s0.05
+# size-limited closed/maximal (deviation M5): complete extension check
+large-c-n2*     sparse-large.tab  -tc -s0.05 -n2
+large-c-n3*     sparse-large.tab  -tc -s0.05 -n3
+large-m-n2*     sparse-large.tab  -tm -s0.05 -n2
+large-m-n3*     sparse-large.tab  -tm -s0.05 -n3
 
 # dense: 20,000 transactions, 80 items, average length 28.1 (planted patterns)
 dense-s         dense.tab         -s5
@@ -46,3 +54,17 @@ long-m          long.tab          -tm -s2.5
 # weighted: like sparse, integer weights 1..20 in the last field
 weighted-s      weighted.tab      -w -s0.2
 weighted-c      weighted.tab      -w -tc -s0.2
+
+# M5: size-limited closed/maximal sets on independent dense items
+# (docs/m5-investigation.md §7; dNxKdP: N transactions, K items, density P %)
+m5-d2000-c-n1*  d2000x40d60.tab   -tc -s2 -n1
+m5-d2000-c-n2*  d2000x40d60.tab   -tc -s2 -n2
+m5-d2000-m-n2*  d2000x40d60.tab   -tm -s2 -n2
+m5-d2000-c-n3*  d2000x40d60.tab   -tc -s2 -n3
+m5-d2000-m-n3*  d2000x40d60.tab   -tm -s2 -n3
+m5-d2000-c-n4*  d2000x40d60.tab   -tc -s2 -n4
+m5-d1000-c-n2*  d1000x30d80.tab   -tc -s10 -n2
+m5-d1000-m-n2*  d1000x30d80.tab   -tm -s10 -n2
+m5-d1000-c      d1000x30d80.tab   -tc -s30
+m5-d5000-c-n3*  d5000x60d40.tab   -tc -s5 -n3
+m5-d5000-m-n3*  d5000x60d40.tab   -tm -s5 -n3

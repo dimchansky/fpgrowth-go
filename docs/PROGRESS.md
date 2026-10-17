@@ -26,20 +26,26 @@ linked documents.
   returns, difftest classification gaps, this log). Public API: root
   package (`docs/api-design.md`); docs: README, `docs/algorithm.md`,
   `docs/cli.md`.
-- **Stage 3 (benchmarks, profiling, optimization):** next, including the
-  M5 investigation below.
+- **Stage 3 (benchmarks, profiling, optimization): accepted and closed**
+  (`docs/reviews/stage3-review-1.md`). Benchmark suite and Go-vs-C runner
+  (`reference/bench`), report `docs/benchmarks.md` (Go/C geometric mean
+  1.72 → 1.60), M5 resolved with a complete extension check
+  (`docs/m5-investigation.md`).
+- **Stage 4 (CI/CD, releases, OSS files): implemented** (`62b8b17`);
+  Stage 4 critic review pending.
 
 ## Next steps
 
-1. Stage 3: benchmark suite (sparse/dense, item universes, lengths,
-   weights, thresholds, targets, rules, variants, file vs memory sources,
-   streaming), C comparison (time, CPU, RSS), profiling, optimizations with
-   benchstat evidence, M5 investigation, benchmark report; then the Stage 3
-   critic review.
-2. Stage 4: CI/CD, release automation, OSS files; Stage 4 review; final
-   report.
+1. Stage 4 review; then the final report.
+2. Owner actions after creating the GitHub repository: `release`
+   environment with reviewers, tag/branch protection, read-only default
+   token, private vulnerability reporting, Dependabot alerts; rename
+   CHANGELOG `[Unreleased]` before the first tag.
 
 ## Open problems
+
+- None blocking. (The M5 notes below are kept for history; resolved in
+  Stage 3.)
 
 - **M5 investigation — done (Stage 3, awaiting the Stage 3 review).**
   Report: `docs/m5-investigation.md`. The seed-678 case was minimized to

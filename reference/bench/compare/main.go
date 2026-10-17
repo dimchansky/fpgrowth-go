@@ -37,6 +37,11 @@ type config struct {
 	id    string
 	input string
 	args  []string
+	// m5: C may report more patterns than Go (deviation M5: C's
+	// size-limited closed/maximal search reports non-closed/non-maximal
+	// sets); the counts are compared per program only. Marked by a
+	// trailing "*" on the id in configs.txt.
+	m5 bool
 }
 
 // sample is the measurement of one run.
@@ -140,16 +145,21 @@ func run(cbin, gobin, data, cfgFile, only, modeList string, warmup, reps int, ra
 				}
 			}
 			cs, gs := res["C"], res["Go"]
-			ok := consistent(cs, gs, m.name == "file")
+			file := m.name == "file"
+			ok := consistent(slices.Concat(cs, gs), file)
+			patterns := fmt.Sprint(cs[0].count)
+			if c.m5 {
+				ok = consistent(cs, file) && consistent(gs, file) && gs[0].count <= cs[0].count
+				if gs[0].count != cs[0].count {
+					patterns = fmt.Sprintf("%d / %d", cs[0].count, gs[0].count) // C / Go
+				}
+			}
 			if !ok {
 				failed = true
+				patterns += " MISMATCH"
 			}
-			mark := ""
-			if !ok {
-				mark = " MISMATCH"
-			}
-			fmt.Fprintf(tw, "| %s | %s | %d%s | %s | %s | %.2f | %.0f | %.0f | %.1f | %.1f | %.2f | %.2f | %s |\n",
-				c.id, m.name, cs[0].count, mark,
+			fmt.Fprintf(tw, "| %s | %s | %s | %s | %s | %.2f | %.0f | %.0f | %.1f | %.1f | %.2f | %.2f | %s |\n",
+				c.id, m.name, patterns,
 				spread(cs, func(s sample) float64 { return s.wall * 1e3 }),
 				spread(gs, func(s sample) float64 { return s.wall * 1e3 }),
 				median(gs, wallOf)/median(cs, wallOf),
@@ -182,9 +192,9 @@ func instrRatio(cs, gs []sample) string {
 
 // consistent reports whether all runs reported the same pattern count
 // (and, in file mode, wrote that many lines).
-func consistent(cs, gs []sample, file bool) bool {
-	want := cs[0].count
-	for _, s := range slices.Concat(cs, gs) {
+func consistent(ss []sample, file bool) bool {
+	want := ss[0].count
+	for _, s := range ss {
 		if s.count != want || (file && s.lines != want) {
 			return false
 		}
@@ -233,7 +243,8 @@ func readConfigs(path string) ([]config, error) {
 		if len(fields) < 2 {
 			return nil, fmt.Errorf("%s: bad line %q", path, line)
 		}
-		cfgs = append(cfgs, config{id: fields[0], input: fields[1], args: fields[2:]})
+		id, m5 := strings.CutSuffix(fields[0], "*")
+		cfgs = append(cfgs, config{id: id, input: fields[1], args: fields[2:], m5: m5})
 	}
 	return cfgs, sc.Err()
 }

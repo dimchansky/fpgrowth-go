@@ -26,17 +26,24 @@ import (
 // so with them gone supp(X ∪ {j}) = supp(X) holds iff j is in every
 // transaction of the cover of X (the transactions that contain X).
 //
-// The items of every transaction are stored (horizontal form). The cover
-// of X comes from one bit set of transactions per item (the AND of the
-// bit sets of X), if the bit sets need at most denseFactor times the
-// memory of the horizontal form or less than denseMinBytes; otherwise
-// from the transaction list of the rarest item of X, filtered by
-// containment. A check then either scans the cover transactions
+// The items of every transaction are stored (horizontal form), and for
+// every item the bit set of its transactions (vertical form), in compact
+// form: the indices of its non-zero words and, for a sparse item, their
+// values; a dense item has a full row of words instead of the values,
+// for direct access. Every item is dense if the full rows need at most 4
+// times the memory of the horizontal form's items, else the items with
+// non-zero words in at least half of the words. The
+// vertical form needs at most 20 bytes per item occurrence, i.e. 5 times
+// the horizontal form's items (docs/m5-investigation.md §5). The cover
+// of X is the AND of the bit sets of X, kept in the same compact form;
+// an AND with a sparse item merges the two word lists if their lengths
+// are within a factor of 4, else visits the shorter one and searches the
+// other. A check then either scans the cover transactions
 // (horizontal: a closed check intersects them and stops as soon as no
 // candidate is left, a maximal check counts supports and stops at the
-// first frequent extension) or, with bit sets, tests every item against
-// the cover (vertical: a subset test, resp. a weighted population count,
-// over the non-zero cover words), whichever is estimated to be cheaper.
+// first frequent extension) or tests every item against the cover
+// (vertical: a subset test, resp. a weighted population count, over the
+// non-zero cover words), whichever is estimated to be cheaper.
 type extChecker struct {
 	maximal bool
 	smin    tract.Supp
@@ -47,11 +54,17 @@ type extChecker struct {
 	txItems []tract.Item // ascending codes per transaction
 	txW     []tract.Supp // positive transaction weights
 
-	// bit sets (words > 0)
+	// Bit sets: word w holds transactions 64w..64w+63. Item i has its
+	// non-zero words at the indices nzIdx[nzOff[i]:nzOff[i+1]]
+	// (ascending); their values are rows[rowOf[i]*words+w] for a dense
+	// item (rowOf[i] >= 0), else swW[swOff[i]:swOff[i+1]].
 	words  int
-	bits   []uint64 // item i: bits[i*words : (i+1)*words]
-	nzOff  []int    // non-zero words of item i: nzIdx[nzOff[i]:nzOff[i+1]]
+	nzOff  []int
 	nzIdx  []int32
+	rowOf  []int32
+	rows   []uint64
+	swOff  []int
+	swW    []uint64
 	planes []uint64 // weight bit b: planes[b*words:]; nil: all weights 1
 	// The cover of the checked set: its non-zero words cover[i], at word
 	// index nz[i]. They alias a level of path or the scratch below.
@@ -63,21 +76,13 @@ type extChecker struct {
 	path  []coverLevel
 	depth int // number of valid levels of path
 
-	nzBuf    []int32  // scratch: the cover computed by bitCover
-	coverBuf []uint64 // (nz and cover)
-
-	// transaction lists (words == 0)
-	tidOff []int // transactions of item i: tids[tidOff[i]:tidOff[i+1]]
-	tids   []int32
+	scratch [2]coverLevel // bitCover
 
 	// Scratch state: stamps avoid clearing per call.
 	inSet    []uint32     // inSet[i] == setStamp: i is in the checked set
-	seen     []uint32     // seen[i] == txStamp: i is in the current transaction
 	cnt      []tract.Supp // maximal: supp(X ∪ {i}) so far
 	cand     []tract.Item // candidates / touched items
-	coverTxs []int32      // the cover transactions
-
-	setStamp, txStamp uint32
+	setStamp uint32
 }
 
 // coverLevel is a cover in compact form: the non-zero words cover[i] of
@@ -90,19 +95,22 @@ type coverLevel struct {
 	n     int
 }
 
-// Size rule for the bit sets (see extChecker).
+// rowMode selects the dense/sparse form of the item bit sets.
+type rowMode uint8
+
 const (
-	denseFactor   = 4
-	denseMinBytes = 64 << 20
+	rowsAuto   rowMode = iota // see makeBits
+	rowsSparse                // every item sparse (tests)
+	rowsMixed                 // even items dense, odd items sparse (tests)
 )
 
 // newExtChecker builds the checker for target (closed or maximal) from
 // bag, whose items are codes 0..bag.NumItems()-1 (packed entries are
-// unpacked). smin is the absolute minimum support. noBits forces the
-// transaction lists instead of bit sets (tests). abort is the
+// unpacked). smin is the absolute minimum support. rows selects the
+// form of the bit sets (rowsAuto except in tests). abort is the
 // cancellation check, called every buildCheckEvery transactions.
 func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
-	noBits bool, abort func() error,
+	rows rowMode, abort func() error,
 ) (*extChecker, error) {
 	k := bag.NumItems()
 	c := &extChecker{
@@ -110,13 +118,11 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		smin:    smin,
 		freq:    make([]tract.Supp, k),
 		inSet:   make([]uint32, k),
-		seen:    make([]uint32, k),
 		cnt:     make([]tract.Supp, k),
 	}
 	c.txItems = make([]tract.Item, 0, presize(bag.Extent()))
 	c.txOff = append(make([]int, 0, bag.Len()+1), 0)
 	c.txW = make([]tract.Supp, 0, bag.Len())
-	occ := make([]int, k+1) // occurrences per item, then offsets
 	nt := 0
 	for items, w := range bag.All() {
 		if nt++; nt%buildCheckEvery == 0 {
@@ -139,7 +145,6 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 			c.txItems = append(c.txItems, it)
 		}
 		for _, it := range c.txItems[c.txOff[len(c.txOff)-1]:] {
-			occ[it+1]++
 			c.freq[it] += w
 		}
 		c.txOff = append(c.txOff, len(c.txItems))
@@ -158,46 +163,77 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		}
 		return 0
 	})
-	words := (len(c.txW) + 63) / 64
-	if b := int64(k) * int64(words) * 8; !noBits &&
-		(b <= denseMinBytes || b <= denseFactor*4*int64(len(c.txItems))) {
-		c.makeBits(words)
-		return c, nil
-	}
-	for i := range k {
-		occ[i+1] += occ[i]
-	}
-	c.tidOff = occ
-	c.tids = make([]int32, occ[k])
-	pos := make([]int, k)
-	copy(pos, occ[:k])
-	for t := range c.txW {
-		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-			c.tids[pos[it]] = int32(t)
-			pos[it]++
-		}
-	}
+	c.makeBits(rows)
 	return c, nil
 }
 
-// makeBits builds the item bit sets and the weight planes.
-func (c *extChecker) makeBits(words int) {
+// makeBits builds the item bit sets (two passes over the transactions:
+// count the non-zero words per item, then fill them) and the weight
+// planes. Memory: 4 bytes per non-zero word for the index; if every item
+// is dense, words*8 per item, at most 16 bytes per item occurrence in
+// all; else 8 per non-zero word of a sparse item and words*8 per dense
+// item (at most 16 per non-zero word). So at most 20 bytes per item
+// occurrence.
+func (c *extChecker) makeBits(mode rowMode) {
 	k := len(c.freq)
+	words := (len(c.txW) + 63) / 64
 	c.words = words
-	c.bits = make([]uint64, k*words)
-	for t := range c.txW {
-		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-			c.bits[int(it)*words+t/64] |= 1 << (t % 64)
-		}
-	}
+	last := make([]int32, k) // word index + 1 of the item's last transaction
 	c.nzOff = make([]int, k+1)
-	for i := range k {
-		for w, x := range c.bits[i*words : (i+1)*words] {
-			if x != 0 {
-				c.nzIdx = append(c.nzIdx, int32(w))
+	for t := range c.txW {
+		w := int32(t/64) + 1
+		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
+			if last[it] != w {
+				last[it] = w
+				c.nzOff[it+1]++
 			}
 		}
-		c.nzOff[i+1] = len(c.nzIdx)
+	}
+	c.rowOf = make([]int32, k)
+	c.swOff = make([]int, k+1)
+	// Full rows for every item if they need at most 4 times the
+	// horizontal form's items (4 bytes each): direct access throughout.
+	all := int64(k)*int64(words)*8 <= 16*int64(len(c.txItems))
+	dense := 0
+	for i := range k {
+		n := c.nzOff[i+1]
+		var d bool
+		switch mode {
+		case rowsAuto:
+			d = all || 2*n >= words
+		case rowsMixed:
+			d = i%2 == 0
+		}
+		c.swOff[i+1] = c.swOff[i]
+		if d {
+			c.rowOf[i] = int32(dense)
+			dense++
+		} else {
+			c.rowOf[i] = -1
+			c.swOff[i+1] += n
+		}
+		c.nzOff[i+1] += c.nzOff[i]
+	}
+	c.nzIdx = make([]int32, c.nzOff[k])
+	c.swW = make([]uint64, c.swOff[k])
+	c.rows = make([]uint64, dense*words)
+	pos := make([]int, k) // non-zero words of item i so far
+	clear(last)
+	for t := range c.txW {
+		w := int32(t/64) + 1
+		bit := uint64(1) << (t % 64)
+		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
+			if last[it] != w {
+				last[it] = w
+				c.nzIdx[c.nzOff[it]+pos[it]] = w - 1
+				pos[it]++
+			}
+			if r := c.rowOf[it]; r >= 0 {
+				c.rows[int(r)*words+int(w-1)] |= bit
+			} else {
+				c.swW[c.swOff[it]+pos[it]-1] |= bit
+			}
+		}
 	}
 	maxW := slices.Max(append([]tract.Supp{1}, c.txW...))
 	if maxW > 1 {
@@ -211,6 +247,133 @@ func (c *extChecker) makeBits(words int) {
 			}
 		}
 	}
+}
+
+// nzOf returns the indices of the non-zero words of item i.
+func (c *extChecker) nzOf(i tract.Item) []int32 {
+	return c.nzIdx[c.nzOff[i]:c.nzOff[i+1]]
+}
+
+// row returns the full row of a dense item i, nil for a sparse one.
+func (c *extChecker) row(i tract.Item) []uint64 {
+	r := int(c.rowOf[i])
+	if r < 0 {
+		return nil
+	}
+	return c.rows[r*c.words : (r+1)*c.words]
+}
+
+// sparseWords returns the non-zero words of a sparse item i (parallel to
+// nzOf(i)).
+func (c *extChecker) sparseWords(i tract.Item) []uint64 {
+	return c.swW[c.swOff[i]:c.swOff[i+1]]
+}
+
+// seek returns the smallest index j >= i with idx[j] >= w (len(idx) if
+// there is none), searching exponentially from i (idx ascending).
+func seek(idx []int32, i int, w int32) int {
+	if i >= len(idx) || idx[i] >= w {
+		return i
+	}
+	// idx[i] < w: gallop to an upper end, then bisect (lo, hi]
+	lo, step := i, 1
+	hi := lo + step
+	for hi < len(idx) && idx[hi] < w {
+		lo = hi
+		step <<= 1
+		hi = lo + step
+	}
+	hi = min(hi, len(idx))
+	for lo+1 < hi { // idx[lo] < w, hi == len(idx) or idx[hi] >= w
+		m := int(uint(lo+hi) >> 1)
+		if idx[m] < w {
+			lo = m
+		} else {
+			hi = m
+		}
+	}
+	return hi
+}
+
+// load sets lv to the bit set of item.
+func (c *extChecker) load(lv *coverLevel, item tract.Item) {
+	idx := c.nzOf(item)
+	nz := append(lv.nz[:0], idx...)
+	cover, n := lv.cover[:0], 0
+	if b := c.row(item); b != nil {
+		for _, w := range idx {
+			x := b[w]
+			cover = append(cover, x)
+			n += bits.OnesCount64(x)
+		}
+	} else {
+		for _, x := range c.sparseWords(item) {
+			cover = append(cover, x)
+			n += bits.OnesCount64(x)
+		}
+	}
+	lv.nz, lv.cover, lv.n = nz, cover, n
+}
+
+// and sets dst to the cover a restricted to the transactions of item (dst
+// and a must not share memory).
+func (c *extChecker) and(dst, a *coverLevel, item tract.Item) {
+	nz, cover, n := dst.nz[:0], dst.cover[:0], 0
+	if b := c.row(item); b != nil {
+		for i, w := range a.nz {
+			if x := a.cover[i] & b[w]; x != 0 {
+				nz, cover = append(nz, w), append(cover, x)
+				n += bits.OnesCount64(x)
+			}
+		}
+	} else {
+		bnz, bw := c.nzOf(item), c.sparseWords(item)
+		if la, lb := len(a.nz), len(bnz); 4*min(la, lb) >= max(la, lb) {
+			i, j := 0, 0
+			for i < la && j < lb {
+				switch wa, wb := a.nz[i], bnz[j]; {
+				case wa < wb:
+					i++
+				case wa > wb:
+					j++
+				default:
+					if x := a.cover[i] & bw[j]; x != 0 {
+						nz, cover = append(nz, wa), append(cover, x)
+						n += bits.OnesCount64(x)
+					}
+					i++
+					j++
+				}
+			}
+		} else if len(a.nz) <= len(bnz) {
+			j := 0
+			for i, w := range a.nz {
+				if j = seek(bnz, j, w); j == len(bnz) {
+					break
+				}
+				if bnz[j] == w {
+					if x := a.cover[i] & bw[j]; x != 0 {
+						nz, cover = append(nz, w), append(cover, x)
+						n += bits.OnesCount64(x)
+					}
+				}
+			}
+		} else {
+			i := 0
+			for j, w := range bnz {
+				if i = seek(a.nz, i, w); i == len(a.nz) {
+					break
+				}
+				if a.nz[i] == w {
+					if x := a.cover[i] & bw[j]; x != 0 {
+						nz, cover = append(nz, w), append(cover, x)
+						n += bits.OnesCount64(x)
+					}
+				}
+			}
+		}
+	}
+	dst.nz, dst.cover, dst.n = nz, cover, n
 }
 
 // check is the report.CloMaxCheck of the miner: whether set (support
@@ -229,10 +392,6 @@ func (c *extChecker) check(set []tract.Item, supp tract.Supp) bool {
 		return true
 	}
 	c.markSet(set)
-	if c.words == 0 {
-		c.listCover(set)
-		return c.scanCover()
-	}
 	return c.decide(c.bitCover(set), supp)
 }
 
@@ -243,10 +402,9 @@ func (c *extChecker) check(set []tract.Item, supp tract.Supp) bool {
 // of the set is the cover of prefix, which is computed incrementally:
 // the covers of the prefix's leading items are kept from the previous
 // call (a depth-first search changes only the end of the prefix), and
-// each new item costs one AND over the non-zero words of the level
-// before it.
+// each new item costs one AND with the level before it.
 func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
-	if len(prefix) == 0 || c.words == 0 {
+	if len(prefix) == 0 {
 		return c.check(set, supp)
 	}
 	k := 0 // levels that remain valid
@@ -257,38 +415,19 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 		c.path = append(c.path, coverLevel{})
 	}
 	for ; k < len(prefix); k++ {
-		c.extend(k, prefix[k])
+		lv := &c.path[k]
+		lv.item = prefix[k]
+		if k == 0 {
+			c.load(lv, prefix[k])
+		} else {
+			c.and(lv, &c.path[k-1], prefix[k])
+		}
 	}
 	c.depth = len(prefix)
 	lv := &c.path[len(prefix)-1]
 	c.nz, c.cover = lv.nz, lv.cover
 	c.markSet(set)
 	return c.decide(lv.n, supp)
-}
-
-// extend computes level k of the path cache: the cover of level k-1 (all
-// transactions for k = 0) restricted to the transactions of item.
-func (c *extChecker) extend(k int, item tract.Item) {
-	lv := &c.path[k]
-	lv.item = item
-	nz, cover, n := lv.nz[:0], lv.cover[:0], 0
-	b := c.itemBits(item)
-	if k == 0 {
-		for _, w := range c.nzIdx[c.nzOff[item]:c.nzOff[item+1]] {
-			x := b[w]
-			nz, cover = append(nz, w), append(cover, x)
-			n += bits.OnesCount64(x)
-		}
-	} else {
-		prev := &c.path[k-1]
-		for i, w := range prev.nz {
-			if x := prev.cover[i] & b[w]; x != 0 {
-				nz, cover = append(nz, w), append(cover, x)
-				n += bits.OnesCount64(x)
-			}
-		}
-	}
-	lv.nz, lv.cover, lv.n = nz, cover, n
 }
 
 // decide decides the marked set from its cover in c.nz and c.cover with
@@ -302,13 +441,10 @@ func (c *extChecker) decide(n int, supp tract.Supp) bool {
 		v *= len(c.planes) / c.words
 	}
 	if h <= v {
-		c.coverTxs = c.coverTxs[:0]
-		for i, w := range c.nz {
-			for x := c.cover[i]; x != 0; x &= x - 1 {
-				c.coverTxs = append(c.coverTxs, w*64+int32(bits.TrailingZeros64(x)))
-			}
+		if c.maximal {
+			return c.scanMaximal()
 		}
-		return c.scanCover()
+		return c.scanClosed()
 	}
 	if c.maximal {
 		return c.vertMaximal()
@@ -328,14 +464,9 @@ func (c *extChecker) markSet(set []tract.Item) {
 	}
 }
 
-// itemBits returns the bit set of item i.
-func (c *extChecker) itemBits(i tract.Item) []uint64 {
-	return c.bits[int(i)*c.words : (int(i)+1)*c.words]
-}
-
 // bitCover computes the cover of set into c.nz and c.cover and returns
-// the number of cover transactions. Only the non-zero words of the set's
-// sparsest item are visited.
+// the number of cover transactions: the bit set of the set's sparsest
+// item ANDed with the others.
 func (c *extChecker) bitCover(set []tract.Item) int {
 	r := set[0]
 	for _, it := range set[1:] {
@@ -343,107 +474,110 @@ func (c *extChecker) bitCover(set []tract.Item) int {
 			r = it
 		}
 	}
-	nz, cover := c.nzBuf[:0], c.coverBuf[:0]
-	n := 0
-	rb := c.itemBits(r)
-	for _, w := range c.nzIdx[c.nzOff[r]:c.nzOff[r+1]] {
-		x := rb[w]
-		for _, it := range set {
-			x &= c.bits[int(it)*c.words+int(w)]
-		}
-		if x != 0 {
-			nz, cover = append(nz, w), append(cover, x)
-			n += bits.OnesCount64(x)
+	a, b := &c.scratch[0], &c.scratch[1]
+	c.load(a, r)
+	for _, it := range set {
+		if it != r {
+			c.and(b, a, it)
+			a, b = b, a
 		}
 	}
-	c.nzBuf, c.coverBuf = nz, cover
-	c.nz, c.cover = nz, cover
-	return n
+	c.nz, c.cover = a.nz, a.cover
+	return a.n
 }
 
-// listCover collects the cover of the marked set into c.coverTxs from
-// the transaction list of its rarest item.
-func (c *extChecker) listCover(set []tract.Item) {
-	r := set[0]
-	for _, it := range set[1:] {
-		if c.tidOff[it+1]-c.tidOff[it] < c.tidOff[r+1]-c.tidOff[r] {
-			r = it
+// scanClosed decides the marked set from its cover transactions (the
+// bits of c.cover, enumerated lazily): an item has the support of the
+// set iff it is in every cover transaction, so the candidates are the
+// items of the first one, and the set is closed as soon as no candidate
+// is left.
+//
+// The transactions are numbered in bag order (lexicographic), where
+// neighbors share most of their items, so candidates survive a scan in
+// order for long. The scan therefore intersects the first transactions
+// of scanProbes cover words spread over the cover first (intersecting
+// with a transaction twice changes nothing), then all of them in order.
+func (c *extChecker) scanClosed() bool {
+	nz, cover := c.nz, c.cover
+	if len(nz) == 0 {
+		return true // an empty cover (support 0) cannot occur for a reported set
+	}
+	c.initCand(nz[0]*64 + int32(bits.TrailingZeros64(cover[0])))
+	for p, last := 1, 0; p < scanProbes && len(c.cand) > 0; p++ {
+		if i := p * len(nz) / scanProbes; i != last { // small covers: words repeat
+			c.keepCand(nz[i]*64 + int32(bits.TrailingZeros64(cover[i])))
+			last = i
 		}
 	}
-	c.coverTxs = c.coverTxs[:0]
-	for _, t := range c.tids[c.tidOff[r]:c.tidOff[r+1]] {
-		n := len(set)
-		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-			if c.inSet[it] == c.setStamp {
-				n--
-			}
+	for i, w := range nz {
+		x := cover[i]
+		if i == 0 {
+			x &= x - 1 // the first transaction gave the candidates
 		}
-		if n == 0 {
-			c.coverTxs = append(c.coverTxs, t)
+		for ; x != 0 && len(c.cand) > 0; x &= x - 1 {
+			c.keepCand(w*64 + int32(bits.TrailingZeros64(x)))
+		}
+	}
+	return len(c.cand) == 0
+}
+
+// scanProbes is the number of spread cover transactions that scanClosed
+// intersects first.
+const scanProbes = 8
+
+// initCand sets the candidates to the items of transaction t that are
+// not in the marked set (ascending).
+func (c *extChecker) initCand(t int32) {
+	c.cand = c.cand[:0]
+	for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
+		if c.inSet[it] != c.setStamp {
+			c.cand = append(c.cand, it)
 		}
 	}
 }
 
-// scanCover decides the marked set from its cover transactions
-// c.coverTxs. Closed: an item has the support of the set iff it is in
-// every cover transaction.
-func (c *extChecker) scanCover() bool {
-	if c.maximal {
-		return c.scanMaximal()
-	}
-	for k, t := range c.coverTxs {
-		items := c.txItems[c.txOff[t]:c.txOff[t+1]]
-		if k == 0 { // candidates: the items of the first cover transaction
-			c.cand = c.cand[:0]
-			for _, it := range items {
-				if c.inSet[it] != c.setStamp {
-					c.cand = append(c.cand, it)
-				}
-			}
-		} else { // keep the candidates that occur in t
-			c.txStamp++
-			if c.txStamp == 0 {
-				clear(c.seen)
-				c.txStamp = 1
-			}
-			for _, it := range items {
-				c.seen[it] = c.txStamp
-			}
-			n := 0
-			for _, it := range c.cand {
-				if c.seen[it] == c.txStamp {
-					c.cand[n] = it
-					n++
-				}
-			}
-			c.cand = c.cand[:n]
+// keepCand keeps the candidates that occur in transaction t (a merge of
+// the two ascending lists).
+func (c *extChecker) keepCand(t int32) {
+	items := c.txItems[c.txOff[t]:c.txOff[t+1]]
+	n, i := 0, 0
+	for _, it := range c.cand {
+		for i < len(items) && items[i] < it {
+			i++
 		}
-		if len(c.cand) == 0 {
-			return true // no item is in every cover transaction
+		if i == len(items) {
+			break
+		}
+		if items[i] == it {
+			c.cand[n] = it
+			n++
 		}
 	}
-	// An empty cover (support 0) cannot occur for a reported set.
-	return len(c.coverTxs) == 0
+	c.cand = c.cand[:n]
 }
 
-// scanMaximal accumulates supp(X ∪ {j}) over the cover transactions and
-// stops at the first frequent extension.
+// scanMaximal accumulates supp(X ∪ {j}) over the cover transactions (the
+// bits of c.cover, enumerated lazily) and stops at the first frequent
+// extension.
 func (c *extChecker) scanMaximal() bool {
 	touched := c.cand[:0]
 	ok := true
 scan:
-	for _, t := range c.coverTxs {
-		w := c.txW[t]
-		for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-			if c.inSet[it] == c.setStamp {
-				continue
-			}
-			if c.cnt[it] == 0 {
-				touched = append(touched, it)
-			}
-			if c.cnt[it] += w; c.cnt[it] >= c.smin {
-				ok = false // a frequent superset with one more item
-				break scan
+	for i, w := range c.nz {
+		for x := c.cover[i]; x != 0; x &= x - 1 {
+			t := w*64 + int32(bits.TrailingZeros64(x))
+			wt := c.txW[t]
+			for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
+				if c.inSet[it] == c.setStamp {
+					continue
+				}
+				if c.cnt[it] == 0 {
+					touched = append(touched, it)
+				}
+				if c.cnt[it] += wt; c.cnt[it] >= c.smin {
+					ok = false // a frequent superset with one more item
+					break scan
+				}
 			}
 		}
 	}
@@ -464,16 +598,43 @@ func (c *extChecker) vertClosed(supp tract.Supp) bool {
 		if c.inSet[j] == c.setStamp {
 			continue
 		}
-		b := c.itemBits(j)
-		sub := true
-		for i, w := range c.nz {
-			if c.cover[i]&^b[w] != 0 {
-				sub = false
-				break
+		var sub bool
+		if b := c.row(j); b != nil { // covers(j), inlined for dense rows
+			sub = true
+			for i, w := range c.nz {
+				if c.cover[i]&^b[w] != 0 {
+					sub = false
+					break
+				}
 			}
+		} else {
+			sub = c.covers(j)
 		}
 		if sub {
 			return false // j is in every transaction of the cover
+		}
+	}
+	return true
+}
+
+// covers reports whether item j is in every transaction of the cover.
+func (c *extChecker) covers(j tract.Item) bool {
+	if b := c.row(j); b != nil {
+		for i, w := range c.nz {
+			if c.cover[i]&^b[w] != 0 {
+				return false
+			}
+		}
+		return true
+	}
+	bnz := c.nzOf(j)
+	if len(bnz) < len(c.nz) {
+		return false // a non-zero cover word that is zero for j
+	}
+	bw, k := c.sparseWords(j), 0
+	for i, w := range c.nz {
+		if k = seek(bnz, k, w); k == len(bnz) || bnz[k] != w || c.cover[i]&^bw[k] != 0 {
+			return false
 		}
 	}
 	return true
@@ -489,27 +650,74 @@ func (c *extChecker) vertMaximal() bool {
 		if c.inSet[j] == c.setStamp {
 			continue
 		}
-		b := c.itemBits(j)
 		var s tract.Supp
-		if c.planes == nil {
+		if b := c.row(j); b != nil && c.planes == nil { // suppWith(j), inlined
 			n := 0
 			for i, w := range c.nz {
 				n += bits.OnesCount64(c.cover[i] & b[w])
 			}
 			s = tract.Supp(n)
 		} else {
-			for p := range len(c.planes) / c.words {
-				pl := c.planes[p*c.words : (p+1)*c.words]
-				n := 0
-				for i, w := range c.nz {
-					n += bits.OnesCount64(c.cover[i] & b[w] & pl[w])
-				}
-				s += tract.Supp(n) << p
-			}
+			s = c.suppWith(j)
 		}
 		if s >= c.smin {
 			return false // a frequent superset with one more item
 		}
 	}
 	return true
+}
+
+// suppWith returns the weight of the cover transactions that contain j.
+func (c *extChecker) suppWith(j tract.Item) tract.Supp {
+	var s tract.Supp
+	if b := c.row(j); b != nil {
+		if c.planes == nil {
+			n := 0
+			for i, w := range c.nz {
+				n += bits.OnesCount64(c.cover[i] & b[w])
+			}
+			return tract.Supp(n)
+		}
+		for p := range len(c.planes) / c.words {
+			pl := c.planes[p*c.words : (p+1)*c.words]
+			n := 0
+			for i, w := range c.nz {
+				n += bits.OnesCount64(c.cover[i] & b[w] & pl[w])
+			}
+			s += tract.Supp(n) << p
+		}
+		return s
+	}
+	add := func(w int32, x uint64) {
+		if c.planes == nil {
+			s += tract.Supp(bits.OnesCount64(x))
+			return
+		}
+		for p := range len(c.planes) / c.words {
+			s += tract.Supp(bits.OnesCount64(x&c.planes[p*c.words+int(w)])) << p
+		}
+	}
+	bnz, bw := c.nzOf(j), c.sparseWords(j)
+	if len(c.nz) <= len(bnz) {
+		k := 0
+		for i, w := range c.nz {
+			if k = seek(bnz, k, w); k == len(bnz) {
+				break
+			}
+			if bnz[k] == w {
+				add(w, c.cover[i]&bw[k])
+			}
+		}
+	} else {
+		i := 0
+		for k, w := range bnz {
+			if i = seek(c.nz, i, w); i == len(c.nz) {
+				break
+			}
+			if c.nz[i] == w {
+				add(w, c.cover[i]&bw[k])
+			}
+		}
+	}
+	return s
 }

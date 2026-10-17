@@ -65,8 +65,15 @@ committed; files are written to temporary directories.
 | `dense` | 20,000 | 80 | 28.1 / 10 / 38 | 0.352 | uniform | 4 × 18 items, 90 %, keep 100 % | no | 1,628,269 | `b29d20acbcb1` |
 | `long` | 10,000 | 400 | 62.2 / 40 / 88 | 0.155 | uniform | 20 × 8 items, 40 %, keep 90 % | no | 2,316,733 | `cddca8f4d640` |
 | `weighted` | 20,000 | 1,000 | 9.4 / 4 / 17 | 0.009 | Zipf 1 | as `sparse` | 1..20 | 639,352 | `12e2b434b872` |
+| `d2000x40d60` (M5) | 2,000 | 40 | 24.0 / 12 / 32 | 0.599 | independent, 60 % | — | no | 131,953 | `4b7365057352` |
+| `d1000x30d80` (M5) | 1,000 | 30 | 24.1 / 17 / 29 | 0.805 | independent, 80 % | — | no | 64,348 | `868be1637571` |
+| `d5000x60d40` (M5) | 5,000 | 60 | 24.0 / 11 / 37 | 0.400 | independent, 40 % | — | no | 339,938 | `4017ec71e7fa` |
 
-Density is the average length divided by the number of items used.
+Density is the average length divided by the number of items used. The
+three `dNxKdP` datasets (added by review fix S3-2, seeds 1–3) are the
+independent dense items of the [M5 investigation](m5-investigation.md)
+§7, generated exactly like its in-process `denseTxs`; they are used only
+by the M5 rows of `reference/bench/configs.txt`.
 "Keep" is the probability that each item of a chosen planted pattern is
 included; `dense` keeps whole patterns, so many item sets have perfect
 extensions and the closed sets are far fewer than the frequent ones.
@@ -438,6 +445,9 @@ against the state before it, so the rows do not add up exactly.
 | 11 | `cmTree.add` sibling scan split by direction | `internal/report/clomax.go` | rejected | `-tc -s0.02 -n3` ~ (p = 0.075), unlimited `-tc -s0.05` +1.0 % (p = 0.007), n = 10 |
 | 12 | Path recording for the simple variant (`fpCondSupp` shared by `projSimple` and `projSmp16`, packed entries recorded) | `internal/fpg/simple.go` (and the `projPaths` doc in `complex.go`) | **kept** | dense `s=10` simple −12.4 %, simple+fim16 −14.6 %, closed −12.4 / −10.2 %, maximal −15.1 / −12.4 %; sparse −8.6 / −5.1 % (p = 0.000, n = 10) |
 | 13 | `projReord`: bit set of the path's new indices and `addCmplx` instead of `add_reord`'s flag scan | `complex.go`, `mine.go` | rejected | dense `s=5` +6.4 % (p = 0.000), long `s=2.5` −4.0 %, n = 8 |
+| 14 | Review fix S3-1 (after `671474e`): M5 checker with compact bit sets (sparse items store only their non-zero words; full rows for every item if they need ≤ 4× the horizontal items, else for items with non-zero words in ≥ half of the words; no 64 MiB floor; transaction lists removed), closed scan that probes 8 spread cover transactions first, lazy cover enumeration, incremental covers for every form | `internal/fpg/extcheck.go`, `mine.go`, `extcheck_test.go` | **kept** | CLI, interleaved, n = 10: `sparse-large -tc -s0.05 -n2/-n3` −14.3 / −14.1 % wall, RSS 181 → 126 MB; `-tm -n2/-n3` ~ (p = 0.68 / 0.85), RSS 179 → 126 MB; `sparse.tab -tc -s0.05 -n3` −9.1 %, `dense.tab -tc -s2 -n3` −12.6 %; `dense.tab -tm -s2 -n3` +2.5 % (p = 0.010), `CloMaxLimited` ~ to +2.8 % ([M5 §7.1](m5-investigation.md#71-cost-on-large-sparse-data-stage-3-fix-s3-1)) |
+| 14a | (variant of 14) transaction lists with incremental covers instead of full rows on `sparse-large` (a size rule relative to the horizontal form only) | `extcheck.go` | rejected | +21 to +31 % time, −80 MB allocated (in process, n = 5–6, load 5–40) |
+| 14b | (variant of 14) early exit of the maximal scan when the remaining cover weight cannot make an extension frequent; linear steps before the exponential search | `extcheck.go` | rejected | instructions unchanged (±0.1 %) on `sparse-large -tm -n2/-n3` |
 | 14 | Table tokenizer: one append per field, locals in the scan loop | `internal/tabread/tokenizer.go` | rejected | `ReaderNext`, `Scan` ~ (p = 0.08–0.6), n = 10 |
 | 15 | Cheaper item dictionary lookups (candidate 5) | — | not done | see [Remaining gaps](#remaining-gaps) |
 
@@ -580,6 +590,33 @@ check and reports extra sets; without a limit the ratio is 1.7); incremental cov
 on `-tc -s0.02 -n3`), the rest is the cover scans (`scanCover`) and the
 repository (`cmTree.add`).
 
+**Large sparse data (review finding S3-1).** The table above has no
+large sparse dataset. On `sparse-large` (200,000 transactions, 2,592
+frequent items at `-s0.05`) the check cost more, and the bit sets were
+admitted only by an absolute 64 MiB floor (full rows of 64.6 MB, 9.1×
+the 7.1 MB of horizontal items; a memory-for-speed trade-off: the
+transaction lists were 21–31 % slower, attempt 14a). Medians of 5
+(`bench/compare.sh -n 5 -m devnull '^large-'`; wall ms / max RSS MB; the
+counts of C and Go are equal):
+
+| Config | sets | C | Go `671474e` | Go after fix S3-1 |
+| --- | ---: | ---: | ---: | ---: |
+| `-tc -s0.05` (no limit) | 37,504 | 280 / 77 | 575 / 107 | 550 / 107 |
+| `-tm -s0.05` (no limit) | 11,838 | 279 / 77 | 595 / 106 | 557 / 104 |
+| `-tc -s0.05 -n2` | 12,769 | 277 / 77 | 777 / 181 | 622 / 126 |
+| `-tc -s0.05 -n3` | 25,337 | 288 / 77 | 814 / 181 | 673 / 126 |
+| `-tm -s0.05 -n2` | 4,091 | 272 / 77 | 789 / 179 | 715 / 126 |
+| `-tm -s0.05 -n3` | 8,512 | 280 / 77 | 876 / 180 | 903 / 126 |
+
+At `671474e` the limited runs took 1.3–1.5× the unlimited ones and
++73 MB; after the fix (attempt 14: compact bit sets bounded by 5× the
+horizontal items, probed closed scans) closed runs take 1.1–1.2× and
++20 MB, maximal runs 1.3–1.6× (a maximal set's check counts its whole
+cover). The interleaved before/after comparison (n = 10) is in attempt
+14 and [M5 §7.1](m5-investigation.md#71-cost-on-large-sparse-data-stage-3-fix-s3-1)
+(the `-tm -n3` medians above, 876 vs 903 ms, are two separate runs; the
+interleaved comparison shows no significant difference, p = 0.85).
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package
@@ -647,6 +684,12 @@ benchstat old.txt new.txt          # after a change: same machine, same toolchai
 
 # Go vs C (about 6 minutes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
+# (configs.txt has 15 M5 rows more than the 32 measured above: m5-*,
+# large-[cm]-n*, added by review fix S3-2; '^(sparse|large-[scm]$|dense|long|weighted)'
+# selects the original 32)
+# only the size-limited closed/maximal (M5) configurations: the pinned
+# dNxKdP datasets and sparse-large with -n (reference/bench/README.md)
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-|large-)')
 
 # profiles (one workload at a time)
 go test -c -o /tmp/root.test .

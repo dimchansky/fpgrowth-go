@@ -47,6 +47,15 @@ type benchSpec struct {
 	// uniformly from [1, MaxWeight] (written as the last field, fpgrowth
 	// -w); 0 means unweighted.
 	MaxWeight int
+	// Density > 0 selects independent items instead of the model above
+	// (MinLen, MaxLen, Skew, Patterns and MaxWeight must be 0): every
+	// item 0..Items-1 is in a transaction with probability Density/100,
+	// independently, in ascending order. This is denseTxs of the M5
+	// benchmark (internal/fpg/extcheck_bench_test.go) with the same seed:
+	// a PCG source seeded (Seed, 1) and one math/rand/v2 Rand.Float64
+	// per item and transaction, compared with Density/100 (both exact
+	// IEEE operations). denseTxs names item j "i<j>", the files "<j>".
+	Density int
 }
 
 // benchSpecs are the datasets of the benchmark suite and of the C
@@ -68,6 +77,13 @@ var benchSpecs = []benchSpec{
 	// Weighted variant of "sparse" (weights 1..20).
 	{Name: "weighted", Seed: 5, Transactions: 20000, Items: 1000, MinLen: 4, MaxLen: 12, Skew: 1,
 		Patterns: 30, PatternLen: 5, PatternPermille: 300, KeepPermille: 900, MaxWeight: 20},
+	// Independent dense items for the size-limited closed/maximal search
+	// (deviation M5, docs/m5-investigation.md): dNxKdP has N transactions
+	// over K items, each present with probability P %. The first two
+	// equal the in-process BenchmarkCloMaxLimited data (seeds 1 and 2).
+	{Name: "d2000x40d60", Seed: 1, Transactions: 2000, Items: 40, Density: 60},
+	{Name: "d1000x30d80", Seed: 2, Transactions: 1000, Items: 30, Density: 80},
+	{Name: "d5000x60d40", Seed: 3, Transactions: 5000, Items: 60, Density: 40},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -102,6 +118,9 @@ func (s benchSpec) validate() error {
 		return fmt.Errorf("benchgen %s: invalid probabilities", s.Name)
 	case s.MaxWeight < 0 || int64(s.MaxWeight)*int64(s.Transactions) > math.MaxInt32:
 		return fmt.Errorf("benchgen %s: total weight may exceed the C reference's 32-bit supports", s.Name)
+	case s.Density < 0 || s.Density > 100 || s.Density > 0 &&
+		(s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.MaxWeight != 0):
+		return fmt.Errorf("benchgen %s: invalid density", s.Name)
 	}
 	return nil
 }
@@ -111,6 +130,9 @@ func (s benchSpec) validate() error {
 func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	if err := s.validate(); err != nil {
 		return err
+	}
+	if s.Density > 0 {
+		return benchIndependent(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -169,6 +191,27 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 			w = 1 + int64(r.intN(s.MaxWeight))
 		}
 		if err := fn(benchTx{Items: items, Weight: w}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// benchIndependent generates a dataset of independent items
+// (benchSpec.Density).
+func benchIndependent(s benchSpec, fn func(tx benchTx) error) error {
+	src := rand.NewPCG(s.Seed, 1)
+	d := float64(s.Density) / 100
+	items := make([]int32, 0, s.Items)
+	for range s.Transactions {
+		items = items[:0]
+		for j := range int32(s.Items) {
+			// math/rand/v2's Rand.Float64, spelled out
+			if float64(src.Uint64()<<11>>11)/(1<<53) < d {
+				items = append(items, j)
+			}
+		}
+		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
 			return err
 		}
 	}

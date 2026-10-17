@@ -58,9 +58,9 @@ type testHooks struct {
 	// cloMaxCheck, if set, replaces the complete extension check of a
 	// size-limited closed/maximal search.
 	cloMaxCheck func(*extChecker, *report.Reporter) report.CloMaxCheck
-	// noBits makes the extension checker use transaction lists instead
-	// of bit sets.
-	noBits bool
+	// rows selects the form of the extension checker's bit sets
+	// (rowsAuto by default).
+	rows rowMode
 }
 
 // mineItemSets runs the item set variant selected by c (fpgvars[algo]).
@@ -82,7 +82,7 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 	if m.clomax && c.ZMax < bag.MaxSize() {
 		// A maximum size below the longest transaction: limited search
 		// with the complete extension check (see xable2).
-		chk, err := newExtChecker(bag, c.Target, supp, h.noBits, m.aborted)
+		chk, err := newExtChecker(bag, c.Target, supp, h.rows, m.aborted)
 		if err != nil {
 			return err
 		}
