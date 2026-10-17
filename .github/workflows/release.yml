@@ -120,7 +120,7 @@ jobs:
         # The draft must carry the CHANGELOG.md section; a release without
         # notes is not published (it stays a draft).
         run: |
-          want=$(grep -m 1 '[^[:space:]]' "$RUNNER_TEMP/release-notes.md")
+          want=$(grep -m 1 '[^[:space:]]' "$RUNNER_TEMP/release-notes.md" || true)
           body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
           if [ -z "$want" ] || ! grep -qF -- "$want" <<< "$body"; then
             echo "::error::the draft release of $TAG lacks the CHANGELOG.md notes"
