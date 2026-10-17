@@ -422,7 +422,12 @@ type countingRC struct {
 	mu     *sync.Mutex
 }
 
-func (c countingRC) Close() error { c.mu.Lock(); *c.closed++; c.mu.Unlock(); return c.ReadCloser.Close() }
+func (c countingRC) Close() error {
+	c.mu.Lock()
+	*c.closed++
+	c.mu.Unlock()
+	return c.ReadCloser.Close()
+}
 
 func TestEarlyBreakResources(t *testing.T) {
 	dir := t.TempDir()

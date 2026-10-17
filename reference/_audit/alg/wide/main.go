@@ -25,11 +25,11 @@ import (
 
 type set [2]uint64 // up to 128 items
 
-func (a set) and(b set) set       { return set{a[0] & b[0], a[1] & b[1]} }
-func (a set) sub(b set) bool      { return a[0]&^b[0] == 0 && a[1]&^b[1] == 0 }
-func (a set) cnt() int            { return bits.OnesCount64(a[0]) + bits.OnesCount64(a[1]) }
-func (a *set) add(i int)          { a[i/64] |= 1 << (i % 64) }
-func (a set) has(i int) bool      { return a[i/64]&(1<<(i%64)) != 0 }
+func (a set) and(b set) set  { return set{a[0] & b[0], a[1] & b[1]} }
+func (a set) sub(b set) bool { return a[0]&^b[0] == 0 && a[1]&^b[1] == 0 }
+func (a set) cnt() int       { return bits.OnesCount64(a[0]) + bits.OnesCount64(a[1]) }
+func (a *set) add(i int)     { a[i/64] |= 1 << (i % 64) }
+func (a set) has(i int) bool { return a[i/64]&(1<<(i%64)) != 0 }
 func (a set) key(k int) string {
 	var s []string
 	for i := 0; i < k; i++ {
