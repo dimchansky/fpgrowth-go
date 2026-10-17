@@ -931,12 +931,14 @@ func sparseSource(n int) Source[int] {
 
 // treeBuildLatencyLimit bounds the return after a cancellation in
 // OnStart in TestCancelTreeBuild. Building the whole top-level FP-tree
-// takes 115-490 ms there (Apple M1 Max, unloaded) and a run checks the
-// context every few thousand transactions (measured: below 0.1 ms). A
-// single descheduling on a loaded machine has cost 54 ms (load average
-// about 24), so the limit leaves twice that, but stays below the time
-// of building the whole tree, which is what the test is meant to catch.
-const treeBuildLatencyLimit = 100 * time.Millisecond
+// takes 104-490 ms there (Apple M1 Max, unloaded; measured with the
+// cancellation checks removed), while a run with the checks returns in
+// well under 0.1 ms. The test runs sequentially, so parallel tests'
+// CPU and GC load (which cost 219-241 ms on hosted runners) no longer
+// delays it; the limit leaves a wide margin for descheduling but stays
+// far below a whole tree build, which is what the test is meant to
+// catch, also on faster machines.
+const treeBuildLatencyLimit = 30 * time.Millisecond
 
 // TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
 // is built from a large bag: every algorithm (and the item set tree path
