@@ -32,14 +32,16 @@ linked documents.
   attestations, immutable pre-release, external install through the
   public proxy with Go 1.26 and 1.27 (`docs/audit/rc2-verification.md`).
 
+- **Phase 5 — v0.1.0: authorized (Gate E).** The maintainer decided to
+  ship ALG-1 as a documented known limitation and to defer its fix and
+  RC-2 to a future release; no numerical or functional changes after
+  rc.2. This PR is documentation only.
+
 ## Next steps
 
-1. Maintainer decision: does ALG-1 need an implementation fix before
-   v0.1.0? (Documented as a known limitation in the release notes.)
-2. **Gate E — stop:** separate explicit authorization for `v0.1.0`. Then
-   a "Prepare v0.1.0" PR: release date in `## [0.1.0]` and the ALG-1
-   sentence that says the decision is pending; fresh-clone checks; tag
-   the green `main` commit; deployment approval; verify as for rc.2.
+1. Merge this PR; fresh-clone checks; tag the green `main` commit
+   `v0.1.0`; stop at the deployment approval for the maintainer; then
+   verify as for rc.2.
 
 ## Open problems
 
@@ -49,4 +51,7 @@ linked documents.
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
   too), the remaining quadratic closed-check shape (NEW-3), independent
-  measure formulas in the oracle (TST-3).
+  measure formulas in the oracle (TST-3), and `MineItemsets` returning
+  nil instead of `ctx.Err()` when the context is canceled inside
+  `OnStart` and no item is frequent (RC-2, Info,
+  `docs/audit/rc1-verification.md`).

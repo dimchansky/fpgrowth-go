@@ -113,9 +113,8 @@ crashes. In summary:
   transaction weight exceeds about 10^12 (about 1–40 % error from
   10^12–10^13, meaningless by 10^14–10^16). Item sets, supports,
   confidence and the other measures are not affected. Exact arithmetic
-  is not used yet because it would change the last bits of these values
-  against the C reference on ordinary data; whether to implement it is
-  decided before the final release.
+  would change the last bits of these values against the C reference on
+  ordinary data, so it is deferred to a future release.
 
 ### Not included
 
