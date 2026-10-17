@@ -25,13 +25,21 @@ linked documents.
 - **Phase 3 — repository hardening: done; Gate B accepted**
   (`docs/audit/independent-audit.md` §5, independently verified).
 
+- **Phase 4 — release candidate `v0.1.0-rc.1`: published, Gate D not
+  accepted.** Tag on `8478311` after fresh-clone checks and green `main`
+  CI; deployment approved by the maintainer. Assets, checksums,
+  attestations, immutable pre-release and the external consumer test
+  (public proxy, Go 1.26 and 1.27, `go install` of the CLI) pass; the
+  release notes are missing (RC-1, fixed in #9). Report:
+  `docs/audit/rc1-verification.md`.
+
 ## Next steps
 
-1. **Gate C — stop:** the maintainer must explicitly authorize the first
-   public tag `v0.1.0-rc.1`. Then follow `docs/releasing.md`: changelog
-   section, fresh-clone pre-tag checks, annotated tag, deployment
-   approval, artifact and attestation checks, external consumer test.
-2. **Gate E — stop:** separate explicit authorization for `v0.1.0`.
+1. Merge #9 (reviewed); then, with the maintainer's authorization, cut
+   `v0.1.0-rc.2` from `main` to confirm the notes on a real run.
+2. Maintainer decision: does ALG-1 need an implementation fix before
+   v0.1.0?
+3. **Gate E — stop:** separate explicit authorization for `v0.1.0`.
 
 ## Open problems
 
