@@ -34,7 +34,7 @@ All upstream rows were verified at the end of Stage 1 (review
 | Feature | Upstream symbols | Semantics [audit] | Go component | Tests | Status |
 | --- | --- | --- | --- | --- | --- |
 | Min/max support, relative and absolute (`-s`, `-S`) | `fpg_data`, `fpg_report`, `ceilsupp`, `floorsupp` | `ceil(s/100·w·(1−ε))`, `floor(S/100·w·(1+ε))` [core §1.5, §4] | `internal/fpg` | boundary tables, differential | verified |
-| Min/max size (`-m`, `-n`) | `isr_setsize`, `ist_setsize` | `xmax = zmax+1` for closed/maximal [report §4] | `internal/report` | oracle | verified |
+| Min/max size (`-m`, `-n`) | `isr_setsize`, `ist_setsize` | `xmax = zmax+1` for closed/maximal [report §4]; Go: size-limited search plus complete one-item extension check (M5, `docs/m5-investigation.md`) | `internal/report`, `internal/fpg` (`extcheck.go`) | oracle, `TestExtCheck*` | verified |
 | Support border (`-F`) | `getbdr`, `setbdr`, `isr_setbdr` | per-size minimum from `zmin` [report §4] | `internal/report`, CLI | oracle, differential | verified |
 | Transaction weights (`-w`) | `TA_WEIGHT`, `ib_read` | integer last field [tract §2.5, cli §5] | `internal/tabread`, `internal/tract` | golden, differential | verified |
 | Duplicate items in a transaction | `ib_read` | ignored, first occurrence [tract §2.5] | `internal/tract` | unit, oracle | verified |
@@ -49,9 +49,9 @@ All upstream rows were verified at the end of Stage 1 (review
 | --- | --- | --- | --- | --- | --- |
 | Rule confidence (`-c`), lift | `ist_*`, `isr_rinfo` | `>=` with `1−ε` tolerance [rules §3] | `internal/istree`, `internal/isrout` | oracle | verified |
 | Original rule support (`-o`) | `FPG_ORIGSUPP` | body ∪ head [rules §1.2] | `internal/istree` | oracle | verified |
-| 25 rule measures (`-e`) | `re_*` (ruleval.c), chi2.c, gamma.c | [rules §6] | `internal/ruleval` | C fixtures, exact big-number checks | verified |
+| 25 rule measures (`-e`) | `re_*` (ruleval.c), chi2.c, gamma.c | [rules §6]; float64, the statistical measures reliable below a total weight of about 10^12 (N1) | `internal/ruleval` | C fixtures, exact big-number checks | verified |
 | Log support quotient (`-eb`) | `isr_logrto` | [rules §4.3, report §4] | `internal/report` | differential (tolerance) | verified |
-| Aggregation (`-a`) | `ist_seteval`, `evaluate` | first/min/max/avg over single-head rules [rules §4] | `internal/istree` | oracle | verified |
+| Aggregation (`-a`) | `ist_seteval`, `evaluate` | first/min/max/avg over single-head rules; "first" depends on the internal item order (P6) [rules §4] | `internal/istree` | oracle | verified |
 | Threshold (`-d`), invalidate below expected (`-i`) | `ist_seteval`, `FPG_INVBXS` | [rules §4] | `internal/istree` | oracle, differential | verified |
 | Evaluation pruning (`-p`) | `ist_filter` | no effect upstream (rules B2); fixed for item sets (R2) | `internal/istree` | patched-C comparison, oracle | verified |
 
@@ -73,8 +73,8 @@ All upstream rows were verified at the end of Stage 1 (review
 | Flexible table format (`-r -f -b -C`) | `trd_*` (tabread.c), `esc_*` (escape.c) | [cli §5] | `internal/tabread` | C fixtures, fuzz | verified |
 | Option grammar, defaults, messages, exit codes | `main` (fpgrowth.c) | 34 options, exit codes 0–24 [cli §2–§4] | `cmd/fpgrowth`, `internal/cconv` | golden CLI tests | verified |
 | stdin/stdout via `-` / empty name | `main`, `trd_open`, `isr_open` | [cli §3] | `cmd/fpgrowth` | CLI tests | verified |
-| `fpgpsp` program | `fpgpsp.c` | needs `tars.c`/`pspest.c`, absent from the archive | — | — | out of scope |
-| zlib output (`-z`) | `USE_ZLIB` | not compiled in the reference build | — | — | out of scope |
+| `fpgpsp` program (pattern spectrum from surrogate data, for significance filtering via `-F`) | `fpgpsp.c` | `fpgpsp.c` is in the archive, but it needs `tars.c` (surrogate data) and `pspest.c` (spectrum estimation), which are not in the archive (it also uses the system's pthreads library) | — | — | deferred past v0.1.0 |
+| zlib output (`-z`) | `USE_ZLIB` | zlib (RFC 1950) compression of the item set/rule output; not compiled into upstream's default build, which rejects `-z` like the Go CLI | — | — | deferred past v0.1.0 |
 
 ## New in the Go port (Stage 2 and later)
 
