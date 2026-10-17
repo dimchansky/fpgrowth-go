@@ -11,7 +11,9 @@ non-maximal sets (B5). Commit 9397bab fixed this by removing the depth
 limit for closed/maximal targets ("full exploration"): exact, but on dense
 data with a small `-n` it explores the whole closed lattice only to report
 its bottom layers (critic: `-tc -s2 -n2` on 2000×40, density 0.6: C 0.22 s
-/ 22 MB, Go 31.6 s / 422 MB).
+/ 22 MB, Go 31.6 s / 422 MB, as measured by the Stage 1 review, finding
+F5, on its own copy of such data; the measurement of this report is in
+§7).
 
 A first attempt to keep the depth limit and only collect perfect
 extensions at the boundary failed on oracle seed 678. This report
@@ -19,8 +21,9 @@ minimizes that case, identifies the first violated invariant, and replaces
 full exploration by a **size-limited search plus a mathematically complete
 one-item extension check** against all items of the database. It is
 exact (verified against the brute-force oracle, §6) and on the critic's
-case runs in 21 ms / 14 MiB instead of 34 s / 673 MiB (C: 236 ms /
-22 MiB; §7). It is now the only path for closed/maximal targets with `-n`
+case runs in 21 ms / 14 MiB instead of about 30 s and 0.4–0.7 GB (C:
+236 ms / 22 MiB; §7 has the single measurement this figure comes from,
+34.09 s / 673 MiB at c16c2f5, and the audit's re-measurement). It is now the only path for closed/maximal targets with `-n`
 below the longest transaction.
 
 ## 2. The boundary-pex attempt and the minimized case
@@ -75,6 +78,14 @@ d=3 (4, resp. 5). Closed/maximal search processes codes descending.
 | boundary-pex attempt | additionally `c b (1)` | `c b (1)` |
 
 `{b,c}` is neither closed nor maximal: `{a,b,c,d}` has support 1.
+
+The minimized case is also a minimal reproducer of upstream bug B5 itself
+(independent audit, M5A-3): C 6.21 reports `c b (1)` for both data sets,
+closed and maximal, with `-As -l0`, `-Ac -l0`, `-Ad -l0` and `-At`, and
+`c b (4)` for the original seed 678 data with the same variants. With the
+16-items machine (`-As`, `-Ac`) C happens to be right, because upstream's
+machine ignores the depth limit (§3.6). The Go program reports the
+oracle's sets in every variant.
 
 ### 2.3 Trace and repository state
 
@@ -167,6 +178,12 @@ for frequency.) With weights: transactions of weight 0 change no support;
 removing them, supp(X ∪ {j}) = supp(X) iff j is in every transaction of
 the cover of X.
 
+Items outside `E` cannot matter: an item removed by recoding is
+infrequent, so supp(X ∪ {j}) ≤ freq(j) < smin ≤ supp(X) for every
+reported X, which therefore stays closed and maximal with respect to it.
+(Items removed by the item selection `-R` are outside the universe by
+upstream's semantics, and the oracle agrees.)
+
 ### 3.2 Complete versus local checks
 
 - A **complete** check evaluates the condition of 3.1 for every
@@ -250,7 +267,9 @@ all other items of `N'` and its perfect extensions are ≤ c < m.
 
 Every stored set is `M̂` for some node `M`, with the true support
 supp(M) (supports are exact conditional supports; perfect extensions have
-full support). Hence:
+full support). Every stored set is also frequent, because the miners add
+only frequent items; the maximal report rejection below relies on that (a
+stored superset is a frequent superset). Hence:
 
 - **Report rejection** (`cm_supp` ≥ supp(N), resp. ≥ 0 for maximal): a
   stored `S = M̂ ⊇ N` with supp(S) ≥ supp(N). If `M` is a descendant of
@@ -397,7 +416,7 @@ words, k items, O item occurrences (Σ |t|) and Z ≤ O non-zero words
 | full rows of dense items | 8·W per dense item; ≤ 16 per non-zero word (2·nz ≥ W), or ≤ 16·O in all when every item is dense (the 4× rule) |
 | vertical form in all (index + values + rows) | **≤ 20·O** (5× the horizontal items) |
 | weight planes (only if some distinct transaction has weight > 1) | 8·W·⌈log₂(max weight + 1)⌉ |
-| per-depth path cache (`checkPath`) | ≤ 12·W per level (12 bytes per non-zero cover word; level k ⊆ level k−1 ⊆ the first item's words), at most zmax levels (the prefix of a reported set has at most zmax items): ≤ 12·W·zmax |
+| per-depth path cache (`checkPath`) | ≤ 12·W per level (12 bytes per non-zero cover word; level k ⊆ level k−1 ⊆ the first item's words), at most zmax levels (the prefix of a reported set has at most zmax items): ≤ 12·W·zmax. Tighter (independent audit, M5A-2): a transaction contributes a cover word to at most \|t\| levels, so all levels together hold ≤ 12·O bytes, independent of zmax |
 | scratch covers of `check` | ≤ 2 · 12·W |
 | per item: frequencies, order, stamps, counts, offsets | ≈ 44·k |
 
@@ -406,7 +425,11 @@ W = 3,115, O = 1,765,336, Z = 924,374; the 4× rule fails, 62 dense
 items, 5 weight planes from merged duplicate transactions): vertical
 form 11.9 MB = 1.7× the 7.1 MB of horizontal items, instead of 64.6 MB
 of full rows plus a 3.7 MB index before. Peak RSS of the CLI (§7):
-126 MB, before 179–181 MB, the unlimited search 106 MB.
+126 MB, before 179–181 MB, the unlimited search 106 MB. The audit measured
++50 MB (+20 %) over the unlimited search on 1 million sparse transactions
+with `-n1` (297.7 vs 248.1 MB; C 146.5 MB). In all, the checker's extra
+memory is linear in the input: at most about 36·O + 24·T bytes plus the
+per-item arrays (audit's derivation).
 
 A check costs at most min(Σ |t| over the cover, #items × #non-zero cover
 words) plus the cover update; closed checks usually stop after a few
@@ -454,6 +477,16 @@ exponential lengths, mean 8). CLI runs (6 each, output to a file, median
 wall time / peak RSS from `/usr/bin/time -l`); "before" is commit c16c2f5
 (full exploration), "after" the working tree. All three produce identical
 sets (sorted comparison) in every configuration.
+
+The "before" column is the one measurement of the full-exploration path
+that this report relies on (c16c2f5, data generated in process before the
+datasets were pinned, see below). Other figures for the same case differ:
+the Stage 1 review measured 31.6 s / 422 MB (§1), and the independent
+audit rebuilt c16c2f5 and measured 29.1–29.8 s / 434–496 MiB on the
+pinned `d2000x40d60.tab` (3 runs, `/dev/null`). Read the "before" peak
+memory as 0.4–0.7 GB; the conclusion (roughly 1,500× faster and 30–50×
+less memory) does not depend on which figure is used. The audit's
+"after" figures were 19.8 ms / 13.9 MB, C 224.8 ms / 22.0 MB.
 
 | config | before (full) | after (limited + check) | C native |
 | --- | --- | --- | --- |
@@ -587,6 +620,19 @@ take 1.1–1.2× (closed) and 1.3–1.6× (maximal) the unlimited ones and
 are not exact in general, B5). That bounded overhead is accepted for the
 removal of the exponential worst case. Without a relevant limit nothing
 changes.
+
+"Bounded overhead" was measured on sparse data. The independent audit
+found the worst ratio to C on dense data with many maximal sets of
+exactly the maximum size (M5A-1): `d20000x200d30 -tm -s2 -n3`, 1,313,400
+sets, Go 99.7 s / 110.8 MB against C 39.0 s / 1,258.5 MB (2.6× the time,
+a ninth of the memory), while `-tc` on the same data is faster than C
+(12.1 s vs 46.2 s). Every reported maximal set needs all of its one-item
+extensions shown infrequent, so its check cannot stop early and counts
+the whole cover; C pays a similar cost by exploring to zmax+1, on
+compressed FP-trees. The result is exact; the time is accepted for now.
+A possible optimization is to share the work among the children of a
+boundary node (one pass over the parent's cover bounds every child's
+extensions); it is deferred.
 
 Reusing covers along the search path (`checkPath`, the cover of a set
 is the cover of its prefix) was implemented after this report's first

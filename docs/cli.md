@@ -132,8 +132,9 @@ escape decoding.
 | --- | --- |
 | `-!` | Print additional option information and exit. |
 
-`-z` (zlib-compressed output) is not supported, as in upstream's reference
-build: it is an unknown option (exit status 6).
+`-z` (zlib-compressed output) is not supported, as in upstream's default
+build, which does not define `USE_ZLIB`: it is an unknown option (exit
+status 6). Support is deferred past v0.1.0.
 
 ## Exit status
 
@@ -258,7 +259,21 @@ The full list with evidence and tests is in
   temporary file instead of being read into memory.
 - **Floating point** (F-1): log-based measures use Go's `math` package and
   can differ from the C library in the last bit; a value exactly at the
-  threshold can then be reported by one program and not the other.
+  threshold can then be reported by one program and not the other. For
+  any measure, a value that is mathematically equal to the `-d`
+  threshold may fall on either side after rounding, in both programs.
+- **Numeric limits** (N1-N3): the statistical measures (`-e n p y t i g
+  f h m s z` and `-i`) are reliable only below a total transaction weight
+  of about 10^12; above about 2^52 `-s`, `-S` and `-c` admit results just
+  outside the bound; absolute thresholds (`-s-<n>`, `-S-<n>`) above 2^53
+  are rounded, as upstream parses them as doubles.
+- **Closed standard output** (C10): when the caller closes standard
+  output (`>&-`), the Go runtime opens `/dev/null` in its place, so the
+  program exits 0 where upstream reports "write error on file <stdout>"
+  (exit 4). Redirect to a file if the exit status must detect this.
+- **Preserved** (P1-P6, O8): see `differences.md`; among them, with an
+  evaluation threshold and the default `-ax` the reported item sets can
+  depend on `-A`, `-q` and the target (as upstream).
 
 Kept as upstream: `-n0`, `-S0` and infinite values are accepted (empty or
 saturated results), and integer option values are truncated from C `long`

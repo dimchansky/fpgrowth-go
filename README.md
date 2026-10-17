@@ -46,10 +46,16 @@ against Christian Borgelt's C program, built from the unmodified sources,
 and against a brute-force oracle (see [Testing](#testing)). Performance
 figures in this README and in `docs/benchmarks.md` are measurements on one
 machine (Apple M1 Max); on that machine the Go CLI took 1.12–2.08× the C
-program's wall time across the benchmark configurations (geometric mean
-1.60×), and was faster than C for dense closed/maximal mining with a small
-size limit. Validate on your own workloads. There is no tagged release yet;
-the API may still change before v1.
+program's wall time across the 32 main benchmark configurations
+(geometric mean 1.60×). That mean was computed by hand from the medians
+of five runs per configuration (no committed tool computes it, and no
+significance test was made), and it excludes the 15 size-limited
+closed/maximal (`-n`) configurations: there Go was faster than C on dense
+data with a small size limit, but 2.2–3.2× slower than C on the large
+sparse dataset (1.7–3.0× in the independent audit's re-run), where Go
+performs an exact check that C omits (deviation M5). Validate on your own
+workloads. There is no tagged release yet; the API may still change
+before v1.
 
 ## Installation
 
@@ -118,8 +124,12 @@ Output:
 ```
 
 Results come in upstream's order, not sorted, and the items of a set are in
-the miner's report order. The order is deterministic for given data,
-options and algorithm variant.
+the miner's report order. The order is deterministic for the same data,
+options, algorithm variant and library version, but it is not part of the
+API's compatibility promise: a later version may report the same results in a
+different order without a major version change (see
+[docs/releasing.md](docs/releasing.md)). Sort the results if your code
+depends on an order.
 
 ## Features
 
@@ -131,15 +141,24 @@ empty).
 **Algorithm variants** (`Options.Algorithm`, CLI `-A`): `AlgorithmSimple`,
 `AlgorithmComplex` (the default, also chosen by `AlgorithmAuto`),
 `AlgorithmSingleTree` (top-down processing of one prefix tree) and
-`AlgorithmTopDown` (top-down processing of the prefix trees). All variants find the
-same sets with the same supports; order and speed differ.
+`AlgorithmTopDown` (top-down processing of the prefix trees). Without an
+evaluation threshold, all variants find the same sets with the same
+supports; order and speed differ. With an evaluation threshold and the
+default aggregation `AggregateFirst` (CLI `-ax`), an item set is
+evaluated by the rule whose head is its first item in the miner's
+internal item order. That order depends on the variant, the tuning and
+the target, so the filtered sets can differ between them, exactly as in
+upstream; `AggregateMin`, `AggregateMax` and `AggregateAverage` (`-am
+-an -aa`) do not depend on the order.
 
 **Optimizations** (`Tuning`, all on by default, as upstream): perfect
 extension pruning (`-x` disables), the k-items machine for up to 16 items
 (`-l`), item reordering by conditional support in the `Complex` variant
 (`-j` disables), head-union-tail pruning for maximal item sets (`-u`
 disables), and the initial item order (`-q`). None of them changes the
-results, only speed and result order. See [docs/algorithm.md](docs/algorithm.md).
+results, only speed and result order, except for item sets filtered by an
+evaluation threshold with `AggregateFirst` (see above). See
+[docs/algorithm.md](docs/algorithm.md).
 
 **Thresholds**: minimum and maximum support, absolute (`Count`, exact over
 the whole `int64` range, bounds inclusive) or relative to the total
@@ -153,7 +172,8 @@ supports are sums of weights. The total weight is checked for overflow;
 negative weights are rejected.
 
 **Item selection and appearances**: restrict item set mining to given items
-(`Options.Items`, `-R` with a selection file); restrict where items may
+(`Options.Items`, `-R` with a selection file; a nil or empty
+`Options.Items` means no restriction); restrict where items may
 appear in rules (`RuleOptions.Appearance` and `DefaultAppearance`, `-R`
 with an appearance file for `-tr`).
 
@@ -211,6 +231,10 @@ owned by the library and reused: they are valid only during the callback or
 iteration step. Use `Clone` to keep a result.
 
 ### Items of any comparable type
+
+Items are identified by Go's `==` on the item type: `-0.0` and `+0.0`
+are one item, while `any(1)` and `any(int64(1))` are two distinct items
+(different dynamic types).
 
 ```go
 ctx := context.Background()
@@ -360,6 +384,13 @@ larger is better and the threshold is a minimum; for the p-value measures
 it is a maximum (`Measure.HigherIsBetter`), so a zero threshold filters
 everything there.
 
+Without an `Evaluation`, `Value` is NaN (no value). NaN is not equal to
+itself, so `==` and `reflect.DeepEqual` report two identical unevaluated
+results as different. Compare results by items and supports, or compare
+`Value` with a NaN-aware test such as
+`a == b || (math.IsNaN(a) && math.IsNaN(b))` (with go-cmp:
+`cmpopts.EquateNaNs()`).
+
 ```go
 ctx := context.Background()
 src := fpgrowth.FromItems([][]string{
@@ -499,7 +530,11 @@ total weight 9
 ```
 
 The zero `TableFormat` is `DefaultTableFormat()`; any other value is taken
-literally (clear `Comments` to read items that start with `#`).
+literally (clear `Comments` to read items that start with `#`). A
+non-zero format with empty `RecordSeparators`, such as
+`TableFormat{FieldSeparators: ";"}`, is rejected with `ErrInvalidOptions`
+instead of reading the whole input as one transaction; start from
+`DefaultTableFormat()` and change the fields that differ.
 
 ### Other inputs: TableReader and CSVReader
 
@@ -712,15 +747,24 @@ finished after the last check. Results found since the last check may
 still be delivered after the cancellation: up to about 1024 item sets, or
 the rules of up to 256 item sets. How long the return takes is the work
 between two checks, which grows with the input (one projection or merge
-of a tree is proportional to its size); it is not a hard bound. In
-measurements (Apple M1 Max) mining returned within 2 ms of the
-cancellation in `TestCancelBursts` (26 identical items, 2^26 sets) and
-`TestCancelFisher` (5·10^7 tables per evaluation); on 4 million
-generated transactions of 20 items each, canceled while the FP-tree was
-built or while mining (building the whole tree takes 4–19 s there), it
-usually returned within 10 ms and at most within 0.35 s, when the
-cancellation met the growth (a copy) of a node arena of several GB. `SpoolTable` and `SpoolCSV` check the context between
-chunks.
+of a tree is proportional to its size); it is not a hard bound. The
+figures below are measurements (Apple M1 Max), not guarantees. The tests
+assert only loose bounds that hold on loaded CI runners: 500 ms after the
+cancellation (`cancelLatencyLimit` in `fpgrowth_test.go`), 50 ms while the
+top-level tree is built (`TestCancelTreeBuild`). Measured, mining
+returned within 2 ms of the cancellation in `TestCancelBursts` (26
+identical items, 2^26 sets) and `TestCancelFisher` (5·10^7 tables per
+evaluation); the independent audit observed at most 8.8 ms over the
+`TestCancel*` tests (`go test -run TestCancel -v .` on a loaded machine).
+On 4 million generated transactions of 20 items each, canceled while the
+FP-tree was built or while mining (building the whole tree takes 4–19 s
+there), it usually returned within 10 ms and at most within 0.35 s, when
+the cancellation met the growth (a copy) of a node arena of several GB.
+That figure is a one-off measurement with a throwaway program that is not
+in the repository; the audit's own probe of the same shape (4 million
+transactions of 20 out of 1000 items, `Fraction(0.01)`, canceled after
+0.3 to 12 s) returned after 54 µs to 104 ms. `SpoolTable` and `SpoolCSV`
+check the context between chunks.
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -752,9 +796,14 @@ the field), `ErrNotReplayable`, `ErrNegativeWeight`, `ErrWeightOverflow`,
 slice in an `any` item, or not equal to itself, such as NaN; checked only
 for item types that can hold such values, once per distinct item, plus at
 every occurrence of an item ignored by `Options.Items` or
-`RuleOptions.DefaultAppearance`). A database
-without frequent items is not an error: nothing is reported and
-`Summary.FrequentItems` is 0.
+`RuleOptions.DefaultAppearance`). An invalid item in `Options.Items`
+matches both `ErrInvalidOptions` and `ErrInvalidItem`. A nil `SourceFunc`
+is `ErrInvalidOptions`, and so is a `MaxSupport` below a `MinSupport` of
+the same kind (both `Count` or both `Fraction`); since a `Count` minimum
+below 1 counts as 1, `MaxSupport: Count(0)` is therefore an error.
+`SpoolCSV` and `SpoolTable` reject an invalid format before they copy any
+input. A database without frequent items is not an error: nothing is
+reported and `Summary.FrequentItems` is 0.
 
 ```go
 ctx := context.Background()
@@ -907,7 +956,9 @@ UTF-8; an item ends at its first NUL byte. With weights (`Weighted`, CLI
 `()`, `[]` or `{}`. The CLI decodes escape sequences such as `\t` in `-r -f
 -b -C`; `TableFormat` holds literal bytes. The zero `TableFormat` means
 `DefaultTableFormat()`; any other value is taken literally, so start from
-`DefaultTableFormat()` and replace what differs.
+`DefaultTableFormat()` and replace what differs. A non-zero
+`TableFormat` with empty `RecordSeparators` is rejected with
+`ErrInvalidOptions`.
 
 **CSV** (`CSVFile`, `SpoolCSV`, library only): RFC 4180 through
 `encoding/csv`. Every record is a transaction and every field an item;
@@ -969,10 +1020,18 @@ what mining keeps in memory is:
 
 Memory therefore grows with the distinct structure of the data (number of
 distinct items and distinct transaction prefixes), not with the number of
-transaction records. A test (`TestLargeFileStreaming`) mines a 50 MB
-generated table file and a CSV file of the same data with a heap peak
-below 8 MB; that bound holds for that data, not in general. Nothing in this
-library is constant-memory.
+transaction records. A test (`TestLargeFileStreaming`) shows that the
+file sources do not retain records: it mines a 50 MB generated table
+file and a CSV file of the same data and asserts that the Go heap
+(`runtime.MemStats.HeapAlloc`, sampled every 50,000 transactions and at
+every result) stays below 8 MB. Its data is deliberately simple: at its
+minimum support (`Fraction(0.3)`) only two items are frequent, so the
+bag holds at most four distinct transactions and mining reports 3 sets.
+It says nothing about the bag and the trees of realistic data, and it
+measures heap, not process memory. On a file of the same shape the
+independent audit measured the CLI's maximum RSS (`/usr/bin/time -l
+fpgrowth -f, -s…`): 6.0 MB at `-s30` (3 sets), but 254 MB, 4.9 × the
+file, at `-s0.5` (503 sets). Nothing in this library is constant-memory.
 
 High-cardinality data is the opposite case: when almost every transaction
 is distinct after filtering, little is shared between transactions, the
@@ -981,7 +1040,10 @@ item occurrences, and **peak memory can be several times the size of the
 input file**. Measured on a generated table file
 (183 MB: 4,000,000 transactions of 4 to 16 items drawn from a Zipf(1.1)
 distribution over 20,000 items; `TableFile`, `MinSupport: Count(5000)`,
-916 frequent items, `MaxSize: 3`, count only; Go 1.27.2, Apple M1 Max):
+916 frequent items, `MaxSize: 3`, count only; Go 1.27.2, Apple M1 Max).
+This is a one-off measurement: the generator configuration and the heap
+sampler used for it are not committed, so the table cannot be re-run from
+the repository and should be read as an order of magnitude:
 
 | Quantity | Measured |
 | --- | --- |
@@ -1015,23 +1077,40 @@ Results are delivered one at a time from reused buffers; a test checks that
 the public API adds only a constant number of allocations to the internal
 pipeline, independent of the number of results.
 
-Closed and maximal item sets with a maximum size (`MaxSize`, CLI `-n`) are
-searched without the depth limit that upstream uses, because upstream's
-limit lets non-closed and non-maximal sets through (deviation M5 in
-[docs/differences.md](docs/differences.md)). On large data this can be
-slower than upstream with `-n`. A cheaper exact check is scheduled for the
-performance stage.
+Closed and maximal item sets with a maximum size (`MaxSize`, CLI `-n`)
+are searched with a depth limit, as upstream does: the search stops where
+no set of at most `MaxSize` items can follow. Every set the closed/maximal
+repository accepts is
+then checked against all items of the database (a complete one-item
+extension check). Upstream's depth limit alone lets non-closed and
+non-maximal sets through (deviation M5 in
+[docs/differences.md](docs/differences.md)); the check makes the results
+equal to the definition. The argument and the test evidence are in
+[docs/m5-investigation.md](docs/m5-investigation.md). Measured costs
+([docs/benchmarks.md](docs/benchmarks.md#m5-size-limited-closedmaximal)):
+on dense data with a small `-n` the Go program is faster than C; on
+large sparse data it takes 2.2–3.2× C's wall time; and on dense data with
+many maximal sets of exactly the maximum size the maximal check
+dominates (independent audit, `-tm -s2 -n3` on 20,000 transactions of
+200 items: Go 99.7 s and 111 MB, C 39.0 s and 1,258 MB, with C's output
+not exact in general). Without a maximum size below the longest
+transaction nothing is checked.
 
-The `Tuning` options and `Algorithm` change speed and result order only.
-Which settings are fastest depends on the data; no measurements are
-published yet.
+The `Tuning` options and `Algorithm` change speed and result order only
+(apart from the `AggregateFirst` case under [Features](#features)). Which
+settings are fastest depends on the data; the measured variants are in
+[docs/benchmarks.md](docs/benchmarks.md#go-vs-c).
 
 ## Differences from upstream
 
 The port reproduces upstream's results, order and text output, and fixes
 confirmed upstream defects instead of copying them. Every difference is
-intentional, tested and listed with its evidence in
-[docs/differences.md](docs/differences.md). In summary:
+intentional and listed with its evidence, its kind (defect fix, policy
+choice, platform difference, improvement, new behavior) and its test in
+[docs/differences.md](docs/differences.md). An independent audit counted
+33 distinct, confirmed, user-visible upstream defects that the port fixes,
+plus two upstream crashes that it avoids and five latent defects
+(`docs/differences.md`, "Summary"). In summary:
 
 - **Results.** Fixed: crashes or wrong item names with `-At` (M1); `-s0`
   and zero-frequency items (the effective minimum support is at least 1,
@@ -1039,23 +1118,34 @@ intentional, tested and listed with its evidence in
   frequent items are perfect extensions or with `-x` and the k-items
   machine (M4, M9); non-closed/non-maximal sets reported with `-n` (M5).
   Negative weights are rejected (M6); supports are 64-bit and total-weight
-  overflow is an error (M7); out-of-range thresholds are clamped (M8).
+  overflow is an error (M7); out-of-range thresholds are clamped (M8); no
+  stack overflow on long, repeated transactions (M10).
 - **Rules and evaluation.** `-eb` selects the imbalance ratio for rules
   (R1); `-p` prunes as documented (R2); head-only items stay out of rule
   bodies (R3); `-S` applies to the same support as `-s` (R8); several
-  measure edge cases are corrected (R4-R7, R9-R11).
+  measure edge cases are corrected (R4-R7, R9); R10 and R11 are latent
+  defects fixed on the way.
 - **Floating point.** Values are bit-identical to the C reference built
   without fused multiply-add, except log-based values, which can differ in
-  the last bit from the platform's C library (F-1).
+  the last bit from the platform's C library; a value exactly on a
+  threshold can fall on either side for any measure (F-1). Numeric limits
+  for very large weights are N1-N3 (see [Limitations](#limitations)).
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
-  write errors are reported (O1-O10). Number formatting is kept
-  byte-compatible.
+  write errors are reported; no crash with supports above about 2·10^8
+  (O1-O11). Number formatting is kept byte-compatible. A standard output
+  closed by the caller (`>&-`) is not detected: the Go runtime opens
+  `/dev/null` in its place, so the program exits 0 where C exits 4
+  (C10).
 - **CLI input and messages.** Escape decoding, non-ASCII separators, long
   fields and the last record without a newline are handled correctly
   (I1-I8); NaN thresholds are rejected; standard input is spooled to a
   temporary file; SIGINT exits with status 130; log times are wall-clock
-  times (C1-C9).
+  times (C1-C10).
+- **Preserved.** Some upstream behavior that looks like a defect is kept
+  on purpose (number formatting, NUL bytes ending item names, `%g`
+  pattern-spectrum counts, tie order, the order dependence of
+  `AggregateFirst`): P1-P6 and O8.
 
 ## Limitations
 
@@ -1066,18 +1156,35 @@ intentional, tested and listed with its evidence in
   [Memory and performance](#memory-and-performance)). Trees, the item set
   tree and the closed/maximal repository are limited to 2^31-1 nodes or
   items (`ErrTooLarge`).
-- Performance has not been measured against the C program or optimized
-  yet; closed and maximal mining with a maximum size can be slower than
-  upstream (M5).
+- Performance was measured against the C program on one machine only
+  ([docs/benchmarks.md](docs/benchmarks.md)): Go takes about 1.1–2.1× C's
+  wall time on the main configurations. Closed and maximal mining with a
+  maximum size runs an exact check that C omits (M5); it is faster than C
+  on dense data with a small size limit, but 2.2–3.2× slower on large
+  sparse data and up to 2.6× slower for dense maximal sets of exactly the
+  maximum size.
+- Numeric limits for very large weights (`docs/differences.md`, N1-N3):
+  the statistical evaluation measures (chi², Yates, G-test and
+  information, Fisher, certainty factor, and `-i`) are reliable only
+  below a total transaction weight of about 10^12; above about 2^52 the
+  support and confidence thresholds admit results just outside the bound;
+  CLI absolute thresholds above 2^53 are rounded like upstream's doubles
+  (the library's `Count` is exact). For any measure, a value exactly on
+  the evaluation threshold may fall on either side (F-1).
 - Association rules have exactly one item in the head.
 - Results come in upstream's order; the library does not sort them. The
-  order depends on the data, the options and the algorithm variant.
+  order depends on the data, the options and the algorithm variant; it is
+  deterministic for the same version but not part of the compatibility
+  promise.
 - The library has no text output; formatting like the CLI's `-v` info codes
   exists only in the command-line program.
-- Not ported: the `fpgpsp` program (its sources are missing from the
-  upstream archive) and zlib-compressed output (`-z`, not compiled into
-  the upstream reference build; the Go CLI rejects `-z` as an unknown
-  option).
+- Not ported (deferred past v0.1.0): the `fpgpsp` program (pattern
+  spectra from surrogate data for significance filtering with `-F`):
+  `fpgpsp.c` is in the upstream archive, but it needs `tars.c`,
+  `pspest.c` and pthreads, which the archive does not contain; and
+  zlib-compressed output (`-z`): it is not compiled into upstream's
+  default build, and the Go CLI rejects `-z` as an unknown option, like
+  that build.
 
 ## Testing
 
@@ -1088,10 +1195,25 @@ go vet ./...
 ```
 
 The root module's tests compare against golden files produced by the C
-reference (committed under `testdata/` directories), check results against
-a brute-force oracle (`internal/oracle`) on random data, and include fuzz
-targets for the table reader, the C number parsers, the transaction bag,
-the miner, the CSV source and the CLI option parser.
+reference (committed under `testdata/` directories; generated on
+macOS/arm64 with clang by the scripts in `reference/harness/`, and
+regenerated byte-identically by the independent audit), check results
+against a brute-force oracle (`internal/oracle`) on random data, and
+include fuzz targets for the table reader, the C number parsers, the
+transaction bag, the miner, the CSV source and the CLI option parser.
+Exception: `cmd/fpgrowth/testdata/golden-go/` holds reviewed snapshots
+of the Go program's output for the CLI cases that deviate from upstream
+by design (`cmd/fpgrowth/testdata/deviations.txt`); they are rewritten
+with `go test ./cmd/fpgrowth -update`, and the test requires them to
+differ from the C golden. The oracle's mining is independent of the
+port's code, but its rule measures are the port's own `internal/ruleval`
+functions, so a wrong measure formula is caught only by the C-derived
+fixtures and the differential tests.
+
+In tests of your own code, remember that `Value` is NaN without an
+evaluation: compare results by items and supports or with NaN-aware
+equality (for example go-cmp's `cmpopts.EquateNaNs()`), not with
+`reflect.DeepEqual`, which reports two identical results as different.
 
 `reference/` is a separate Go module with development tooling: the
 unmodified upstream C sources, a reproducible reference build, and a
@@ -1106,6 +1228,17 @@ go test ./...         # differential tests against the C build
 
 See [reference/README.md](reference/README.md) for the build variants,
 the differential test options and how deviations are verified.
+
+Case counts overstate what the differential test compares. In the
+independent audit's run of the default configuration (seed 1, 10,000
+small cases plus 300 large ones, 0 failures), 1,421 small cases (14 %)
+ended with "no (frequent) items found" in both programs, only 5,274 wrote
+at least one set or rule, and the Go output was checked against the brute
+force exactly in 6,021 cases and only as a subset in 2,558 (evaluation
+measures). A deliberately injected one-line defect in a measure or in a
+threshold conversion failed 0.25 % and 0.9 % of the small cases: enough
+to be caught at 10,000 cases, but run more cases
+(`DIFFTEST_CASES`, other `DIFFTEST_SEED`s) after changing such code.
 
 ## License
 
