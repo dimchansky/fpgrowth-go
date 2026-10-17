@@ -27,7 +27,7 @@ Requirements:
   go install honnef.co/go/tools/cmd/staticcheck@v0.8.2   # staticcheck 2026.2.2
   go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
   go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-  go install github.com/goreleaser/goreleaser/v2@v2.18.3
+  go install github.com/goreleaser/goreleaser/v2@"$(cat .github/goreleaser-version)"
   ```
 
 ```bash
