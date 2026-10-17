@@ -143,6 +143,9 @@ filled in section 6.
 | INF-10 | Low | hypothesis | Undrafting without `--latest` may mark a backport release as Latest | Fix in release workflow |
 | INF-11 | Low | confirmed | OIDC and write token visible to every step of `publish` | Accept; documented (all steps are pinned, no untrusted input) |
 | INF-12 | Low | confirmed | `gh attestation verify` instructions do not pin signer workflow/ref | Fix docs |
+| NEW-2 | Medium | confirmed | Found during remediation ([t4-performance.md](t4-performance.md) §B): `-At -tc -n` on a long single chain is quadratic in Go only (100k items: 21.4 s, C 0.46 s); the M5 extension check copies the whole covering transaction per check | Fix (exact single-cover shortcut) |
+| NEW-3 | Info | confirmed | Review of #6 (PR6-2): a long first cover transaction followed by short ones keeps the closed check quadratic (one 50 000-item line plus 50 000 one-item lines, `-As -tc -s-2 -n1`: Go 6.8 s, C 3.4 s; C is quadratic too) | Deferred (start candidates from the shortest cover transaction) |
+| NEW-1 | Low | confirmed | Found during remediation (§A of the same report): on the T4 reproducer (long chain, `-n1`) mining is quadratic in upstream C and Go alike (100k items: 34.9 s vs 31.2 s CPU, identical output) | Document; optimization deferred |
 
 Info (no action needed before v0.1.0, recorded in the detailed reports):
 ALG-4 (any measure can fall either side of an exact `-d` threshold),
@@ -177,8 +180,8 @@ INF-13..19.
 
 ## 5. Repository hardening applied (Phase 3)
 
-Applied with `gh api` on 2026-10-17 by the orchestrator; to be verified
-independently.
+Applied with `gh api` on 2026-10-17 by the orchestrator; verified
+independently (§6).
 
 | Setting | Value |
 | --- | --- |
@@ -192,8 +195,64 @@ independently.
 
 ## 6. Remediation record
 
-Filled in as pull requests land.
+Every pull request had an independent reviewer that did not write it;
+review reports are in [reviews/](reviews/).
+
+| PR | Content | Findings | Review |
+| --- | --- | --- | --- |
+| [#1](https://github.com/dimchansky/fpgrowth-go/pull/1) | This report, detailed reports, archived checkers | — | (evidence only) |
+| [#2](https://github.com/dimchansky/fpgrowth-go/pull/2) | Release workflow: explicit prerelease/Latest on undraft, fuzz listing failures fail, vulncheck concurrency, pin check; `docs/releasing.md` (also documents the accepted INF-8 and INF-11) | INF-6, INF-10..13, INF-15, INF-16, INF-18 | [pr2-settings-review.md](reviews/pr2-settings-review.md): accept; P-1 and S-1 applied before merge |
+| [#3](https://github.com/dimchansky/fpgrowth-go/pull/3) | API fixes with regression tests | API-1 (High), API-2..5, API-7..9, docs API-3/10/13/16, DIF-9 | [pr3-review.md](reviews/pr3-review.md): accept; delta [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept with condition D-1 (latency bound), applied before merge |
+| [#5](https://github.com/dimchansky/fpgrowth-go/pull/5) | Regression tests for avoided upstream crashes and CLI rows | M10, O11, C10, C2, C7 (DIF-4/6 follow-up) | [pr3-delta-pr5-review.md](reviews/pr3-delta-pr5-review.md): accept |
+| [#4](https://github.com/dimchansky/fpgrowth-go/pull/4) | Documentation corrections | DIF-1..7, ALG-1..4, TST-1..7, PERF-2/3, M5A-1..4, FEAT-1/2, NEW-1 | [pr4-review.md](reviews/pr4-review.md): approve with changes; re-review of the fixes: approve (R-1..R-3 applied before merge) |
+| [#6](https://github.com/dimchansky/fpgrowth-go/pull/6) | Candidate probes before the closed scan copies the cover transaction | NEW-2 | [pr6-review.md](reviews/pr6-review.md) (by the M5 auditor, who did not write it): accept; PR6-1 (C time quoted where C crashes) fixed before merge; PR6-2 (remaining quadratic shape, also in C) recorded as NEW-3 |
+| [#7](https://github.com/dimchansky/fpgrowth-go/pull/7) | Changelog, progress log, `AGENTS.md`, this record | D-3, D-8 of the PR #4 review | — |
+
+Repository settings (§5) were verified independently in
+[pr2-settings-review.md](reviews/pr2-settings-review.md): every claimed
+setting is live, the 15 required check names equal the CI job names, the
+tag and environment patterns match `v0.1.0-rc.1` and `v0.1.0`, and no
+configuration deadlocks a solo maintainer. A direct push to `main` was
+not tested (the orchestrator's tooling refused it as a merge without
+review); enforcement evidence is the active rules on `main`
+(`gh api repos/dimchansky/fpgrowth-go/rules/branches/main`) and the
+`BLOCKED` merge state of every PR until its checks passed.
+
+Residual risk accepted by the settings review (S-1): the `release`
+environment gates only workflows that declare it, and a tag runs the
+workflow file of the tagged commit. With a single collaborator the
+control is that the approver checks the run's commit is the tagged
+`main` commit (`docs/releasing.md`, step 5).
 
 ## 7. Acceptance
 
-Pending the independent review of the fixes.
+**Gate A (independent audit) — accepted, 2026-10-17**, at `main`
+`ff3db2a` (merge of #6), by the orchestrator on the evidence above:
+
+- The only Critical and High findings were INF-1, INF-2, INF-3 (fixed in
+  the repository settings and verified by a separate reviewer) and API-1
+  (fixed in #3, accepted by a separate reviewer who reproduced the panic
+  on `f7bb606` and confirmed the fix by mutation). No Critical or High
+  finding remains open.
+- Every Medium finding is fixed (API-2, NEW-2, DIF-2/TST-1, INF-4,
+  INF-5) or documented with a recorded decision (ALG-1, API-3, TST-2,
+  INF-6). Low findings are fixed or documented except those accepted in
+  §4 (API-6, INF-8, INF-9, INF-11).
+- Each fix PR had an independent review; all 15 required checks passed
+  on each PR before merge.
+- Remaining limitations are documented in `docs/differences.md`
+  (Numeric limits N1–N3, Preserved P1–P6), `docs/benchmarks.md` and the
+  deferred list in `docs/PROGRESS.md` (ALG-1 exact arithmetic, M5A-1,
+  NEW-1, NEW-3, TST-3, fpgpsp, `-z`).
+
+Not verified before a real tag run (release-only paths): the `publish`
+job, environment approval, attestation, undraft with explicit
+prerelease/Latest flags, and immutable-release behavior on rerun. They
+are covered by Gate D.
+
+**Gate B (repository protection) — accepted**: §5, verified in
+[reviews/pr2-settings-review.md](reviews/pr2-settings-review.md); no
+owner-only action is outstanding.
+
+**Gate C — not crossed.** No tag or release exists. Creating
+`v0.1.0-rc.1` needs the maintainer's explicit authorization.
