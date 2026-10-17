@@ -32,6 +32,17 @@ type testCase struct {
 	tuning       Tuning
 }
 
+// orderedMax returns the maximum support (in upstream and public
+// notation) raised to the minimum if the options would reject it as below
+// the minimum (same kind, see checkRange): such a range is an error of
+// the API, while the CLI accepts it and reports nothing.
+func orderedMax(smin float64, minSupp Support, smax float64, maxSupp Support) (float64, Support) {
+	if checkRange(minSupp, maxSupp) != nil {
+		return smin, minSupp
+	}
+	return smax, maxSupp
+}
+
 // genTestCase draws a random dataset over at most maxItems items and
 // random thresholds.
 func genTestCase(seed uint64, maxItems int) (testCase, error) {
@@ -73,6 +84,7 @@ func genTestCase(seed uint64, maxItems int) (testCase, error) {
 		k := 30 + r.IntN(71)
 		c.smax, c.maxSupp = float64(k), Fraction(float64(k)/100)
 	}
+	c.smax, c.maxSupp = orderedMax(c.smin, c.minSupp, c.smax, c.maxSupp)
 	switch r.IntN(5) {
 	case 0:
 		c.zmin, c.includeEmpty = 0, true

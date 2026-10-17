@@ -28,8 +28,11 @@ import (
 // taken literally: a field left empty is an empty class, so start from
 // DefaultTableFormat and replace what differs (Comments = "" disables
 // comments, FieldSeparators = "\t" reads tab-separated items with spaces
-// inside). A format without any special byte (the whole input one item)
-// cannot be expressed and is not useful.
+// inside). A non-zero format must have RecordSeparators: without them the
+// whole input would be one transaction, so a partially filled literal
+// such as TableFormat{FieldSeparators: ";"} is rejected with an error
+// wrapping ErrInvalidOptions (when the source is read, and by SpoolTable
+// before it copies anything) instead of silently mining one transaction.
 type TableFormat struct {
 	// RecordSeparators separate records (upstream -r, default "\n").
 	RecordSeparators string
@@ -62,6 +65,15 @@ func DefaultTableFormat() TableFormat {
 	}
 }
 
+// validate rejects a non-zero format without record separators (see
+// TableFormat).
+func (f TableFormat) validate() error {
+	if f != (TableFormat{}) && f.RecordSeparators == "" {
+		return invalid("TableFormat.RecordSeparators", "empty in a non-zero format (start from DefaultTableFormat)")
+	}
+	return nil
+}
+
 // config returns the reader configuration; the zero format is the
 // default one.
 func (f TableFormat) config() tabread.Config {
@@ -92,8 +104,9 @@ func (f TableFormat) config() tabread.Config {
 // directly; a Source that wraps it (for example a SourceFunc delegating
 // to it) is checked by transaction count and total weight only.
 //
-// Errors: a file that cannot be opened yields an error "cannot open file
-// <path>: ..." wrapping the *os.PathError, a failed read "read error on
+// Errors: an invalid format (see TableFormat) yields an error wrapping
+// ErrInvalidOptions; a file that cannot be opened yields an error "cannot
+// open file <path>: ..." wrapping the *os.PathError, a failed read "read error on
 // file <path>: ..." wrapping the I/O error; malformed input yields an
 // error wrapping ErrSyntax (ErrNegativeWeight for a negative weight) whose
 // message has upstream's form "<path>:<record>(<field>): <message>".
@@ -117,13 +130,14 @@ func TableFile(path string, f TableFormat) Source[string] {
 //
 // Concurrent passes call open concurrently.
 func TableReader(open func() (io.ReadCloser, error), name string, f TableFormat) Source[string] {
-	return tableSource{in: opener{open: open, name: name}, cfg: f.config()}
+	return tableSource{in: opener{open: open, name: name}, cfg: f.config(), err: f.validate()}
 }
 
 // tableSource adapts tabread's reader to a Source.
 type tableSource struct {
 	in  opener
 	cfg tabread.Config
+	err error // the error of an invalid format, returned by every pass
 }
 
 func (s tableSource) forRun() Source[string] {
@@ -133,6 +147,10 @@ func (s tableSource) forRun() Source[string] {
 
 func (s tableSource) Transactions() iter.Seq2[Transaction[string], error] {
 	return func(yield func(Transaction[string], error) bool) {
+		if s.err != nil {
+			yield(Transaction[string]{}, s.err)
+			return
+		}
 		rc, err := s.in.openPass()
 		if err != nil {
 			yield(Transaction[string]{}, err)

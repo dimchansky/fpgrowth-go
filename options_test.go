@@ -40,7 +40,14 @@ func TestOptionsValidation(t *testing.T) {
 		{"fraction nan", func(o *Options[string]) { o.MinSupport = Fraction(math.NaN()) }, "MinSupport"},
 		{"fraction negative", func(o *Options[string]) { o.MinSupport = Fraction(-0.1) }, "MinSupport"},
 		{"max support nan", func(o *Options[string]) { o.MaxSupport = Fraction(math.NaN()) }, "MaxSupport"},
-		{"max support count zero", func(o *Options[string]) { o.MaxSupport = Count(0) }, ""},
+		{"max support count zero", func(o *Options[string]) { o.MaxSupport = Count(0) }, "MaxSupport"},
+		{"max count below min count", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Count(5), Count(2) }, "MaxSupport"},
+		{"max count equal to min count", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Count(5), Count(5) }, ""},
+		{"max count 1 with min count 0", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Count(0), Count(1) }, ""},
+		{"max count 0 with min count 0", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Count(0), Count(0) }, "MaxSupport"},
+		{"max fraction below min fraction", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Fraction(0.4) }, "MaxSupport"},
+		{"max fraction equal to min fraction", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Fraction(0.5) }, ""},
+		{"mixed kinds unchecked", func(o *Options[string]) { o.MinSupport, o.MaxSupport = Fraction(0.5), Count(1) }, ""},
 		{"border negative", func(o *Options[string]) { o.Border = []Support{Count(1), Count(-2)} }, "Border[1]"},
 		{"border zero entry", func(o *Options[string]) { o.Border = []Support{{}, Fraction(0.5)} }, ""},
 		{"target", func(o *Options[string]) { o.Target = TargetGenerators + 1 }, "Target"},
@@ -130,6 +137,9 @@ func TestRuleOptionsValidation(t *testing.T) {
 		{"minimal", func(*RuleOptions[string]) {}, ""},
 		{"missing min support", func(o *RuleOptions[string]) { o.MinSupport = Support{} }, "MinSupport"},
 		{"max support", func(o *RuleOptions[string]) { o.MaxSupport = Count(-5) }, "MaxSupport"},
+		{"max fraction below min", func(o *RuleOptions[string]) { o.MaxSupport = Fraction(0.25) }, "MaxSupport"},
+		{"max fraction equal to min", func(o *RuleOptions[string]) { o.MaxSupport = Fraction(0.5) }, ""},
+		{"max count below min count", func(o *RuleOptions[string]) { o.MinSupport, o.MaxSupport = Count(3), Count(2) }, "MaxSupport"},
 		{"confidence one", func(o *RuleOptions[string]) { o.MinConfidence = 1 }, ""},
 		{"confidence above one", func(o *RuleOptions[string]) { o.MinConfidence = 1.5 }, "MinConfidence"},
 		{"confidence negative", func(o *RuleOptions[string]) { o.MinConfidence = -0.1 }, "MinConfidence"},
@@ -171,14 +181,18 @@ func TestRuleOptionsValidation(t *testing.T) {
 	}
 }
 
-// TestNilSource checks the nil source error.
+// TestNilSource checks the nil source error, also for a nil SourceFunc,
+// which passes a plain nil check and would panic when called.
 func TestNilSource(t *testing.T) {
 	t.Parallel()
-	if _, err := MineItemsets[string](context.Background(), nil, Options[string]{MinSupport: Count(1)}, nil); !errors.Is(err, ErrInvalidOptions) {
-		t.Errorf("item sets: %v", err)
-	}
-	if _, err := MineRules[string](context.Background(), nil, RuleOptions[string]{MinSupport: Count(1)}, nil); !errors.Is(err, ErrInvalidOptions) {
-		t.Errorf("rules: %v", err)
+	var nilFunc SourceFunc[string]
+	for name, src := range map[string]Source[string]{"nil": nil, "nil SourceFunc": nilFunc} {
+		if _, err := MineItemsets(context.Background(), src, Options[string]{MinSupport: Count(1)}, nil); !errors.Is(err, ErrInvalidOptions) {
+			t.Errorf("%s: item sets: %v", name, err)
+		}
+		if _, err := MineRules(context.Background(), src, RuleOptions[string]{MinSupport: Count(1)}, nil); !errors.Is(err, ErrInvalidOptions) {
+			t.Errorf("%s: rules: %v", name, err)
+		}
 	}
 }
 
@@ -331,11 +345,20 @@ func TestStringers(t *testing.T) {
 		Aggregation(7).String():                            "Aggregation(7)",
 		AppearHead.String():                                "AppearHead",
 		Appearance(7).String():                             "Appearance(7)",
+		ItemOrderDefault.String():                          "ItemOrderDefault",
+		ItemOrderNone.String():                             "ItemOrderNone",
+		ItemOrderSizeSumDescending.String():                "ItemOrderSizeSumDescending",
+		ItemOrder(9).String():                              "ItemOrder(9)",
 		TargetFrequent.String() + AlgorithmSimple.String(): "TargetFrequentAlgorithmSimple",
 	}
 	for got, want := range checks {
 		if got != want {
 			t.Errorf("got %q, expected %q", got, want)
+		}
+	}
+	for o := ItemOrderDefault; o <= ItemOrderSizeSumDescending; o++ {
+		if strings.HasPrefix(o.String(), "ItemOrder(") {
+			t.Errorf("item order %d has no name", int(o))
 		}
 	}
 	for m := RuleSupport; m < LogSupportRatio; m++ {

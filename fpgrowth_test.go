@@ -345,7 +345,8 @@ func TestThresholdBoundaries(t *testing.T) {
 		{"max fraction exactly 7 of 10", Count(1), Fraction(0.7), []string{"a", "b"}},
 		{"max fraction 0.69", Count(1), Fraction(0.69), []string{"a"}},
 		{"max count 3", Count(1), Count(3), []string{"a"}},
-		{"max count 0", Count(1), Count(0), nil},
+		{"max count equal to min", Count(3), Count(3), []string{"a"}},
+		{"max fraction equal to min", Fraction(0.7), Fraction(0.7), []string{"b"}},
 		{"max fraction 1", Count(1), Fraction(1), []string{"a", "b", "c"}},
 	}
 	for _, tt := range tests {
@@ -629,6 +630,61 @@ func TestEarlyStop(t *testing.T) {
 	}
 }
 
+// sliceError is an error whose dynamic type is not comparable: == on two
+// such interface values panics.
+type sliceError []string
+
+func (e sliceError) Error() string { return strings.Join(e, "; ") }
+
+// TestCallbackErrorNotComparable checks that a callback error of a
+// non-comparable type is returned unchanged, without a panic, by every
+// form that passes the callback's error through (API-1), and that the
+// iterators still stop cleanly.
+func TestCallbackErrorNotComparable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := bigSource(200)
+	check := func(name string, err error, calls int) {
+		t.Helper()
+		if se, ok := errors.AsType[sliceError](err); !ok || len(se) != 1 || se[0] != "boom" || calls != 1 {
+			t.Errorf("%s: got %v (%T) after %d calls", name, err, err, calls)
+		}
+	}
+	calls := 0
+	sum, err := MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2)}, func(Itemset[int]) error {
+		calls++
+		return sliceError{"boom"}
+	})
+	check("item sets", err, calls)
+	if sum.Reported != 1 {
+		t.Errorf("item sets: %d reported", sum.Reported)
+	}
+	calls = 0
+	_, err = MineRules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2)}, func(Rule[int]) error {
+		calls++
+		return sliceError{"boom"}
+	})
+	check("rules", err, calls)
+	calls = 0
+	_, err = MineItemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2), OnStart: func(Stats) error {
+		calls++
+		return sliceError{"boom"}
+	}}, func(Itemset[int]) error { return nil })
+	check("OnStart", err, calls)
+	for _, err := range Itemsets(ctx, src, Options[int]{MinSupport: Fraction(0.2)}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	for _, err := range Rules(ctx, src, RuleOptions[int]{MinSupport: Fraction(0.2)}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+}
+
 // TestCancel cancels before, during reading and during mining.
 func TestCancel(t *testing.T) {
 	t.Parallel()
@@ -874,9 +930,12 @@ func sparseSource(n int) Source[int] {
 
 // treeBuildLatencyLimit bounds the return after a cancellation in
 // OnStart in TestCancelTreeBuild. Building the whole top-level FP-tree
-// takes 130-480 ms there (Apple M1 Max) and a run checks the context
-// every few thousand transactions (measured: below 0.1 ms).
-const treeBuildLatencyLimit = 50 * time.Millisecond
+// takes 115-490 ms there (Apple M1 Max, unloaded) and a run checks the
+// context every few thousand transactions (measured: below 0.1 ms). A
+// single descheduling on a loaded machine has cost 54 ms (load average
+// about 24), so the limit leaves twice that, but stays below the time
+// of building the whole tree, which is what the test is meant to catch.
+const treeBuildLatencyLimit = 100 * time.Millisecond
 
 // TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
 // is built from a large bag: every algorithm (and the item set tree path
@@ -1369,12 +1428,12 @@ func TestInvalidItems(t *testing.T) {
 	}
 	_, err = MineItemsets(context.Background(), FromItems([][]float64{{1}}),
 		Options[float64]{MinSupport: Count(1), Items: []float64{1, math.NaN()}}, nil)
-	if !errors.Is(err, ErrInvalidOptions) || !strings.Contains(err.Error(), "Items: item 1:") {
+	if !errors.Is(err, ErrInvalidOptions) || !errors.Is(err, ErrInvalidItem) || !strings.Contains(err.Error(), "Items: item 1:") {
 		t.Errorf("NaN in Items: %v", err)
 	}
 	_, err = MineItemsets(context.Background(), FromItems([][]any{{1}}),
 		Options[any]{MinSupport: Count(1), Items: []any{[]byte("x")}}, nil)
-	if !errors.Is(err, ErrInvalidOptions) {
+	if !errors.Is(err, ErrInvalidOptions) || !errors.Is(err, ErrInvalidItem) {
 		t.Errorf("slice in Items: %v", err)
 	}
 }

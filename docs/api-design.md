@@ -65,7 +65,11 @@ func SpoolCSV(ctx context.Context, r io.Reader, dir string, f CSVFormat) (Source
 - **Upstream table format.** `TableFormat` mirrors `-r -f -b -C -w`
   (record/field separators, blanks, comment characters, weight in the
   last field). `DefaultTableFormat()` gives upstream's defaults; the zero
-  `TableFormat` means the same, any other value is literal.
+  `TableFormat` means the same, any other value is literal. A non-zero
+  format with empty `RecordSeparators` is rejected (`ErrInvalidOptions`
+  naming `TableFormat.RecordSeparators`) instead of reading the whole
+  input as one transaction; `SpoolTable` and `SpoolCSV` validate their
+  format before copying anything.
 - **CSV.** RFC 4180 via `encoding/csv`: one record = one transaction;
   options `Comma`, `Comment`, `HasHeader` (skip first record),
   `WeightColumn` (1-based; 0 = none, negative counts from the end),
@@ -85,12 +89,13 @@ func Fraction(f float64) Support   // of the total transaction weight, (0, 1]
 type Options[T comparable] struct {
     Target       Target
     MinSupport   Support   // required (zero value is an error)
-    MaxSupport   Support   // zero value: no limit
+    MaxSupport   Support   // zero value: no limit; not below MinSupport if of the same kind
     MinSize      int       // default 1; use IncludeEmpty for the empty set
     MaxSize      int       // 0: no limit
     IncludeEmpty bool
     Border       []Support // per-size minimum support from MinSize (upstream -F)
-    Items        []T       // restrict mining to these items (upstream -R selection)
+    Items        []T       // restrict mining to these items (upstream -R selection);
+                           // nil or empty: no restriction
     Algorithm    Algorithm // AlgorithmAuto (=AlgorithmComplex, upstream default), AlgorithmSimple,
                            // AlgorithmComplex, AlgorithmSingleTree, AlgorithmTopDown
     Tuning       Tuning    // optimizations, all on by default (see below)
@@ -113,7 +118,7 @@ type Summary struct {
 type Itemset[T comparable] struct {
     Items   []T     // valid only during the callback / iteration step
     Support int64
-    Value   float64 // evaluation value (NaN if no evaluation)
+    Value   float64 // evaluation value (NaN if no evaluation, see below)
 }
 func (s Itemset[T]) Clone() Itemset[T]
 
@@ -199,7 +204,26 @@ have no effect.
 - Result slices are owned by the library and reused; use `Clone`.
 - Output order is deterministic for a given source, options and variant
   (it is upstream's order). Different algorithms may order differently;
-  sets and supports are identical.
+  sets and supports are identical. The order is stable for a given
+  version, data and options, but it is not covered by the semver API
+  promise (`docs/releasing.md`) and may change between versions; the
+  sets, rules and supports are covered.
+- `Value` stays NaN without an evaluation (upstream-faithful; no value
+  exists). Since NaN != NaN, `reflect.DeepEqual` and `==` report equal
+  results as different; compare items and supports, or treat NaNs as
+  equal (for example `cmpopts.EquateNaNs()` of go-cmp).
+- Item identity is map key equality: `-0.0` and `+0.0` are one item (the
+  spelling read first is reported); `any(1)`, `any(int64(1))` and
+  `any("1")` are three items; `nil` is a valid `any` item.
+- Validation: an empty non-nil `Options.Items` means no restriction, like
+  nil. An invalid item in `Options.Items` matches both
+  `ErrInvalidOptions` and `ErrInvalidItem`. `MaxSupport` below
+  `MinSupport` is rejected when both are `Count` (a minimum below 1
+  counts as 1) or both `Fraction`; a `Count`/`Fraction` mix is resolved
+  only after pass 1 and not checked. A nil `Source`, also a nil
+  `SourceFunc`, is `ErrInvalidOptions`. A callback error is returned
+  unchanged whatever its dynamic type (it is never compared, so
+  non-comparable error types are fine).
 - Memory: item dictionary + prefix-tree bag + FP-trees (+ repository for
   closed/maximal, item set tree for rules and rule-based evaluation).
   Proportional to the data's distinct structure, not constant.
