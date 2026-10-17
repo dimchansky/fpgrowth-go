@@ -15,6 +15,10 @@
 // floating-point NaN (also inside a struct, array or interface), are
 // rejected with [ErrInvalidItem] instead of panicking or never matching.
 // The checks cost nothing for item types without floats and interfaces.
+// Item identity is map key equality: -0.0 and +0.0 are one item (the
+// spelling read first is reported), while interface values with different
+// dynamic types, such as any(1), any(int64(1)) and any("1"), are distinct
+// items; nil is a valid item of an interface type.
 //
 // A transaction database is a [Source]: something that can be read
 // several times, each pass yielding the same transactions in the same
@@ -53,8 +57,14 @@
 // steady state, reporting a result does not allocate.
 //
 // Results come in upstream's deterministic order, which depends on the
-// data, the options and the [Algorithm]; the sets and supports themselves
-// do not depend on the algorithm or the [Tuning].
+// data, the options (including the order of Options.Items) and the
+// [Algorithm]; the sets and supports themselves do not depend on the
+// algorithm or the [Tuning]. The order is the same for the same data,
+// options and version of this module, but it is not part of the
+// compatibility promise and may change between versions; the sets, rules
+// and supports are. Without an [Evaluation], Itemset.Value and Rule.Value
+// are NaN, so compare results in tests by their items and supports (or
+// with NaNs treated as equal), not with reflect.DeepEqual or ==.
 //
 // # Thresholds
 //
