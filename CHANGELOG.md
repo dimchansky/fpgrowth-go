@@ -12,6 +12,17 @@ The release workflow publishes the section whose heading matches the tag
 
 ## [Unreleased]
 
+### Fixed
+
+- `MineItemsets`, `Itemsets`, `CollectItemsets`, `MineRules`, `Rules` and
+  `CollectRules` return `ctx.Err()` when the context is canceled inside
+  `OnStart` (which then returns nil) and nothing is mined: an empty
+  database, only empty transactions, no frequent item, or an item
+  selection that leaves no item. They returned nil before (RC-2, #14).
+  An error returned by `OnStart` or by the callback still takes
+  precedence over the context error and is returned unchanged; this is
+  now documented.
+
 ## [0.1.0] - 2026-10-17
 
 First public version. A pure Go port and further

@@ -145,7 +145,9 @@ func CollectItemsets[T comparable](ctx context.Context, src Source[T], opt Optio
   k-items machine bursts), every 256 nodes or counters of the item set
   tree and every 4096 tables of a Fisher test; up to about 1024 results
   may still be delivered after the context is canceled, and a canceled
-  run always returns `ctx.Err()`.
+  run always returns `ctx.Err()` (also when `OnStart` cancels it and no
+  item is frequent), unless `OnStart` or the callback returned an error:
+  that error takes precedence and is returned unchanged.
 - `Tuning`: `NoPerfectExtensions`, `NoReorder`, `NoHeadUnionTail`,
   `ItemMachine int` (k-items machine size, 0 = upstream default 16,
   negative = off), `ItemOrder` (upstream `-q`). Zero value = upstream
