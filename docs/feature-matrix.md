@@ -33,7 +33,7 @@ All upstream rows were verified at the end of Stage 1 (review
 
 | Feature | Upstream symbols | Semantics [audit] | Go component | Tests | Status |
 | --- | --- | --- | --- | --- | --- |
-| Min/max support, relative and absolute (`-s`, `-S`) | `fpg_data`, `fpg_report`, `ceilsupp`, `floorsupp` | `ceil(s/100·w·(1−ε))`, `floor(S/100·w·(1+ε))` [core §1.5, §4] | `internal/fpg` | boundary tables, differential | verified |
+| Min/max support, relative and absolute (`-s`, `-S`) | `fpg_data`, `fpg_report`, `ceilsupp`, `floorsupp` | upstream's `ceil(s/100·w·(1−ε))`, `floor(S/100·w·(1+ε))` evaluated exactly, tolerance below one unit (threshold contract, N2) [core §1.5, §4] | `internal/thresh`, `internal/fpg` | big.Rat property tests, boundary tables to 2^63, regression sweeps against the double formula, oracle, differential | verified |
 | Min/max size (`-m`, `-n`) | `isr_setsize`, `ist_setsize` | `xmax = zmax+1` for closed/maximal [report §4]; Go: size-limited search plus complete one-item extension check (M5, `docs/m5-investigation.md`) | `internal/report`, `internal/fpg` (`extcheck.go`) | oracle, `TestExtCheck*` | verified |
 | Support border (`-F`) | `getbdr`, `setbdr`, `isr_setbdr` | per-size minimum from `zmin` [report §4] | `internal/report`, CLI | oracle, differential | verified |
 | Transaction weights (`-w`) | `TA_WEIGHT`, `ib_read` | integer last field [tract §2.5, cli §5] | `internal/tabread`, `internal/tract` | golden, differential | verified |
@@ -47,7 +47,7 @@ All upstream rows were verified at the end of Stage 1 (review
 
 | Feature | Upstream symbols | Semantics [audit] | Go component | Tests | Status |
 | --- | --- | --- | --- | --- | --- |
-| Rule confidence (`-c`), lift | `ist_*`, `isr_rinfo` | `>=` with `1−ε` tolerance [rules §3] | `internal/istree`, `internal/isrout` | oracle | verified |
+| Rule confidence (`-c`), lift | `ist_*`, `isr_rinfo` | `>=` with `1−ε` tolerance, exact, below one unit (threshold contract, N2) [rules §3] | `internal/istree`, `internal/thresh`, `internal/isrout` | oracle (big.Rat), regression sweeps | verified |
 | Original rule support (`-o`) | `FPG_ORIGSUPP` | body ∪ head [rules §1.2] | `internal/istree` | oracle | verified |
 | 25 rule measures (`-e`) | `re_*` (ruleval.c), chi2.c, gamma.c | [rules §6]; float64 with exact 128-bit cross products, a cancellation-free information and Fisher sums from Stirling's formula above a total of 170: accurate up to 2^63 (N1, numeric contract) | `internal/ruleval` | C fixtures (bit-identical where upstream's arithmetic is exact), exact big-number checks, independent reference (`internal/oracle` `RefMeasures`: sweeps and oracle comparisons with the documented bounds as tolerances, large-weight grid) | verified |
 | Log support quotient (`-eb`) | `isr_logrto` | [rules §4.3, report §4] | `internal/report` | differential (tolerance), oracle (`LogRatioEval`) | verified |

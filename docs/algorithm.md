@@ -86,18 +86,24 @@ records and the total weight. Negative weights and an overflowing total
 weight are errors (deviations M6, M7).
 
 **Thresholds.** The minimum support is converted to an absolute support
-with upstream's arithmetic: a percentage `s` becomes
-`ceil(s/100 · W · (1 − 2⁻⁵²))`, a maximum `floor(S/100 · W · (1 + 2⁻⁵²))`.
-The tolerance absorbs the representation error of decimal fractions. The
-library's `Fraction(f)` applies the same formula to `f` directly; the
-library's `Count(n)` is passed to the miner as an exact integer, so
-absolute thresholds are exact beyond 2^53, where the CLI's float notation
-`-s-n` is not. The effective minimum support is at least 1 (deviation
+with upstream's formula, evaluated exactly (`internal/thresh`, the
+threshold contract of `docs/differences.md`): a percentage `s` is the
+fraction t = s/100, x = t·W exactly, and the minimum is
+`max(ceil(x · (1 − 2⁻⁵²)), floor(x))`, a maximum
+`min(floor(x · (1 + 2⁻⁵²)), ceil(x))`. The tolerance absorbs the
+representation error of decimal fractions and is never as large as one
+unit, so an integer x is exact at every weight. The library's
+`Fraction(f)` applies the same conversion to `f` directly; the library's
+`Count(n)` is passed to the miner as an exact integer, so absolute
+thresholds are exact beyond 2^53, where the CLI's float notation `-s-n`
+is not. The effective minimum support is at least 1 (deviation
 M2). For association
 rules, where the minimum support applies to the rule body, the item set
-threshold is lowered to `ceil(smin · conf)`, because a rule `B -> h` with a
-frequent body and enough confidence can have a body ∪ head support down to
-that value; with `OriginalSupport` (`-o`) it is not lowered.
+threshold is lowered to the smallest support that meets the confidence for
+the minimum body support (the same conversion with the body support in
+place of W), because a rule `B -> h` with a frequent body and enough
+confidence can have a body ∪ head support down to that value; with
+`OriginalSupport` (`-o`) it is not lowered.
 
 **Recoding.** Infrequent items (and items excluded by a selection or an
 appearance of "none") are removed, and the remaining items get the codes

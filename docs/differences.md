@@ -58,6 +58,9 @@ used to check R2, not of upstream), R11a, R11b and C2.
 Since v0.1.0: N1, the precision loss of the statistical measures (a
 documented limit of v0.1.0), is fixed and is now a defect fix row
 (issue #16, 2026-10-19).
+N2, upstream's relative threshold tolerance beyond 2^52 (a documented
+limit of v0.1.0), is replaced by an exact threshold contract and is now a
+defect fix (policy) row (issue #17, 2026-10-19).
 
 ## Mining results
 
@@ -101,16 +104,18 @@ documented limit of v0.1.0), is fixed and is now a defect fix row
 
 Limits of float64 arithmetic that matter only for very large total
 transaction weights or thresholds. Upstream cannot reach most of this
-range (32-bit supports); N2 and N3 are upstream semantics, found by the
-independent audit (ALG-2, ALG-3) and not changed. N1 (audit ALG-1 and
-ALG-6), the precision loss of the statistical measures, was a limit of
-v0.1.0 and is fixed (issue #16); its row now records the fix and the
-numeric contract below.
+range (32-bit supports); N3 is upstream semantics, found by the
+independent audit (ALG-3) and not changed. N1 (audit ALG-1 and ALG-6),
+the precision loss of the statistical measures, was a limit of v0.1.0
+and is fixed (issue #16); its row now records the fix and the numeric
+contract below. N2 (audit ALG-2), upstream's relative threshold
+tolerance, was a limit of v0.1.0 and is replaced by the threshold
+contract below (issue #17).
 
 | # | Kind | Behavior | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | N1 | defect fix | The statistical measures cancel in float64. Chi², Yates and their p-values (`n y p t`) compute `head·body − supp·base` from products rounded to double; the information and the G-test (`i g`) compute `(ln n + Σ t·ln(t/(r·k))/n)/ln 2`, whose absolute error of a few ulps of ln n is unbounded relative to small values (ALG-6: G-test p = 0.99999996 at exact independence, relative 2.4e-8 at n = 65535); the certainty factor (`z`) divides by `1 − head/base`, which rounds to 0; the Fisher tests (`f h m s`) compute every probability from log-gamma values of size n·ln n (relative error about 2^-52·n·ln n) and FisherChi2's mirror table from a rounded expected support; `-i` compares rounded products (`ruleval.c` `re_chi2` … `re_fetsupp`, `istree.c` `FPG_INVBXS` test). With upstream's 32-bit supports this already shows in its own outputs: of the 103 rows of `internal/ruleval/testdata/measures_c.txt` (totals up to 2^31−1) with a product above 2^53, 36 chi² and 38 Yates values are off by more than 8 ulps (one chi² is 0 instead of 6.6e-17). With 64-bit weights (M7) the measures collapse beyond about 10^12: strong associations get p = 1, chi² = 0 or information 0 (audit ALG-1, v0.1.0 "Known limitations") | D = supp·base − head·body is exact and rounded once (upstream's double expression while all supports are below 2^26, where it is exact; int64 below 2^31; 128-bit `math/bits` beyond); the information is Σ E·g(δ) over the cells with g(δ) = (1+δ)·ln(1+δ) − δ >= 0 and δ = ±D/(r·k) (no cancellation; exactly 0, and the G-test p exactly 1, at independence); the certainty factor is computed from the exact D when base/(base−head) > 2^10 (D/(body·(base−head)) for D > 0, D/(body·head) for D < 0, 0 for D = 0; upstream's formula could get the sign of conf − prior wrong there and returned up to 1 near independence: 1 instead of −1.2e-19, 0.1667 for an independent table at n = 2^62); the Fisher tests for base > 170 compute ln P from Stirling's formula with the exact D, sum the region directly (no complement) from the mode outwards with exact probability ratios, stop when a geometric bound of the rest is below 2^-60 of the sum (about 9σ per side instead of min(body, head) tables), and find the mirror tables exactly (FisherChi2 in integers, FisherProb/FisherInfo by bisection; near-ties are decided exactly for distances up to 1024 tables and with 320-bit logarithms beyond, so only probabilities equal within a relative 2^-200 count as ties); `-i` is exact. Error bounds: see "Numeric contract" below. Bit-identity with upstream: chi², Yates, their p-values and `-i` whenever supp·base and head·body are at most 2^53 (`TestUpstreamFormulaIdentity`); the certainty factor except for base/(base−head) > 2^10 (32 fixture rows are in that scope, 8 change, upstream within 2^-40 on all); the Fisher tests for base <= 170 (unchanged code). The information, the G-test and the Fisher tests for base > 170 differ in the last bits on ordinary data (F-1). Membership at a threshold can change for values within those last bits; the Fisher tests for large totals are much faster | implemented (issue #16) in `internal/ruleval` (`TestLargeTablesMatchReference`, the former expected failures, all within the bounds; `TestEvalMatchesUpstream`, rows beyond the bit-identity scope compared with the exact reference; `TestUpstreamFormulaIdentity`, `TestFisherLargeMatchesReference`, `TestFisherLargeMatchesPerTerm`, `TestFisherLargeCost`, `TestFisherLargeNearTie`, `TestCmpWeightBig`, `TestFisherLongWalk`, `TestCertaintyNearIndependence`, `TestHyperLnP`, `TestInfoBranches`, `TestPinnedBits`), root `TestALG1API` (the audit's CLI reproductions and the `-i` case) and `TestALG6Regression`, `cmd/fpgrowth` `TestALG1CLI`, `TestCertaintyNearIndependenceCLI` |
-| N2 | limit (upstream semantics) | The thresholds are applied with a relative tolerance (1 − 2^-52): `-s`/`-S` as `smin/100·W·(1−ε)`, `-c` (`MinConfidence`) multiplied by (1 − ε). Above a total weight of about 2^52 this admits sets and rules just outside the requested bound (by up to W·2^-52, e.g. 512 for W = 2^61), and `-c100`/`MinConfidence: 1` no longer means "exact rules only" | `printf 'a 2305843009213693752\nb 2305843009213694152\n'`, `-w -s50` reports `a` at 49.999999999999992895 %; `printf 'x y 4611686018427387000\nx 1000\n'`, `-tr -w -s0 -c100 -m2` reports `y <- x` at 99.999999999999971578 % confidence | documented (audit ALG-2); both reproductions are pinned as expected failures by root `TestKnownAPIFailures` (#15) |
+| N2 | defect fix (policy) | Upstream applies the relative thresholds with a tolerance of 1 ∓ 2^-52 in double arithmetic: `-s` and `-F` as ⌈s/100·W·(1−ε)⌉, `-S` as ⌊S/100·W·(1+ε)⌋, `-c` as "reject if supp < body·(c/100·(1−ε))" and the rule set minimum as ⌈body·(c/100·(1−ε))⌉ (`fpgrowth.c:1915-1920`, `fpg_report`, the `istree.c` rule test; ε = DBL_EPSILON). Once x = t·N exceeds about 2^52 the tolerance is more than one unit of support (up to W·2^-52, 512 for W = 2^61), so sets and rules just outside the bound are reported and `-c100`/`MinConfidence: 1` admits a confidence below 1; below 2^52 the three roundings can still cross an integer. v0.1.0 had the same arithmetic (`Fraction`, `MinConfidence` via a percentage) | The threshold contract (below): upstream's formula evaluated exactly and capped below one unit; a support s meets a minimum t of N iff s >= t·N·(1−ε) and s > t·N−1 (maximum: s <= t·N·(1+ε) and s < t·N+1). For t·N < 2^52 this is exactly upstream's formula without its rounding errors; an integer t·N is exact at every weight. Results differ from C and v0.1.0 (a) where t·N >= 2^52 (the cap) and (b) where C's double rounding crosses an integer, which needs an integer within about 4.5·2^-53·x of the exact x. For a CLI percentage p = P/10^d with d decimals, the decimal value P·W/10^(d+2), within 2^-52·x of x, is an integer or at least 10^-(d+2) away from one, so (b) needs x >= about 2^53/(4.5·10^(d+2)) (2^44 for integer percentages, 2^41 for one decimal, 2^37.5 for two, 2^34 for three), and the new result is then the exact decimal answer: `-S3.091` of W = 833815673989 was 25773242483 and is 25773242482 = ⌊3.091 %·W⌋, `-S16.01` of 1290957281599 was 206682260784 and is 206682260783. A library fraction with many significant digits can change at any weight, rarely, to the exact result of its shortest decimal (309 changes of the minimum or maximum in 75,000 samples of fractions one ulp off a 2-dp decimal, W < 2^31; none for 2-dp, 3-dp, k/d fractions and computed percentages there). Beyond t·N = 2^53 a fraction is only as precise as its float64 (`Fraction(0.1)` of 10·2^59 is 2^59+32); `Count` is exact | Both audit reproductions now give the exact result: `printf 'a 2305843009213693752\nb 2305843009213694152\n'`, `-w -s50` reports only `b`; `printf 'x y 4611686018427387000\nx 1000\n'`, `-tr -w -s0 -c100 -m2` reports only `x <- y`. `Fraction(1)` of W = 2^60+1 was a minimum of W−257 and is W | implemented (issue #17) in `internal/thresh` (`TestAgainstBig`, `TestPinned`, `FuzzFrac`), `internal/fpg` (`TestThresholdsUnchanged`, `TestThresholdsDecimalBound`, `TestThresholdsPinnedChanges`, `TestThresholdsHugeWeights`, `TestThresholds` against the oracle), root `TestALG2API`, `TestALG2HugeWeights` (the apicheck class), `TestLibraryThresholdsUnchanged`, `TestFractionMatchesCLI`, `TestCheckRangeSound`, `TestExactCountThresholds`, `cmd/fpgrowth` `TestALG2CLI`; the oracle evaluates the contract independently with `math/big` (`MeetsMin`, `FracMinSupp`) |
 | N3 | limit (upstream semantics) | CLI absolute thresholds (`-s-<n>`, `-S-<n>`) are parsed as C doubles, as upstream, so values above 2^53 are rounded (off by up to 1024 in either direction near 2^63). The library's `Count(n)` is exact over the whole `int64` range | `-w -s-2305843009213693753` reports a set of support 2305843009213693752; `-s-4611686018427387840` rounds to 2^62 and finds no frequent item although one has that support | documented (audit ALG-3) |
 
 ### Numeric contract
@@ -136,6 +141,30 @@ tables. A FisherProb near-tie (two tables whose computed probabilities
 agree within their error bound) more than 1024 tables apart
 is decided with 320-bit logarithms (bounded cost); only probabilities equal
 within a relative 2^-200 count as ties, and ties count as in the region (R6).
+
+### Threshold contract
+
+Every relative threshold (issue #17, N2) is a float64 fraction t, taken
+at its exact binary value; a CLI percentage p is the fraction p/100 as a
+float64 division, upstream's own first step, so `-sk` and
+`Fraction(float64(k)/100)` are the same threshold at every weight. With
+the reference support N, x = t·N exactly and ε = 2^-52:
+
+| Threshold | N | A support s qualifies iff |
+| --- | --- | --- |
+| minimum support (`-s`, `MinSupport: Fraction`), border (`-F`, `Border`), rule body minimum | total weight W | s >= x·(1−ε) and s > x−1, i.e. s >= max(⌈x·(1−ε)⌉, ⌊x⌋) |
+| maximum support (`-S`, `MaxSupport: Fraction`) | W | s <= x·(1+ε) and s < x+1, i.e. s <= min(⌊x·(1+ε)⌋, ⌈x⌉) |
+| confidence (`-c`, `MinConfidence`) | the rule's body support | the rule support meets the minimum t of N |
+| rule set minimum (body support definition) | the minimum body support | the smallest support that meets the confidence (exact pruning bound; with `-o` the support minimum itself) |
+
+The tolerance is upstream's (it absorbs the representation error of
+decimal fractions: 30 % of 10 is 3), but it is computed without rounding
+and never reaches one unit, so an integer x is exact (`Fraction(1)` is
+W, `-c100` admits only rules with support equal to the body support).
+Results saturate at 2^63−1; t = 0 (also −0) gives 0 and +Inf no limit.
+Absolute thresholds (`Count`, `-s-n`) are not affected (N3). The
+evaluation threshold (`-d`, `Evaluation.Threshold`) compares a computed
+measure value and is not part of this contract (F-1).
 
 ## Output (CLI)
 
@@ -204,6 +233,6 @@ above.
 | L-2 | improvement | Empty database or no frequent items: error "no (frequent) items found" (exit 15) | Not an error: nothing is reported (even with `IncludeEmpty`), `Summary.FrequentItems` is 0 | implemented (`TestNoFrequentItems`) |
 | L-3 | improvement | `-n` below `-m` gives empty output | `MaxSize < MinSize` is rejected with `ErrInvalidOptions` | implemented (`TestOptionsValidation`) |
 | L-4 | new | Upstream table format only | Additional RFC 4180 CSV sources (`CSVFile`, `CSVReader`) with their own documented semantics | implemented (`TestCSVFile`, `TestCSVFileMining`, `FuzzCSVFile`) |
-| L-5 | new | Thresholds given in percent (`-s`, `-S`) or negative absolute values | `Fraction(f)` applies upstream's rounding formula to `f` directly; `Count(n)` is exact for all int64 values (unlike the CLI, N3) | implemented (`TestFractionFormula`, `TestExactCountThresholds`) |
+| L-5 | new | Thresholds given in percent (`-s`, `-S`) or negative absolute values | `Fraction(f)` applies the threshold contract (N2) to `f` directly, the same as `-s` with the percentage 100·f where p/100 == f (`Fraction(float64(k)/100)` is `-sk` at every weight); `Count(n)` is exact for all int64 values (unlike the CLI, N3) | implemented (`TestFractionFormula`, `TestFractionMatchesCLI`, `TestExactCountThresholds`) |
 | L-6 | new | `-e` always filters by the evaluation threshold (`-d`, default 10 %) | `Evaluation` without `Filter` (the zero value) computes `Value` for every result and removes nothing; `Filter` enables the threshold (and `PruneSize`), a non-zero `Threshold` without `Filter` is rejected. Without an `Evaluation`, `Value` is NaN | implemented (`TestEvaluationWithoutFilter`, `TestOptionsValidation`) |
-| L-7 | new | Confidence and evaluation thresholds are percentages (`-c 80`, `-d 10`), divided by 100 internally | `MinConfidence` and `Evaluation.Threshold` are fractions in units of the measure (0.8, 0.1); they are passed as the percentage `p` with `p/100 == f`, or, where no float64 has that property (about 15 % of values), as the neighbor on the permissive side, so a threshold never rejects a result that the fraction itself admits | implemented (`TestPercentOf`, `TestPlanMapping`) |
+| L-7 | new | Confidence and evaluation thresholds are percentages (`-c 80`, `-d 10`), divided by 100 internally | `MinConfidence` and `Evaluation.Threshold` are fractions in units of the measure (0.8, 0.1). `MinConfidence` is used as the fraction itself under the threshold contract (N2; since issue #17); `Evaluation.Threshold` is passed as the percentage `p` with `p/100 == f`, or, where no float64 has that property (about 15 % of values), as the neighbor on the permissive side, so the threshold never rejects a result that the fraction itself admits | implemented (`TestPercentOf`, `TestPlanMapping`, `TestLibraryThresholdsUnchanged`) |
