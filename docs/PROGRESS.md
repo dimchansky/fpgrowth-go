@@ -46,8 +46,7 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  threshold rounding at extreme weights (ALG-2, #17), exact CLI absolute
-  thresholds (ALG-3, #18), `fpgpsp` and `-z`, faster
+  exact CLI absolute thresholds (ALG-3, #18), `fpgpsp` and `-z`, faster
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
   too), the remaining quadratic closed-check shape (NEW-3).
@@ -62,8 +61,11 @@ linked documents.
   near independence), issue #16 (PR #28): exact cross products,
   cancellation-free information, exact certainty and `-i`, an accurate
   Fisher evaluation for n > 170; the numeric contract is in
-  `docs/differences.md`.
+  `docs/differences.md`. ALG-2 (threshold rounding at extreme weights),
+  issue #17 (PR #30): hybrid threshold contract in `internal/thresh`,
+  identical to v0.1.0 below x = 2^52 and exact above it ("Threshold
+  contract" in `docs/differences.md`).
 - Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
-  #23), #29 (two difftest harness gaps). Follow-up noted in PR #28:
+  #23), #29 (three difftest harness gaps). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,
   Low).
