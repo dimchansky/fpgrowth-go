@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -414,6 +416,22 @@ func refMeasure(t testing.TB, e *Evaluation) *oracle.Measure {
 		thr = math.Inf(-int(ref.Dir)) // every value passes
 	}
 	return &oracle.Measure{Ref: ref, Dir: ref.Dir, Threshold: thr, InvalidateBelowExpected: e.InvalidateBelowExpected}
+}
+
+// refCases returns the number of random datasets of the oracle
+// comparisons with evaluation measures (TestRulesOracle,
+// TestOracleEvaluatedItemsets): numCases(n), or FPG_REF_CASES if set
+// (a larger sweep of the reference measures, issue #15).
+func refCases(t *testing.T, n int) int {
+	t.Helper()
+	if s := os.Getenv("FPG_REF_CASES"); s != "" {
+		k, err := strconv.Atoi(s)
+		if err != nil || k < 0 {
+			t.Fatalf("FPG_REF_CASES=%q: not a non-negative integer", s)
+		}
+		return k
+	}
+	return numCases(n)
 }
 
 // numCases returns n, or n/5 with -short or -race.

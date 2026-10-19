@@ -78,43 +78,17 @@ func compare(t *testing.T, rm *oracle.RefMeasure, tb table) compareResult {
 	return compareResult{got: got, want: want, ok: want.Matches(got)}
 }
 
-// isALG6 reports whether a mismatch of measure c on tb is explained by
-// the known G-test defect ALG-6 (docs/audit/algorithms.md): the
-// implementation computes the information as (ln n + Σ t·ln(t/(r·k))/n)/ln 2,
-// whose absolute error is a few ulps of ln n, and the G statistic
-// G = 2·n·I (nats) inherits an absolute error of about δG = 2·n·10·ε·ln n.
-// The chi²(1) tail has an infinite slope at G = 0, so near independence
-// this becomes a p-value error of up to √(2·δG/π): 1 - O(1e-7) instead of
-// 1 at exact independence (the audit's case), and relative errors of
-// 1e-11 to 1e-7 for nearly independent tables with n from 10^3 to 10^5.
-// The mismatch is accepted only if it is within that bound (with a factor
-// of about 2 to spare); any larger deviation is an error.
-func isALG6(c byte, tb table, r compareResult) bool {
-	if c != 'g' || math.IsNaN(r.got) {
-		return false
-	}
-	infoRef, _ := oracle.RefByLetter('i')
-	info, err := infoRef.Eval(tract.Supp(tb.s), tract.Supp(tb.b), tract.Supp(tb.h), tract.Supp(tb.n))
-	if err != nil {
-		return false
-	}
-	n := float64(tb.n)
-	g := 2 * math.Ln2 * n * info.V
-	dg := 32 * 0x1p-52 * n * math.Log(n)
-	var bound float64
-	if g <= 2*dg {
-		bound = math.Sqrt(2 * 3 * dg / math.Pi)
-	} else {
-		x := g - dg // the tail's slope is largest at the smallest argument
-		bound = dg * math.Exp(-x/2) / math.Sqrt(2*math.Pi*x)
-	}
-	return math.Abs(r.got-r.want.V) <= bound+r.want.Tol
-}
-
 // sweep compares all measures on the tables and returns the number of
-// comparisons and of ALG-6 mismatches. Every other mismatch is an error.
-func sweep(t *testing.T, tables []table) (checked, alg6 int) {
+// comparisons and the number of mismatches explained by the known defect
+// ALG-6, per measure letter. A mismatch is explained if the reference
+// value names the defect and the deviation lies within its derived bound
+// (oracle.Value.MatchesDefect, oracle.DefectALG6: the implementation's
+// information has an absolute error of a few ulps of ln n, which the
+// G-test p-value amplifies near independence). Every other mismatch is an
+// error.
+func sweep(t *testing.T, tables []table) (checked int, alg6 map[byte]int) {
 	t.Helper()
+	alg6 = map[byte]int{}
 	bad := 0
 	for _, tb := range tables {
 		for _, rm := range oracle.RefMeasures() {
@@ -125,8 +99,8 @@ func sweep(t *testing.T, tables []table) (checked, alg6 int) {
 			checked++
 			switch {
 			case r.ok:
-			case isALG6(rm.Letter, tb, r):
-				alg6++
+			case r.want.KnownDefect == oracle.DefectALG6 && r.want.MatchesDefect(r.got):
+				alg6[rm.Letter]++
 			default:
 				bad++
 				if bad <= 20 {
@@ -252,10 +226,12 @@ func TestMeasuresMatchReference(t *testing.T) {
 		tables = append(tables, randomTable(r, 24))
 	}
 	checked, alg6 := sweep(t, tables)
-	t.Logf("%d tables (%d exhaustive with n <= %d), %d comparisons, %d ALG-6 mismatches",
-		len(tables), exhaustive, nmax, checked, alg6)
-	if alg6 == 0 {
-		t.Error("no ALG-6 mismatch left: ALG-6 appears fixed; remove the exemption (isALG6) and its known-failure entries")
+	t.Logf("%d tables (%d exhaustive with n <= %d), %d comparisons, ALG-6 mismatches within the bound: g %d, i %d",
+		len(tables), exhaustive, nmax, checked, alg6['g'], alg6['i'])
+	for _, c := range []byte("gi") {
+		if alg6[c] == 0 {
+			t.Errorf("no ALG-6 mismatch of %c left: ALG-6 appears fixed for it; remove its oracle.DefectALG6 bound and known-failure entries", c)
+		}
 	}
 }
 
@@ -304,56 +280,110 @@ func largeTables() []largeTable {
 	return tables
 }
 
-// knownFailures lists the measures that currently differ from the
-// reference on the tables of largeTables (by table name): the known
-// numerical defects ALG-1 (precision loss for large total weights;
-// docs/differences.md N1; issue #16) and ALG-6 (G-test p-value at exact
-// independence; issue #16/#17). The suite reports them and keeps running.
-// The list is strict in both directions: a listed measure that matches
-// the reference, or an unlisted one that does not, fails
-// TestKnownMeasureFailures, so a fix must remove its entries.
+// knownFailures lists, by table name, the measures that currently differ
+// from the reference on the tables of largeTables. They are the known
+// numerical defects of the implementation:
 //
-// ALG-1 entries (by measure): p, t (chi² and Yates p-values: s·n - b·h
-// cancels in float64 beyond 2^53), n, y (chi² and Yates collapse to 0 for
-// the perfect association), g (information: ln n + Σ/n cancels), z
-// (certainty: h/n rounds to 1), f h m s (Fisher: log-gamma differences).
-// ALG-6 entries are the g failures of exactly independent tables (the
-// "-0" shapes with s·n = b·h and the alg6 tables).
-var knownFailures = map[string]struct{ id, letters string }{
-	"alg1 k=1e+06":                          {"ALG-1", "g"},
-	"alg1 k=1e+09":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+12":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+13":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+14":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+15":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+16":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+17":                          {"ALG-1", "ptgfhm"},
-	"alg1 k=1e+18":                          {"ALG-1", "ptgfhm"},
-	"shape [1 2 2 4]·1000000-1":             {"ALG-1", "g"},
-	"shape [1 2 2 4]·1000000-7":             {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000-1":             {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000-7":             {"ALG-1", "g"},
-	"shape [1 2 2 4]·1000000000-0":          {"ALG-6", "g"},
-	"shape [1 2 2 4]·1000000000-1":          {"ALG-1", "g"},
-	"shape [1 2 2 4]·1000000000-7":          {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000000-1":          {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000000-7":          {"ALG-1", "g"},
-	"shape [1 2 2 4]·1000000000000-1":       {"ALG-1", "ptg"},
-	"shape [1 2 2 4]·1000000000000-7":       {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000000000-1":       {"ALG-1", "g"},
-	"shape [1 3 3 9]·1000000000000-7":       {"ALG-1", "ptg"},
-	"shape [1 2 2 4]·1000000000000000-1":    {"ALG-1", "ptg"},
-	"shape [1 2 2 4]·1000000000000000-7":    {"ALG-1", "ptg"},
-	"shape [1 3 3 9]·1000000000000000-0":    {"ALG-6", "g"},
-	"shape [1 3 3 9]·1000000000000000-1":    {"ALG-1", "ptg"},
-	"shape [1 3 3 9]·1000000000000000-7":    {"ALG-1", "ptg"},
-	"shape [1 2 2 4]·1152921504606846976-1": {"ALG-1", "ptg"},
-	"shape [1 2 2 4]·1152921504606846976-7": {"ALG-1", "ptg"},
-	"perfect association":                   {"ALG-1", "znpytgfhms"},
-	"certainty near 1":                      {"ALG-1", "zpgs"},
-	"alg6 numcheck worst":                   {"ALG-6", "g"},
-	"alg6 small":                            {"ALG-6", "g"},
-	"alg6 small 2":                          {"ALG-6", "g"},
+//   - ALG-1 (precision loss for large total weights; docs/differences.md
+//     N1; issue #16): p, t (s·n - b·h cancels in float64 beyond 2^53),
+//     n, y (chi² and Yates lose relative precision the same way and
+//     collapse to 0 for the perfect association), z (certainty: h/n
+//     rounds to 1), f h m s (Fisher: log-gamma differences);
+//   - ALG-6 (oracle.DefectALG6; issue #16): i and g, the information's
+//     absolute error of a few ulps of ln n, which the relative comparison
+//     of i sees already at n = 9,000 and the G-test p-value amplifies
+//     near independence (1 - O(1e-7) instead of 1 at exact independence,
+//     the "-0" shapes of [1 2 2 4], [1 3 3 9] and the alg6 tables). For
+//     large n the same error is part of ALG-1.
+//
+// The suite reports them and keeps running. The list is strict in both
+// directions: a listed measure that matches the reference, or an
+// unlisted one that does not, fails TestKnownMeasureFailures, so a fix
+// must remove its entries.
+var knownFailures = map[string]string{
+	"alg1 k=1e+03":                          "i",
+	"alg1 k=1e+06":                          "ig",
+	"alg1 k=1e+09":                          "npytigfm",
+	"alg1 k=1e+12":                          "npytigfhm",
+	"alg1 k=1e+13":                          "npytigfhm",
+	"alg1 k=1e+14":                          "npytigfhm",
+	"alg1 k=1e+15":                          "npytigfhm",
+	"alg1 k=1e+16":                          "npytigfhm",
+	"alg1 k=1e+17":                          "npytigfhm",
+	"alg1 k=1e+18":                          "npytigfhm",
+	"shape [1 2 2 4]·1000000-1":             "ig",
+	"shape [1 2 2 4]·1000000-7":             "ig",
+	"shape [1 3 3 9]·1000000-1":             "ig",
+	"shape [1 3 3 9]·1000000-7":             "ig",
+	"shape [3 5 7 12]·1000000-0":            "i",
+	"shape [3 5 7 12]·1000000-1":            "i",
+	"shape [3 5 7 12]·1000000-7":            "i",
+	"shape [2 4 5 9]·1000000-0":             "i",
+	"shape [2 4 5 9]·1000000-1":             "i",
+	"shape [1 2 2 4]·1000000000-0":          "ig",
+	"shape [1 2 2 4]·1000000000-1":          "ig",
+	"shape [1 2 2 4]·1000000000-7":          "ig",
+	"shape [1 3 3 9]·1000000000-1":          "nyig",
+	"shape [1 3 3 9]·1000000000-7":          "nyig",
+	"shape [3 5 7 12]·1000000000-0":         "i",
+	"shape [3 5 7 12]·1000000000-1":         "i",
+	"shape [3 5 7 12]·1000000000-7":         "i",
+	"shape [2 4 5 9]·1000000000-1":          "i",
+	"shape [2 4 5 9]·1000000000-7":          "i",
+	"shape [1 2 2 4]·1000000000000-1":       "npytig",
+	"shape [1 2 2 4]·1000000000000-7":       "nyig",
+	"shape [1 3 3 9]·1000000000000-1":       "nyig",
+	"shape [1 3 3 9]·1000000000000-7":       "npytig",
+	"shape [3 5 7 12]·1000000000000-0":      "i",
+	"shape [3 5 7 12]·1000000000000-1":      "i",
+	"shape [3 5 7 12]·1000000000000-7":      "i",
+	"shape [2 4 5 9]·1000000000000-1":       "i",
+	"shape [2 4 5 9]·1000000000000-7":       "i",
+	"shape [1 2 2 4]·1000000000000000-1":    "npytig",
+	"shape [1 2 2 4]·1000000000000000-7":    "npytig",
+	"shape [1 3 3 9]·1000000000000000-0":    "ig",
+	"shape [1 3 3 9]·1000000000000000-1":    "nyig",
+	"shape [1 3 3 9]·1000000000000000-7":    "npytig",
+	"shape [3 5 7 12]·1000000000000000-0":   "i",
+	"shape [3 5 7 12]·1000000000000000-1":   "i",
+	"shape [3 5 7 12]·1000000000000000-7":   "i",
+	"shape [2 4 5 9]·1000000000000000-0":    "i",
+	"shape [2 4 5 9]·1000000000000000-1":    "i",
+	"shape [2 4 5 9]·1000000000000000-7":    "i",
+	"shape [1 2 2 4]·1152921504606846976-1": "npytig",
+	"shape [1 2 2 4]·1152921504606846976-7": "npytig",
+	"perfect association":                   "znpytigfhms",
+	"certainty near 1":                      "znpigs",
+	"alg6 numcheck worst":                   "ig",
+	"alg6 small":                            "ig",
+	"alg6 small 2":                          "ig",
+}
+
+// knownFragile lists comparisons of largeTables whose deviation from the
+// reference lies between a quarter and four times the tolerance, so that
+// a last-bit difference of the platform could decide whether they match.
+// TestKnownMeasureFailures accepts them either way but requires them to
+// stay in that band; every other comparison must be clearly decided
+// (below a quarter of the tolerance, or above four times it).
+var knownFragile = map[string]string{
+	"alg1 k=1e+09":                       "h",  // ALG-1 (Fisher), 3.7·tol
+	"shape [2 4 5 9]·1000000000-0":       "i",  // ALG-6, 2.8·tol
+	"shape [1 2 2 4]·1000000000000-7":    "pt", // ALG-1, 0.95·tol
+	"shape [1 3 3 9]·1000000000000-1":    "pt", // ALG-1, 0.95·tol
+	"shape [2 4 5 9]·1000000000000-0":    "i",  // ALG-6, 2.8·tol
+	"shape [1 3 3 9]·1000000000000000-1": "pt", // ALG-1, 2.1·tol
+}
+
+// deviationRatio returns |got - V|/Tol (0 for an exact match, +Inf for a
+// mismatch without tolerance).
+func deviationRatio(r compareResult) float64 {
+	switch {
+	case r.got == r.want.V:
+		return 0
+	case r.want.Tol == 0 || math.IsInf(r.want.V, 0) || math.IsNaN(r.got):
+		return math.Inf(1)
+	}
+	return math.Abs(r.got-r.want.V) / r.want.Tol
 }
 
 // TestKnownMeasureFailures compares all measures with the reference on
@@ -368,30 +398,54 @@ func TestKnownMeasureFailures(t *testing.T) {
 			t.Fatalf("duplicate table name %q", lt.name)
 		}
 		names[lt.name] = true
-		known := knownFailures[lt.name]
+		known, fragile := knownFailures[lt.name], knownFragile[lt.name]
 		for _, rm := range oracle.RefMeasures() {
+			listed := strings.IndexByte(known, rm.Letter) >= 0
+			isFragile := strings.IndexByte(fragile, rm.Letter) >= 0
 			r := compare(t, rm, lt.table)
 			if r.skipped {
-				if strings.IndexByte(known.letters, rm.Letter) >= 0 {
-					t.Errorf("%s %v: known failure %c (%s) is not checked", lt.name, lt.table, rm.Letter, known.id)
+				if listed || isFragile {
+					t.Errorf("%s %v: listed comparison %c is not checked", lt.name, lt.table, rm.Letter)
 				}
 				continue
 			}
-			listed := strings.IndexByte(known.letters, rm.Letter) >= 0
+			q := deviationRatio(r)
+			if isFragile {
+				if listed {
+					t.Errorf("%s: %c is listed as fragile and as a known failure", lt.name, rm.Letter)
+				}
+				if !(q > 0.25 && q < 4) {
+					t.Errorf("%s %v: fragile %s(%c) deviates by %.3g·tol: remove it from knownFragile", lt.name, lt.table, rm.Name, rm.Letter, q)
+				}
+				continue
+			}
+			if q > 0.25 && q < 4 {
+				t.Errorf("%s %v: %s(%c) deviates by %.3g·tol, too close to the tolerance to be decided reliably (got %.17g, reference %v)",
+					lt.name, lt.table, rm.Name, rm.Letter, q, r.got, r.want)
+			}
+			id := "ALG-1"
+			if r.want.MatchesDefect(r.got) {
+				id = "ALG-6"
+			}
 			switch {
 			case !r.ok && listed:
-				reported[known.id]++
-				t.Logf("known failure %s: %s %s(%c) got %.17g, reference %v", known.id, lt.name, rm.Name, rm.Letter, r.got, r.want)
+				reported[id]++
+				t.Logf("known failure %s: %s %s(%c) got %.17g, reference %v", id, lt.name, rm.Name, rm.Letter, r.got, r.want)
 			case !r.ok:
 				t.Errorf("%s %v: %s(%c) got %.17g, reference %v (not a known failure)", lt.name, lt.table, rm.Name, rm.Letter, r.got, r.want)
 			case listed:
-				t.Errorf("%s %v: %s(%c) now matches the reference (%v): remove it from knownFailures (%s)", lt.name, lt.table, rm.Name, rm.Letter, r.want, known.id)
+				t.Errorf("%s %v: %s(%c) now matches the reference (%v): remove it from knownFailures", lt.name, lt.table, rm.Name, rm.Letter, r.want)
 			}
 		}
 	}
 	for name := range knownFailures {
 		if !names[name] {
 			t.Errorf("knownFailures entry %q names no table", name)
+		}
+	}
+	for name := range knownFragile {
+		if !names[name] {
+			t.Errorf("knownFragile entry %q names no table", name)
 		}
 	}
 	t.Logf("known failures reported: %v", reported)

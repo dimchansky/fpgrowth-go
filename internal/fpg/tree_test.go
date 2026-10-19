@@ -178,6 +178,8 @@ var treeThresholds = []float64{-100, 0, 1, 10, 50, 90, 100, 150, 1000}
 // with the independent reference measures (within their tolerances).
 func TestTreeRulesOracle(t *testing.T) {
 	t.Parallel()
+	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
+	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(7, 11))
 	n := 1000
 	if testing.Short() {
@@ -261,7 +263,7 @@ func TestTreeRulesOracle(t *testing.T) {
 					t.Fatalf("seed %d %s config %+v app %+v:\n%s", seed, v.name, vc, app, d)
 				}
 				if wantRef != nil {
-					if d := oracle.DiffRules(wantRef, sink.rules, oracle.DiffOptions{}); d != "" {
+					if d := oracle.DiffRules(wantRef, sink.rules, oracle.DiffOptions{Defects: defects}); d != "" {
 						t.Fatalf("seed %d %s config %+v app %+v: reference measure:\n%s", seed, v.name, vc, app, d)
 					}
 				}
@@ -277,6 +279,8 @@ func TestTreeRulesOracle(t *testing.T) {
 // with the reference measures.
 func TestTreeSetsOracle(t *testing.T) {
 	t.Parallel()
+	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
+	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(13, 17))
 	n := 1000
 	if testing.Short() {
@@ -340,7 +344,7 @@ func TestTreeSetsOracle(t *testing.T) {
 			if want, err = db.Mine(pe); err != nil {
 				t.Fatal(err)
 			}
-			if d := oracle.DiffSets(want, sink.sets, oracle.DiffOptions{}); d != "" {
+			if d := oracle.DiffSets(want, sink.sets, oracle.DiffOptions{Defects: defects}); d != "" {
 				t.Fatalf("seed %d %s/%s config %+v codes %v: reference measure:\n%s", seed, tg.name, v.name, vc, order, d)
 			}
 		}

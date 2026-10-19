@@ -166,6 +166,50 @@ func tx(w int64, items ...string) oracle.Transaction {
 	return oracle.Transaction{Items: items, Weight: tract.Supp(w)}
 }
 
+// TestALG6Exemption pins the known-defect exemption of the oracle
+// comparisons (oracle.DefectALG6, issue #15 review): on an exactly
+// independent table, InformationPValue is 0.99999996 instead of 1. A
+// strict comparison reports it, a comparison with DiffOptions.Defects
+// counts it. The test fails once the implementation gets it right (then
+// the exemption is no longer needed: remove DefectALG6 from the reference
+// and this test). The fuzz corpus entry
+// testdata/fuzz/FuzzMineRules/5fc53b9aa57af1cd is the same case found by
+// fuzzing.
+func TestALG6Exemption(t *testing.T) {
+	t.Parallel()
+	// a in 4 of 6, b in 3, a b in 2: s·n = 12 = b·h
+	txs := []oracle.Transaction{tx(2, "a", "b"), tx(2, "a"), tx(1, "b"), tx(1)}
+	ev := &Evaluation{Measure: InformationPValue}
+	got, _, err := CollectRules(context.Background(), sourceOf(txs),
+		RuleOptions[string]{MinSupport: Count(1), MinSize: 2, Evaluation: ev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := oracle.New(txs, oracle.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := oracle.NewRuleParams(1, 0)
+	p.MinSize = 2
+	p.Eval = refMeasure(t, ev)
+	want, err := db.Rules(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{}); d == "" {
+		t.Fatal("InformationPValue of an exactly independent table matches the reference: ALG-6 appears fixed; remove the DefectALG6 exemption")
+	} else {
+		t.Logf("strict comparison: %s", d)
+	}
+	defects := map[string]int{}
+	if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{Defects: defects}); d != "" {
+		t.Fatalf("with the known-defect exemption: %s", d)
+	}
+	if defects[oracle.DefectALG6] == 0 {
+		t.Errorf("defects counted %v, want %s", defects, oracle.DefectALG6)
+	}
+}
+
 var knownAPIFailures = []knownAPIFailure{
 	{"ALG-1", "chi_big: s=3k-2 b=3k h=9k-2 n=9k, k=1e15 (audit CLI reproduction)", func(t *testing.T) string {
 		txs := []oracle.Transaction{tx(2999999999999998, "x", "y"), tx(2, "x"), tx(6000000000000000, "y")}
@@ -221,10 +265,10 @@ var knownAPIFailures = []knownAPIFailure{
 // wantKnownAPIDeviations pins the measures that deviate in the ALG-1
 // entries (the letters before ':'), so that a partial fix is noticed.
 var wantKnownAPIDeviations = map[int]string{
-	0: "ptgfhm",
-	1: "znpytgfhms",
-	2: "zpgs",
-	3: "oclvkwuptg", // the measures whose value differs from their worst value
+	0: "npytigfhm",
+	1: "znpytigfhms",
+	2: "znpigs",
+	3: "oclvkwunpytig", // the measures whose value differs from their worst value
 }
 
 // TestKnownAPIFailures checks that every known defect of knownAPIFailures
