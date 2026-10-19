@@ -219,6 +219,15 @@ All under `_audit/alg/` in the clone (a leading underscore keeps them out of `./
 - **Resolution:** optionally set the information to 0 when the table is exactly independent
   (`supp*base == head*body`, checked in integers).
 - **Blocks v0.1.0:** no.
+- **Note (2026-10-19, issue #15):** the defect is broader than exact independence. The
+  independent reference of `internal/oracle` shows the same mechanism (an absolute error of a
+  few ulps of ln n in the information, amplified by the chi² tail near G = 0) for *nearly*
+  independent tables at moderate totals: the G-test p-value of s=16383, b=h=32767, n=65535 is
+  0.996883176 instead of 0.996883200 (relative 2.4e-8), and relative errors of about 5e-8 occur
+  at n ≈ 4e5. Compared relatively, the information itself is off by relative 1e-12 and more
+  already at n = 9,000. The test suite accepts these deviations only within a derived bound
+  (`oracle.DefectALG6`) and pins the defect in strict expected-failure tables
+  (`internal/ruleval` `TestKnownMeasureFailures`, root `TestALG6Exemption`). Tracked by #16.
 
 ### ALG-7: Library `IncludeEmpty` with no frequent item (Info)
 

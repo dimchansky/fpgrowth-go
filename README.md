@@ -1237,7 +1237,11 @@ every measure with it on all tables with a total weight up to 20,
 boundary margins and random weighted tables up to 2^24; the known
 numerical defects for large total weights (ALG-1, `docs/differences.md`
 N1 and N2, and ALG-6) are kept in expected-failure tables that fail when
-an entry starts to pass. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
+an entry starts to pass. The one defect that also shows on small data,
+ALG-6 (the information's absolute rounding error, amplified by the
+G-test p-value near independence), is accepted in the oracle comparisons
+only within a derived bound and counted. `FPG_REF_CASES=<k>` runs the
+root package's evaluated oracle comparisons on k random datasets each. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
 runs the extended sweep (all tables up to a total weight of 60, k random
 tables up to 2^24, and k up to 2^62 with the ALG-1 mismatches counted).
 
