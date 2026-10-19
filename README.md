@@ -1162,8 +1162,9 @@ plus two upstream crashes that it avoids and five latent defects
   confidence thresholds keep upstream's double formula while threshold ×
   weight is below 2^52 (no change there) and are exact, with the
   tolerance below one unit of support, above it (N2; upstream admitted
-  results outside the bound there). The numeric limit for very large
-  weights is N3 (see [Limitations](#limitations)).
+  results outside the bound there). Absolute CLI thresholds written as
+  integers (`-s-<n>`, `-S-<n>`, `-F-<n>`) are exact up to 2^63−1 (N3;
+  upstream rounds them to doubles above 2^53).
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
   write errors are reported; no crash with supports above about 2·10^8
@@ -1197,14 +1198,15 @@ plus two upstream crashes that it avoids and five latent defects
   on dense data with a small size limit, but 2.2–3.2× slower on large
   sparse data and up to 2.6× slower for dense maximal sets of exactly the
   maximum size.
-- Numeric limits for very large weights (`docs/differences.md`, N3; the
-  former limits N1 of the statistical measures, audit ALG-1, and N2 of
-  the relative thresholds, audit ALG-2, were fixed by issues #16 and
-  #17): CLI absolute thresholds above 2^53 are rounded like upstream's
-  doubles (the library's `Count` is exact). Beyond f·W = 2^53 a
-  `Fraction` is only as precise as its float64 value. For any measure, a
-  value exactly on the evaluation threshold may fall on either side
-  (F-1).
+- Numeric limits for very large weights (`docs/differences.md`; the
+  former limits N1 of the statistical measures, audit ALG-1, N2 of the
+  relative thresholds, audit ALG-2, and N3 of the CLI absolute
+  thresholds, audit ALG-3, were fixed by issues #16, #17 and #18): CLI
+  absolute thresholds written other than as integer literals (`-s-1e18`,
+  `-s-2.5`) are upstream's doubles, rounded above 2^53. Beyond
+  f·W = 2^53 a `Fraction` is only as precise as its float64 value. For
+  any measure, a value exactly on the evaluation threshold may fall on
+  either side (F-1).
 - Association rules have exactly one item in the head.
 - Results come in upstream's order; the library does not sort them. The
   order depends on the data, the options and the algorithm variant; it is

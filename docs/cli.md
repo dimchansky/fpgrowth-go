@@ -185,7 +185,7 @@ in percent are fractions in the library.
 | `-m#` | `MinSize`; `-m0`: `Options.IncludeEmpty` |
 | `-n#` | `MaxSize` (0 means no limit in the library) |
 | `-s#` (positive) | `MinSupport: Fraction(s/100)`; both follow the threshold contract (`differences.md`), and `Fraction(float64(k)/100)` gives exactly the threshold of `-sk` at every weight (for a decimal `s`, when `s/100` is a run-time float64 division like the CLI's) |
-| `-s-#` (negative) | `MinSupport: Count(n)` (exact for every `int64`; the CLI's float notation is exact up to 2^53) |
+| `-s-#` (negative) | `MinSupport: Count(n)` (exact for every `int64`; so is the CLI for integer literals, other spellings are doubles, exact up to 2^53) |
 | `-S#` | `MaxSupport`, same conversion; the zero value means no limit |
 | `-o` | `RuleOptions.OriginalSupport` |
 | `-c#` | `RuleOptions.MinConfidence = c/100` (the same threshold contract; library default 0: no confidence filter; CLI default 80) |
@@ -281,8 +281,20 @@ The full list with evidence and tests is in
   `-S`. `-c100` then admits only rules whose support equals the body
   support, and `-s100` is the total weight (the threshold contract in
   `differences.md`).
-- **Numeric limits** (N3): absolute thresholds (`-s-<n>`, `-S-<n>`)
-  above 2^53 are rounded, as upstream parses them as doubles.
+- **Exact absolute thresholds** (N3, issue #18): upstream parses
+  `-s-<n>`, `-S-<n>` and negative `-F` entries as doubles, which rounds
+  values above 2^53. An absolute value written as an integer literal
+  (optional blanks, `-`, decimal digits; leading zeros allowed) is used
+  exactly up to 2^63−1, for each of `-s`, `-S` and the `-F` entries
+  independently; below 2^53 that is upstream's value. A larger integer
+  literal (from `-9223372036854775808` on) is rejected with exit status 11
+  (`invalid minimum support -9223372036854775808`, likewise `invalid
+  maximum support` and `invalid support border`). Every other spelling
+  keeps upstream's double: `-s-2.5` means 3 (rounded up), `-S-2.5` 2
+  (rounded down), `-s-17.0`, `-s-1e3` and `-s-0x11` are rounded above
+  2^53, and values from 2^63 on (`-s-1e19`, `-S-inf`) saturate.
+  The syntax and the option clustering are upstream's (`-s-17m2` is
+  `-s-17 -m2`); `-s-0` is a percentage of 0.
 - **Closed standard output** (C10): when the caller closes standard
   output (`>&-`), the Go runtime opens `/dev/null` in its place, so the
   program exits 0 where upstream reports "write error on file <stdout>"

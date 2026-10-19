@@ -58,6 +58,19 @@ The release workflow publishes the section whose heading matches the tag
 
 ### Fixed
 
+- The command-line program applies absolute support thresholds written
+  as integers exactly (audit ALG-3, #18; `docs/differences.md` N3, a
+  known limitation of v0.1.0): `-s-<n>`, `-S-<n>` and negative `-F`
+  entries were parsed as doubles, as upstream does, and rounded above
+  2^53 (by up to 1024 near 2^63). `-w -s-2305843009213693753` on
+  `a 2305843009213693752`, `b 2305843009213694152` no longer reports `a`,
+  and `-w -s-4611686018427387840` finds the item with exactly that
+  support instead of "no (frequent) items found". An integer literal
+  beyond 2^63−1 is now rejected with exit status 11 (`invalid minimum
+  support -9223372036854775808`); it saturated before. Other spellings
+  (`-s-2.5`, `-s-1e3`, hexadecimal, `inf`), percentages, option
+  clustering and all results for absolute thresholds up to 2^53 are
+  unchanged.
 - Support and confidence thresholds are exact at large total weights
   (audit ALG-2, #17; `docs/differences.md` N2, a known limitation of
   v0.1.0): above about 2^52 the relative tolerance admitted sets and rules
