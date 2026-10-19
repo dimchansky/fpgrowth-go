@@ -122,7 +122,7 @@ func adversarialWeight(r *rand.Rand, p float64) tract.Supp {
 // is upstream's (and v0.1.0's) while x = t·N is below the switch of the
 // threshold contract (differences.md N2): the minimum and maximum support
 // (-s, -S), the confidence test and the rule set minimum (-c, CLI and
-// HasCounts paths), over adversarial percentages and weights. Above the
+// HasMinCount/HasMaxCount paths), over adversarial percentages and weights. Above the
 // switch the exact branch is checked by TestThresholdsHugeWeights and
 // package thresh.
 func TestThresholdsIdenticalBelowSwitch(t *testing.T) {
@@ -169,7 +169,7 @@ func TestThresholdsIdenticalBelowSwitch(t *testing.T) {
 				t.Fatalf("-c%v supp %d body %d: upstream %v", p, supp, body, upConf(supp, body, c))
 			}
 		}
-		// rule set minimum, CLI notation (absolute -s) and HasCounts
+		// rule set minimum, CLI notation (absolute -s) and the count paths
 		cfg := DefaultConfig()
 		cfg.Target, cfg.ConfFrac = report.TargetRules, c
 		if body < 1<<53 {
@@ -178,7 +178,7 @@ func TestThresholdsIdenticalBelowSwitch(t *testing.T) {
 				t.Fatalf("-s-%d -c%v: %+v, upstream set minimum %d", body, p, th, upSetMin(body, c))
 			}
 		}
-		cfg.HasCounts, cfg.MinCount, cfg.MaxCount = true, body, math.MaxInt64
+		cfg.HasMinCount, cfg.HasMaxCount, cfg.MinCount, cfg.MaxCount = true, true, body, math.MaxInt64
 		if th := computeThresholds(&cfg, 0); th.supp != upCountSetMin(body, c) || th.body != body {
 			t.Fatalf("counts body %d conf %v: %+v, v0.1.0 set minimum %d", body, c, th, upCountSetMin(body, c))
 		}
@@ -241,7 +241,7 @@ func TestThresholdsPinnedUnchanged(t *testing.T) {
 }
 
 // TestThresholdsHugeWeights checks the contract at the weights where
-// upstream's tolerance exceeds one unit (N2): CLI notation and HasCounts.
+// upstream's tolerance exceeds one unit (N2): CLI notation and the count paths.
 func TestThresholdsHugeWeights(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -278,7 +278,7 @@ func TestThresholdsHugeWeights(t *testing.T) {
 	// that is the set minimum (upstream: 4·2^60-1024 after its tolerance)
 	c := DefaultConfig()
 	c.Target, c.ConfFrac = report.TargetRules, 0.8
-	c.HasCounts, c.MinCount, c.MaxCount = true, 5<<60, math.MaxInt64
+	c.HasMinCount, c.HasMaxCount, c.MinCount, c.MaxCount = true, true, 5<<60, math.MaxInt64
 	if th := computeThresholds(&c, 0); th.supp != 4<<60+256 || upSetMin(5<<60, 0.8) != 4<<60-1024 {
 		t.Errorf("0.8 of 5·2^60: set minimum %d (upstream %d)", th.supp, upSetMin(5<<60, 0.8))
 	}

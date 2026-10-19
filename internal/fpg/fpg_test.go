@@ -890,7 +890,7 @@ func FuzzMine(f *testing.F) {
 }
 
 // TestCountThresholds checks the exact absolute thresholds of
-// Config.HasCounts: equal to the float notation where that is exact,
+// Config.HasMinCount and HasMaxCount: equal to the float notation where that is exact,
 // exact beyond 2^53, and never above the body minimum for rules.
 func TestCountThresholds(t *testing.T) {
 	t.Parallel()
@@ -907,7 +907,7 @@ func TestCountThresholds(t *testing.T) {
 			}
 			c.SMin, c.SMax = -float64(n), -float64(x)
 			want := computeThresholds(&c, w)
-			c.HasCounts, c.MinCount, c.MaxCount = true, n, x
+			c.HasMinCount, c.HasMaxCount, c.MinCount, c.MaxCount = true, true, n, x
 			if got := computeThresholds(&c, w); got != want {
 				t.Fatalf("rules=%v n %d x %d conf %v: counts %+v, float %+v", rules, n, x, c.ConfFrac, got, want)
 			}
@@ -915,7 +915,7 @@ func TestCountThresholds(t *testing.T) {
 	}
 	for _, n := range []tract.Supp{1<<53 + 1, 1<<60 + 1, math.MaxInt64 - 1, math.MaxInt64} {
 		c := DefaultConfig()
-		c.HasCounts, c.MinCount, c.MaxCount = true, n, n
+		c.HasMinCount, c.HasMaxCount, c.MinCount, c.MaxCount = true, true, n, n
 		if th := computeThresholds(&c, n); th.supp != n || th.body != n || th.smax != n {
 			t.Errorf("count %d: %+v", n, th)
 		}
@@ -926,6 +926,34 @@ func TestCountThresholds(t *testing.T) {
 		// threshold contract, N2)
 		if th.body != n || th.supp != n || th.smax != n {
 			t.Errorf("rules count %d: %+v", n, th)
+		}
+	}
+}
+
+// TestCountThresholdsMixed checks that HasMinCount and HasMaxCount act
+// independently (the fpgrowth program sets each for an absolute integer
+// literal, issue #18): the other bound keeps the float notation.
+func TestCountThresholdsMixed(t *testing.T) {
+	t.Parallel()
+	const w = 1<<62 + 3
+	for _, rules := range []bool{false, true} {
+		c := DefaultConfig()
+		if rules {
+			c.Target, c.ConfFrac = report.TargetRules, 0.5
+		}
+		c.SMin, c.SMax = 50, 30
+		float := computeThresholds(&c, w)
+		c.HasMinCount, c.MinCount = true, 1<<53+1
+		got := computeThresholds(&c, w)
+		c.HasMinCount, c.HasMaxCount, c.MaxCount = true, true, float.smax
+		both := computeThresholds(&c, w)
+		if got != both || got.body != 1<<53+1 || got.smax != float.smax {
+			t.Errorf("rules=%v min count: %+v, float %+v, both counts %+v", rules, got, float, both)
+		}
+		c.HasMinCount, c.HasMaxCount, c.MaxCount = false, true, 1<<53+1
+		got = computeThresholds(&c, w)
+		if got.supp != float.supp || got.body != float.body || got.smax != 1<<53+1 {
+			t.Errorf("rules=%v max count: %+v, float %+v", rules, got, float)
 		}
 	}
 }
