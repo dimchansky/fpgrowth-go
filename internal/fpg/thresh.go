@@ -61,12 +61,17 @@ type thresholds struct {
 }
 
 // computeThresholds ports the threshold arithmetic of fpg_data and
-// fpg_report for the total transaction weight w.
+// fpg_report for the total transaction weight w. An exact count
+// (HasMinCount, HasMaxCount) replaces the converted SMin or SMax.
 func computeThresholds(c *Config, w tract.Supp) thresholds {
-	if c.HasCounts {
-		return derive(c, c.MinCount, c.MaxCount)
+	minimum, maximum := c.MinCount, c.MaxCount
+	if !c.HasMinCount {
+		minimum = minSupp(c.SMin, w)
 	}
-	return derive(c, minSupp(c.SMin, w), maxSupp(c.SMax, w))
+	if !c.HasMaxCount {
+		maximum = maxSupp(c.SMax, w)
+	}
+	return derive(c, minimum, maximum)
 }
 
 // derive completes the thresholds from the absolute minimum and maximum

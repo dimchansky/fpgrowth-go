@@ -4,12 +4,14 @@ import (
 	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
+	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
 func strOf(p *string) any {
@@ -68,8 +70,8 @@ func TestParseArgs(t *testing.T) {
 			}
 		}},
 		{name: "hex float", args: []string{"-s0x1E", "-S0x1p4", "-c1e1", "x"}, check: func(t *testing.T, o options) {
-			if o.smin != 30 || o.smax != 16 || o.conf != 10 {
-				t.Errorf("smin %g smax %g conf %g", o.smin, o.smax, o.conf)
+			if o.smin.v != 30 || o.smax.v != 16 || o.conf != 10 {
+				t.Errorf("smin %g smax %g conf %g", o.smin.v, o.smax.v, o.conf)
 			}
 		}},
 		{name: "exponent without digits", args: []string{"-s1e", "x"}, code: exitMeasure, msg: "invalid evaluation measure '\x00'"},
@@ -84,18 +86,18 @@ func TestParseArgs(t *testing.T) {
 		{name: "nan confidence", args: []string{"-cnan", "x"}, code: exitConf, msg: "invalid minimum confidence nan"},
 		{name: "nan threshold", args: []string{"-dnan", "x"}, code: exitMeasure, msg: "invalid evaluation threshold nan"},
 		{name: "inf values accepted", args: []string{"-s-inf", "-Sinf", "-dinf", "-F-inf", "x"}, check: func(t *testing.T, o options) {
-			if !math.IsInf(o.smin, -1) || !math.IsInf(o.thresh, 1) || len(o.border) != 1 {
+			if !math.IsInf(o.smin.v, -1) || !math.IsInf(o.thresh, 1) || len(o.border) != 1 {
 				t.Errorf("%+v", o)
 			}
 		}},
 		{name: "numeric never takes next arg", args: []string{"-s", "20", "in", "out"}, code: exitArgCount, msg: "wrong number of arguments"},
 		{name: "numeric empty", args: []string{"-s", "20", "in"}, check: func(t *testing.T, o options) {
-			if o.smin != 0 || *o.inFile != "20" || *o.outFile != "in" {
-				t.Errorf("smin %g in %v out %v", o.smin, strOf(o.inFile), strOf(o.outFile))
+			if o.smin.v != 0 || *o.inFile != "20" || *o.outFile != "in" {
+				t.Errorf("smin %g in %v out %v", o.smin.v, strOf(o.inFile), strOf(o.outFile))
 			}
 		}},
 		{name: "cluster", args: []string{"-s10m2n5", "x"}, check: func(t *testing.T, o options) {
-			if o.smin != 10 || o.zmin != 2 || o.zmax != 5 {
+			if o.smin.v != 10 || o.zmin != 2 || o.zmax != 5 {
 				t.Errorf("%+v", o)
 			}
 		}},
@@ -170,17 +172,17 @@ func TestParseArgs(t *testing.T) {
 			}
 		}},
 		{name: "border", args: []string{"-F60:50", "x"}, check: func(t *testing.T, o options) {
-			if !slices.Equal(o.border, []float64{60, 50}) {
+			if !slices.Equal(o.border, []suppArg{{v: 60}, {v: 50}}) {
 				t.Errorf("border %v", o.border)
 			}
 		}},
 		{name: "border continues", args: []string{"-F60:50Z", "x"}, check: func(t *testing.T, o options) {
-			if !slices.Equal(o.border, []float64{60, 50}) || !o.stats {
+			if !slices.Equal(o.border, []suppArg{{v: 60}, {v: 50}}) || !o.stats {
 				t.Errorf("border %v Z %v", o.border, o.stats)
 			}
 		}},
 		{name: "border empty value B16", args: []string{"-F60:", "x"}, check: func(t *testing.T, o options) {
-			if !slices.Equal(o.border, []float64{60}) {
+			if !slices.Equal(o.border, []suppArg{{v: 60}}) {
 				t.Errorf("border %v", o.border)
 			}
 		}},
@@ -192,7 +194,7 @@ func TestParseArgs(t *testing.T) {
 		{name: "border leading colon", args: []string{"-F:5", "x"}, code: exitOption, msg: "unknown option -:"},
 		{name: "border garbage", args: []string{"-Fabc", "x"}, code: exitAggMode, msg: "invalid aggregation mode 'b'"},
 		{name: "last wins", args: []string{"-s50", "-s20", "-tc", "-tr", "x"}, check: func(t *testing.T, o options) {
-			if o.smin != 20 || o.target != 'r' {
+			if o.smin.v != 20 || o.target != 'r' {
 				t.Errorf("%+v", o)
 			}
 		}},
@@ -214,7 +216,7 @@ func TestParseArgs(t *testing.T) {
 		{name: "variant", args: []string{"-Aq", "x"}, code: exitVariant, msg: "invalid fpgrowth variant 'q'"},
 		{name: "non-ASCII letter", args: []string{"-t\xc3", "x"}, code: exitTarget, msg: "invalid target type '\xc3'"},
 		{name: "unvalidated", args: []string{"-n0", "-S0", "-p5", "-q9", "-l99", "-d-5", "x"}, check: func(t *testing.T, o options) {
-			if o.zmax != 0 || o.smax != 0 || o.prune != 5 || o.sort != 9 || o.pack != 99 || o.thresh != -5 {
+			if o.zmax != 0 || o.smax.v != 0 || o.prune != 5 || o.sort != 9 || o.pack != 99 || o.thresh != -5 {
 				t.Errorf("%+v", o)
 			}
 		}},
@@ -273,7 +275,7 @@ func TestMinerConfig(t *testing.T) {
 	}
 	c := o.minerConfig()
 	want := fpg.Config{
-		Target: report.TargetMaximal, SMin: -3, SMax: 70, ConfFrac: 0.4, ZMin: 2, ZMax: 4,
+		Target: report.TargetMaximal, SMin: -3, SMax: 70, HasMinCount: true, MinCount: 3, ConfFrac: 0.4, ZMin: 2, ZMax: 4,
 		Eval: int(ruleval.Confidence), InvalidateBelowExpected: true, Agg: fpg.AggMin, Thresh: 30,
 		Algo: fpg.AlgoSingle, Mode: fpg.ModeOrigSupp, Pack: 0, Sort: -2, Prune: -1,
 	}
@@ -332,13 +334,13 @@ func nanFree(o options) any {
 			mask = append(mask, '.')
 		}
 	}
-	fix(&o.smin)
-	fix(&o.smax)
+	fix(&o.smin.v)
+	fix(&o.smax.v)
 	fix(&o.conf)
 	fix(&o.thresh)
 	o.border = slices.Clone(o.border)
 	for i := range o.border {
-		fix(&o.border[i])
+		fix(&o.border[i].v)
 	}
 	return struct {
 		o    options
@@ -352,7 +354,11 @@ func nanFree(o options) any {
 // the exit codes and messages of their stage, a valid command line names
 // an input file, and every option set that passes validate gives a miner
 // configuration that fpg.New accepts (run treats a failure as excluded
-// by validate).
+// by validate). Support literals (issue #18) keep strtod's value and end
+// position at every offset of every argument, exactly the negative
+// decimal integer literals are exact (checked with strconv.ParseInt;
+// saturated at math.MaxInt64 beyond int64), and the configuration takes
+// the exact counts.
 //
 //	go test ./cmd/fpgrowth/ -run '^$' -fuzz FuzzParseArgs -fuzztime 60s
 func FuzzParseArgs(f *testing.F) {
@@ -369,6 +375,9 @@ func FuzzParseArgs(f *testing.F) {
 		"-Az\x00x", "-t\x00x", "-e\x00-a\x00-A\x00x",
 		"-R\x00-\x00-\x00", "-Rsel\x00-Ppsp\x00-k,\x00-I =>\x00-h#\x00-r\n\x00-f\t\x00-b \x00-C#\x00in\x00out",
 		"-v", "-tg -xjuZgwN in", "a\x00b\x00c",
+		"-s-9007199254740993m2\x00-S-9223372036854775807\x00-F-4611686018427387840:50:-2.5\x00x",
+		"-s-9223372036854775808\x00x", "-S-99999999999999999999Z\x00x", "-F-1:-9223372036854775808\x00x",
+		"-s -0017e\x00-S-0x11\x00-F-1e19:-0\x00x", "-s-17.0\x00-S-17.\x00-s--17\x00x",
 	} {
 		f.Add(s)
 	}
@@ -376,6 +385,11 @@ func FuzzParseArgs(f *testing.F) {
 		var args []string
 		if s != "" {
 			args = strings.Split(s, "\x00")
+		}
+		for _, arg := range args {
+			for i := range len(arg) + 1 {
+				checkSuppValue(t, arg[i:])
+			}
 		}
 		o, act, err := parseArgs(args)
 		o2, act2, err2 := parseArgs(args)
@@ -411,5 +425,41 @@ func FuzzParseArgs(f *testing.F) {
 		if _, err := fpg.New[string](cfg); err != nil {
 			t.Fatalf("%q: valid options rejected by fpg.New: %v", args, err)
 		}
+		if cfg.HasMinCount != o.smin.exact() || cfg.MinCount != tract.Supp(o.smin.count) ||
+			cfg.HasMaxCount != o.smax.exact() || cfg.MaxCount != tract.Supp(o.smax.count) {
+			t.Fatalf("%q: config counts %+v for %+v, %+v", args, cfg, o.smin, o.smax)
+		}
 	})
+}
+
+// checkSuppValue checks suppValue(s) against strtod and an independent
+// integer parse (strconv.ParseInt) of the consumed literal.
+func checkSuppValue(t *testing.T, s string) {
+	t.Helper()
+	a, rest := suppValue(s)
+	v, frest := floatValue(s)
+	if math.Float64bits(a.v) != math.Float64bits(v) || rest != frest {
+		t.Fatalf("suppValue(%q) = %+v, %q; strtod %v, %q", s, a, rest, v, frest)
+	}
+	lit := strings.TrimLeft(s[:len(s)-len(rest)], " \t\n\v\f\r")
+	isInt := len(lit) > 1 && lit[0] == '-' && strings.Trim(lit[1:], "0123456789") == ""
+	n, perr := strconv.ParseInt(lit, 10, 64)
+	switch {
+	case !(v < 0) || !isInt: // not an absolute integer literal (also -0)
+		if a.count != 0 {
+			t.Fatalf("suppValue(%q) = %+v: not an absolute integer literal", s, a)
+		}
+	case perr != nil || n == math.MinInt64: // beyond int64 (MinInt64 is -(MaxInt64+1))
+		if a.count != math.MaxInt64 || !a.exact() {
+			t.Fatalf("suppValue(%q) = %+v: want saturation at math.MaxInt64", s, a)
+		}
+	default:
+		if a.count != -n || !a.exact() {
+			t.Fatalf("suppValue(%q) = %+v: want count %d", s, a, -n)
+		}
+		// below 2^53 the exact count is upstream's double
+		if a.count <= 1<<53 && float64(a.count) != -v {
+			t.Fatalf("suppValue(%q) = %+v: count differs from strtod %v", s, a, v)
+		}
+	}
 }

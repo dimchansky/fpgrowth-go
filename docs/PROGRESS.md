@@ -46,7 +46,7 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  exact CLI absolute thresholds (ALG-3, #18), `fpgpsp` and `-z`, faster
+  `fpgpsp` and `-z`, faster
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
   too), the remaining quadratic closed-check shape (NEW-3).
@@ -64,7 +64,11 @@ linked documents.
   `docs/differences.md`. ALG-2 (threshold rounding at extreme weights),
   issue #17 (PR #30): hybrid threshold contract in `internal/thresh`,
   identical to v0.1.0 below x = 2^52 and exact above it ("Threshold
-  contract" in `docs/differences.md`).
+  contract" in `docs/differences.md`). ALG-3 (CLI absolute thresholds
+  rounded to doubles above 2^53), issue #18 (PR #31): absolute integer
+  literals of `-s`, `-S` and `-F` are exact up to 2^63−1, larger ones
+  saturate as before, every other spelling and all results up to 2^53
+  are unchanged (N3 in `docs/differences.md`).
 - Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
   #23), #29 (three difftest harness gaps). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,

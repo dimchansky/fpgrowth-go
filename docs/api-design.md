@@ -267,6 +267,9 @@ generic methods are not needed for this surface.
    formula as above while threshold × weight < 2^52, the exact bound with
    the tolerance capped below one unit from 2^52 on. `MinConfidence`
    still goes through `p` and then follows the same contract.
+   Note (2026-10-20, issue #18): `fpg.Config.HasCounts` is split into
+   `HasMinCount` and `HasMaxCount`; the library sets both, the CLI each
+   one whose value is an absolute integer literal (exact, N3).
 2. `CSVFormat` zero value is usable: `WeightColumn` is 1-based (0 = none,
    negative counts from the end), `KeepEmptyFields` (default false),
    `LazyQuotes`, a UTF-8 BOM is skipped, blank lines are not transactions.

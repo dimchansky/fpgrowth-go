@@ -9,6 +9,7 @@ import (
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
+	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
 // Exit codes and messages of upstream's main (fpgrowth.c errmsgs[] and
@@ -70,8 +71,8 @@ type options struct {
 	target  byte // -t letter
 	zmin    int32
 	zmax    int32
-	smin    float64
-	smax    float64
+	smin    suppArg
+	smax    suppArg
 	conf    float64
 	eval    byte // -e letter (0 if missing)
 	agg     byte // -a letter
@@ -80,7 +81,7 @@ type options struct {
 	sort    int32
 	algo    byte // -A letter
 	pack    int32
-	border  []float64 // -F values (nil: none)
+	border  []suppArg // -F values (nil: none)
 	invBxs  bool      // -i
 	orig    bool      // -o
 	noPerf  bool      // -x
@@ -105,8 +106,8 @@ func defaultOptions() options {
 		target: 's',
 		zmin:   1,
 		zmax:   math.MaxInt32,
-		smin:   10,
-		smax:   100,
+		smin:   suppArg{v: 10},
+		smax:   suppArg{v: 100},
 		conf:   80,
 		eval:   'x',
 		agg:    'x',
@@ -168,9 +169,9 @@ func parseArgs(args []string) (options, action, *cliError) {
 			case 'n':
 				o.zmax, s = intValue(s)
 			case 's':
-				o.smin, s = floatValue(s)
+				o.smin, s = suppValue(s)
 			case 'S':
-				o.smax, s = floatValue(s)
+				o.smax, s = suppValue(s)
 			case 'o':
 				o.orig = true
 			case 'c':
@@ -271,24 +272,71 @@ func floatValue(s string) (float64, string) {
 	return v, s[n:]
 }
 
-// borderValue is a port of getbdr: a ':'-separated list of strtod values;
-// parsing continues after the last number.
+// suppArg is the value of a support threshold option (-s, -S, a -F
+// entry): upstream's strtod value v (a percentage if v >= 0, else the
+// absolute support -v) and, for an absolute integer literal, its exact
+// value.
+type suppArg struct {
+	v float64
+	// count is the exact absolute support (>= 1) of an absolute integer
+	// literal, saturated at math.MaxInt64, and 0 otherwise.
+	count int64
+}
+
+// exact reports whether the value is an exact absolute support (count).
+func (a suppArg) exact() bool { return a.count > 0 }
+
+// suppValue is "strtod(s, &s)" for a support threshold, with an exact
+// value for absolute integer literals.
+//
+// Deviation from upstream (docs/differences.md N3, issue #18): upstream
+// converts an absolute support to a double, which rounds values above
+// 2^53 (by up to 1024 near 2^63). If the strtod subject (the bytes
+// strtod consumes, so the syntax and the position where option parsing
+// continues are upstream's) is a negative base-10 integer, i.e. strtol
+// (base 10) consumes exactly the same bytes (optional white space, '-',
+// decimal digits, leading zeros allowed; no '.', exponent, hexadecimal
+// prefix, inf or nan), and the value is not -0, the absolute support is
+// that integer, exactly. Below 2^53 it equals upstream's ceil(-v) and
+// floor(-v). An integer literal whose absolute value exceeds
+// math.MaxInt64 saturates at math.MaxInt64, like every other spelling of
+// such a value (fpgrowth-core.md B9; no support exceeds it, so the bound
+// keeps its meaning). Every other literal keeps upstream's double.
+func suppValue(s string) (suppArg, string) {
+	v, n := cconv.Strtod(s)
+	a := suppArg{v: v}
+	if v < 0 {
+		i, m, overflow := cconv.Strtol(s[:n], 10)
+		if m == n { // the subject is a decimal integer literal
+			if overflow || i == math.MinInt64 {
+				a.count = math.MaxInt64 // beyond int64: saturate
+			} else {
+				a.count = -i
+			}
+		}
+	}
+	return a, s[n:]
+}
+
+// borderValue is a port of getbdr: a ':'-separated list of strtod values
+// (suppValue: absolute integer literals are exact); parsing continues
+// after the last number.
 //
 // Deviation from upstream (cli-io.md B16): when the list ends in an empty
 // value ("-F", "-F60:", "-F:5"), getbdr counts the unparsed slot, so an
 // uninitialized double becomes a border value. Here only parsed values
 // count; "-F" without a value gives no border. The position where option
 // parsing continues is upstream's.
-func borderValue(s string) ([]float64, string) {
+func borderValue(s string) ([]suppArg, string) {
 	k := strings.Count(s, ":") + 1
-	b := []float64{}
+	b := []suppArg{}
 	for range k {
-		v, n := cconv.Strtod(s)
-		if n == 0 {
+		v, rest := suppValue(s)
+		if len(rest) == len(s) {
 			break // empty parameter: upstream's end pointer stays at s
 		}
 		b = append(b, v)
-		s = s[n:]
+		s = rest
 		if s == "" || s[0] != ':' {
 			break
 		}
@@ -309,18 +357,18 @@ func (o *options) validate() *cliError {
 		return errorf(exitSize, "invalid item set size "+strconv.Itoa(int(o.zmax)))
 	// Deviation from upstream: NaN passes "smin > 100" and is converted
 	// to an integer with undefined behavior; it is rejected here.
-	case o.smin > 100 || math.IsNaN(o.smin):
-		return errorf(exitSupport, "invalid minimum support "+formatG(o.smin))
+	case o.smin.v > 100 || math.IsNaN(o.smin.v):
+		return errorf(exitSupport, "invalid minimum support "+formatG(o.smin.v))
 	// Deviation from upstream: -S is not validated upstream; NaN is
 	// rejected here (other values, also -S0, are well defined).
-	case math.IsNaN(o.smax):
-		return errorf(exitSupport, "invalid maximum support "+formatG(o.smax))
+	case math.IsNaN(o.smax.v):
+		return errorf(exitSupport, "invalid maximum support "+formatG(o.smax.v))
 	}
 	for _, v := range o.border {
 		// Deviation from upstream: a NaN border value is converted to an
 		// integer with undefined behavior upstream.
-		if math.IsNaN(v) {
-			return errorf(exitSupport, "invalid support border "+formatG(v))
+		if math.IsNaN(v.v) {
+			return errorf(exitSupport, "invalid support border "+formatG(v.v))
 		}
 	}
 	// NaN fails both comparisons upstream and is accepted; rejected here.
@@ -413,7 +461,10 @@ func (o *options) isRules() bool { return o.target == 'r' }
 func (o *options) minerConfig() fpg.Config {
 	c := fpg.DefaultConfig()
 	c.Target, _ = targetOf(o.target)
-	c.SMin, c.SMax = o.smin, o.smax
+	c.SMin, c.SMax = o.smin.v, o.smax.v
+	// exact absolute supports (N3); the float notation stays for the rest
+	c.HasMinCount, c.MinCount = o.smin.exact(), tract.Supp(o.smin.count)
+	c.HasMaxCount, c.MaxCount = o.smax.exact(), tract.Supp(o.smax.count)
 	c.ConfFrac = o.conf / 100.0 // fpg->conf = conf/100.0
 	c.ZMin, c.ZMax = int(o.zmin), int(o.zmax)
 	c.Eval, _ = evalOf(o.eval)

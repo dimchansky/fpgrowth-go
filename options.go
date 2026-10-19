@@ -499,7 +499,7 @@ func (p *plan) setThresholds(st *Stats) []tract.Supp {
 	w := st.TotalWeight
 	st.MinSupport = max(p.minSupport.minAbs(w), 1)
 	st.MaxSupport = p.maxSupport.maxAbs(w)
-	p.cfg.HasCounts = true
+	p.cfg.HasMinCount, p.cfg.HasMaxCount = true, true
 	p.cfg.MinCount, p.cfg.MaxCount = tract.Supp(st.MinSupport), tract.Supp(st.MaxSupport)
 	if len(p.border) == 0 {
 		return nil

@@ -185,14 +185,18 @@ func (r *runner) mine() *cliError {
 		return errorf(exitNoMem, err.Error())
 	}
 	for i, v := range o.border {
-		rep.SetBorder(int(o.zmin)+i, borderSupp(v, w))
+		s := tract.Supp(v.count) // exact absolute integer literal (N3)
+		if !v.exact() {
+			s = borderSupp(v.v, w)
+		}
+		rep.SetBorder(int(o.zmin)+i, s)
 	}
 	if o.pspFile != nil && !o.isRules() {
 		rep.AddSpectrum()
 	}
 	info := o.info
 	if !o.infoSet {
-		info = isrout.DefaultInfo(o.isRules(), o.smin < 0)
+		info = isrout.DefaultInfo(o.isRules(), o.smin.v < 0)
 	}
 
 	// --- open the output and mine ---
@@ -240,6 +244,7 @@ func (r *runner) mine() *cliError {
 // the minimum of the fraction v/100 of w under the threshold contract of
 // package thresh: upstream's ceil(v/100*w*(1-DBL_EPSILON)) while
 // v/100·w < 2^52, exact above (deviation N2 in docs/differences.md).
+// An absolute integer literal bypasses it with its exact value (N3).
 func borderSupp(v float64, w tract.Supp) tract.Supp {
 	if v >= 0 { // also -0, which upstream treats as a percentage of 0
 		return tract.Supp(thresh.New(v / 100.0).Min(int64(w)))

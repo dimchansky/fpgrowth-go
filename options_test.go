@@ -229,7 +229,7 @@ func TestPlanMapping(t *testing.T) {
 	c := p.cfg
 	want := fpg.DefaultConfig()
 	want.Target = report.TargetMaximal
-	want.HasCounts, want.MinCount, want.MaxCount = true, 250, math.MaxInt64
+	want.HasMinCount, want.HasMaxCount, want.MinCount, want.MaxCount = true, true, 250, math.MaxInt64
 	want.ZMin, want.ZMax = 2, 5
 	want.Algo = fpg.AlgoSingle
 	want.Mode = 0
@@ -248,7 +248,7 @@ func TestPlanMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	rp.setThresholds(&Stats{TotalWeight: 10})
-	if rp.cfg.Target != report.TargetRules || !rp.cfg.HasCounts || rp.cfg.MinCount != 7 || rp.cfg.MaxCount != 5 ||
+	if rp.cfg.Target != report.TargetRules || !rp.cfg.HasMinCount || !rp.cfg.HasMaxCount || rp.cfg.MinCount != 7 || rp.cfg.MaxCount != 5 ||
 		rp.cfg.ConfFrac != 0.8 || rp.cfg.EvalNoFilter ||
 		rp.cfg.Mode&fpg.ModeOrigSupp == 0 || rp.cfg.ZMin != 1 || rp.cfg.ZMax != fpg.MaxSize {
 		t.Errorf("rule config %+v", rp.cfg)

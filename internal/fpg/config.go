@@ -107,15 +107,17 @@ type Config struct {
 	SMin float64
 	// SMax is the maximum support, in the same notation as SMin.
 	SMax float64
-	// HasCounts makes MinCount and MaxCount the minimum and maximum
-	// support instead of SMin and SMax. It is the library's exact path for
-	// absolute thresholds: the float notation of SMin and SMax cannot
-	// represent every support above 2^53.
-	HasCounts bool
-	// MinCount is the absolute minimum support if HasCounts is set; values
-	// below 1 act as 1.
+	// HasMinCount makes MinCount the minimum support instead of SMin, and
+	// HasMaxCount makes MaxCount the maximum support instead of SMax. They
+	// are the exact path for absolute thresholds, set independently (the
+	// library sets both, the fpgrowth program each one given as an
+	// absolute integer literal): the float notation of SMin and SMax
+	// cannot represent every support above 2^53.
+	HasMinCount, HasMaxCount bool
+	// MinCount is the absolute minimum support if HasMinCount is set;
+	// values below 1 act as 1.
 	MinCount tract.Supp
-	// MaxCount is the absolute maximum support if HasCounts is set
+	// MaxCount is the absolute maximum support if HasMaxCount is set
 	// (math.MaxInt64: no limit).
 	MaxCount tract.Supp
 	// ConfFrac is the minimum confidence of rules as a fraction in [0, 1]
@@ -208,7 +210,7 @@ func (c *Config) validate() error {
 		return bad("invalid minimum support %g", c.SMin)
 	case math.IsNaN(c.SMax):
 		return bad("invalid maximum support %g", c.SMax)
-	case c.HasCounts && (c.MinCount < 0 || c.MaxCount < 0):
+	case c.HasMinCount && c.MinCount < 0 || c.HasMaxCount && c.MaxCount < 0:
 		return bad("invalid support counts %d, %d", c.MinCount, c.MaxCount)
 	case !(c.ConfFrac >= 0 && c.ConfFrac <= 1):
 		return bad("invalid minimum confidence %g", c.ConfFrac)
