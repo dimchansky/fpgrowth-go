@@ -71,6 +71,18 @@ func check(t *testing.T, tv float64, n int64) {
 	if got := f.Max(n); got != wantMax {
 		t.Fatalf("New(%v).Max(%d) = %d, want %d", tv, n, got, wantMax)
 	}
+	// Meets near the boundary and at the ends
+	for _, s := range []int64{0, 1, wantMin - 2, wantMin - 1, wantMin, wantMin + 1, n - 1, n} {
+		if s < 0 || s > max(n, 0) {
+			continue
+		}
+		if got := f.Meets(s, n); got != (s >= wantMin) {
+			t.Fatalf("New(%v).Meets(%d, %d) = %v, minimum %d", tv, s, n, got, wantMin)
+		}
+		if meets, sure := f.Quick(s, n); sure && meets != (s >= wantMin) {
+			t.Fatalf("New(%v).Quick(%d, %d) = %v (sure), minimum %d", tv, s, n, meets, wantMin)
+		}
+	}
 }
 
 var specials = []float64{
@@ -208,6 +220,21 @@ func FuzzFrac(f *testing.F) {
 		}
 		check(t, tv, int64(nb&math.MaxInt64))
 	})
+}
+
+// BenchmarkMeets measures the per-rule confidence test.
+func BenchmarkMeets(b *testing.B) {
+	f := New(0.8)
+	k := 0
+	for i := range b.N {
+		n := int64(i) | 1<<40
+		if f.Meets(n/2+int64(i&7), n) {
+			k++
+		}
+	}
+	if k == 42 {
+		b.Log(k)
+	}
 }
 
 // BenchmarkMin measures the per-rule confidence conversion.

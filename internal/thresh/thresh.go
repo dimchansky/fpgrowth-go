@@ -46,6 +46,12 @@ type Frac struct {
 	kind kind
 	m    uint64
 	k    int
+	// lo and hi are t·(1∓2^-50), rounded, for the fast path of Meets
+	// where it applies (2^-60 <= t <= 1, where t·n does not exceed n, so
+	// Min does not saturate); otherwise −Inf and +Inf, which make both
+	// fast comparisons false (also for n = 0: 0·Inf is NaN). For t = 0
+	// both are 0 (every s >= 0 meets it).
+	lo, hi float64
 }
 
 // New returns the threshold t. It panics if t is NaN.
@@ -56,13 +62,17 @@ func New(t float64) Frac {
 	case !(t > 0): // also −0 and negative values
 		return Frac{}
 	case math.IsInf(t, 1):
-		return Frac{kind: kindInf}
+		return Frac{kind: kindInf, lo: math.Inf(-1), hi: math.Inf(1)}
 	}
 	fr, e := math.Frexp(t) // t = fr·2^e, fr in [0.5, 1), also for subnormals
 	m := uint64(fr * (1 << 53))
 	k := 53 - e
 	tz := bits.TrailingZeros64(m)
-	return Frac{kind: kindFinite, m: m >> tz, k: k - tz}
+	f := Frac{kind: kindFinite, m: m >> tz, k: k - tz, lo: math.Inf(-1), hi: math.Inf(1)}
+	if t >= 0x1p-60 && t <= 1 {
+		f.lo, f.hi = t*(1-0x1p-50), t*(1+0x1p-50)
+	}
+	return f
 }
 
 // IsZero reports whether the threshold is 0 (every support meets it as a
@@ -192,4 +202,35 @@ func (f Frac) Max(n int64) int64 {
 		return inc(q)
 	}
 	return q
+}
+
+// Meets reports whether the support s meets the minimum t of the
+// reference support n >= 0, i.e. s >= f.Min(n), for 0 <= s <= n. It is
+// the per-rule confidence test, so it first decides in float64 and falls
+// back to Min only near the boundary.
+//
+// Fast path: a = float64(s) and b = float64(n)·hi (or ·lo) carry at most
+// four roundings of a relative 2^-53 each (s, n, t·(1±2^-50) and the
+// product); with x = t·n, a >= b implies s >= x·(1+2^-50)·(1−2^-51) > x,
+// which meets the minimum, and a < float64(n)·lo implies
+// s < x·(1−2^-50)·(1+2^-51) < x·(1−2^-52), which does not. All values are
+// normal floats for 2^-60 <= t <= 1 and n >= 1 (n = 0 gives x = 0, met
+// by every s >= 0), and x <= n, so Min does not saturate; other t use
+// Min.
+func (f *Frac) Meets(s, n int64) bool {
+	if meets, sure := f.Quick(s, n); sure {
+		return meets
+	}
+	return s >= f.Min(n)
+}
+
+// Quick is the float64 part of Meets: if sure, meets is the result of
+// Meets(s, n); otherwise s is near the boundary and only Min decides. It
+// is small enough to be inlined into the per-rule confidence test.
+func (f *Frac) Quick(s, n int64) (meets, sure bool) {
+	a, b := float64(s), float64(n)
+	if a >= b*f.hi {
+		return true, true
+	}
+	return false, a < b*f.lo
 }

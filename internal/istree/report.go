@@ -355,7 +355,15 @@ func (t *Tree) r4set(rep *report.Reporter, ni int32, index int32) error {
 // rules with a confidence below 1 for -c100 once the body support exceeds
 // about 2^52.
 func (t *Tree) rule(rep *report.Reporter, head tract.Item, supp, body, base tract.Supp) error {
-	if body < t.body || int64(supp) < t.conf.Min(int64(body)) {
+	if body < t.body {
+		return nil
+	}
+	// Quick (inlined) decides all but the rules near the boundary.
+	meets, sure := t.conf.Quick(int64(supp), int64(body))
+	if !sure {
+		meets = int64(supp) >= t.conf.Min(int64(body))
+	}
+	if !meets {
 		return nil
 	}
 	// Deviation from upstream (bug B8, rules-eval.md §3.1): upstream's
