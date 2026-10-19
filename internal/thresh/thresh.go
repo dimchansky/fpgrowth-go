@@ -23,10 +23,12 @@
 //     max(⌈x·(1−ε)⌉, ⌊x⌋) = ⌊x⌋; s meets a maximum iff s <= x·(1+ε) and
 //     s < x+1, i.e. the maximum is min(⌊x·(1+ε)⌋, ⌈x⌉) = ⌈x⌉.
 //
-// The branch is decided by the exact x, not by a rounded value. Above the
-// switch upstream's relative tolerance would exceed one unit (audit
-// ALG-2); below it the double formula is kept unchanged so that no
-// result at ordinary weights changes.
+// The branch is decided by the exact x, not by a rounded value. From the
+// switch on upstream's relative tolerance alone is at least one unit
+// (audit ALG-2); below it the double formula is kept unchanged so that
+// no result at ordinary weights changes, also where its roundings already
+// put it a full unit off (from about x = 2^51.6; TestPinned has two
+// cases).
 //
 // # Monotonicity across the switch
 //

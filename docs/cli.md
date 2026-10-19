@@ -274,8 +274,10 @@ The full list with evidence and tests is in
   upstream's double formulas, with identical results, while x =
   percentage/100 × weight (or confidence × body support) is below 2^52.
   From 2^52 on (maxima: above 2^52), where upstream's relative tolerance
-  exceeds one unit of support and admitted results up to W·2^-52 outside
-  the bound, the bound is exact: ⌊x⌋ for `-s`, `-F` and `-c`, ⌈x⌉ for
+  alone is at least one unit of support and admitted results up to
+  W·2^-52 outside the bound, the bound is exact (just below 2^52, from
+  about 2^51.6, upstream's formula can already be a full unit off; it is
+  kept there): ⌊x⌋ for `-s`, `-F` and `-c`, ⌈x⌉ for
   `-S`. `-c100` then admits only rules whose support equals the body
   support, and `-s100` is the total weight (the threshold contract in
   `differences.md`).

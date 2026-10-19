@@ -90,8 +90,10 @@ with upstream's arithmetic (`internal/thresh`, the threshold contract of
 `docs/differences.md`): a percentage `s` is the fraction t = s/100, and
 while x = t·W < 2^52 the minimum is `ceil(t · W · (1 − 2⁻⁵²))` in double
 arithmetic, a maximum `floor(t · W · (1 + 2⁻⁵²))` (for x <= 2^52). The
-tolerance absorbs the representation error of decimal fractions. From
-2^52 on it would exceed one unit of support, so the bound is the exact
+tolerance absorbs the representation error of decimal fractions; with the
+roundings it can be a full unit off from about x = 2^51.6, and from 2^52
+on the tolerance alone is at least one unit of support, so the bound there
+is the exact
 `floor(x)` (maximum: `ceil(x)` above 2^52); both branches together are
 monotone in t and W. The library's
 `Fraction(f)` applies the same conversion to `f` directly; the library's

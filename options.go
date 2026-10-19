@@ -254,9 +254,11 @@ func Count(n int64) Support { return Support{kind: supportCount, count: n} }
 // program: as a minimum ceil(f·W·(1-ε)), as a maximum floor(f·W·(1+ε)),
 // every product rounded to float64. Its tolerance absorbs the
 // representation error of decimal fractions, so Fraction(0.3) of W = 10
-// is exactly 3. From 2^52 on that tolerance would exceed one unit of
-// support (it used to admit sets just outside the bound), so the formula
-// is evaluated exactly with the tolerance capped below one unit: the
+// is exactly 3. With its roundings it can be a full unit off from about
+// x = 2^51.6, which is kept for compatibility; from 2^52 on the tolerance
+// alone is at least one unit of support (it used to admit sets just
+// outside the bound), so the formula is evaluated exactly with the
+// tolerance capped below one unit: the
 // minimum is ⌊x⌋ and the maximum ⌈x⌉. Fraction(1) is therefore exactly W
 // from 2^52 on (below, the minimum keeps upstream's ceil(W·(1-ε)), which
 // is W too), and a larger fraction never gives a smaller bound.

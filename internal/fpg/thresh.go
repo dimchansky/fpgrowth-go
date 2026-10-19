@@ -14,7 +14,8 @@ import (
 //
 // Deviation from upstream (differences.md N2, issue #17): fpg_data
 // computes ceil((smin/100)*w*(1-DBL_EPSILON)) in double arithmetic, whose
-// relative tolerance exceeds one unit of support beyond about 2^52. Here
+// relative tolerance alone exceeds one unit of support from 2^52 on (with
+// the roundings, from about 2^51.6). Here
 // that formula is kept where x = smin/100·w < 2^52 (identical results)
 // and evaluated exactly, with the tolerance capped below one unit, above.
 func minSupp(smin float64, w tract.Supp) tract.Supp {

@@ -158,6 +158,14 @@ var specials = []float64{
 var refN = []int64{0, 1, 2, 3, 10, 1000, 1<<52 - 1, 1 << 52, 1<<52 + 1, 1<<53 - 1, 1<<53 + 1,
 	1<<61 - 1, 1<<61 + 1, 1 << 62, math.MaxInt64 - 1, math.MaxInt64}
 
+// scaled returns n, or n/10 under the race detector.
+func scaled(n int) int {
+	if raceEnabled {
+		return max(n/10, 1)
+	}
+	return n
+}
+
 // TestAgainstBig compares Min and Max with the big.Rat evaluation of the
 // contract for special values (zero, −0, negative, +Inf, subnormal, values
 // above 1) and random thresholds and supports over the whole int64 range.
@@ -169,7 +177,7 @@ func TestAgainstBig(t *testing.T) {
 		}
 	}
 	r := rand.New(rand.NewPCG(17, 1))
-	for i := range 200000 {
+	for i := range scaled(200000) {
 		var tv float64
 		switch i % 6 {
 		case 0:
@@ -232,6 +240,10 @@ func TestPinned(t *testing.T) {
 		{"1 of 2^52-1 keeps upstream's tolerance", 1, 1<<52 - 1, 1<<52 - 2, 1 << 52},
 		{"1 of 2^52 is exact (minimum), upstream's maximum", 1, 1 << 52, 1 << 52, 1<<52 + 1},
 		{"1 of 2^52+1 is exact", 1, 1<<52 + 1, 1<<52 + 1, 1<<52 + 1},
+		// documented upstream behavior kept below the switch: a full unit off
+		// x from about 2^51.6 (x ≈ 3377705443070997.11 and 3377722064612683.82)
+		{"0.7677 of 4399772623513087 (upstream, below the switch)", 0.7677, 4399772623513087, 3377705443070996, 3377705443070998},
+		{"0.3214 of 10509402814600758 (upstream, below the switch)", 0.3214, 10509402814600758, 3377722064612683, 3377722064612685},
 		// the reason maxima switch only above 2^52: RN(2^55-1) = 2^55
 		{"1/8 of 2^55-1 (upstream)", 0.125, 1<<55 - 1, 1<<52 - 1, 1<<52 + 1},
 		{"1/8 of 2^55 (x = 2^52: upstream's maximum)", 0.125, 1 << 55, 1 << 52, 1<<52 + 1},
@@ -301,7 +313,7 @@ func TestMonotoneAcrossSwitch(t *testing.T) {
 			t.Fatalf("%s: minimum %d above maximum %d + 1", what, cur.lo, cur.hi)
 		}
 	}
-	for i := range 300 {
+	for i := range scaled(300) {
 		// fixed t, n across 2^52/t
 		var tv float64
 		switch i % 4 {
@@ -323,7 +335,7 @@ func TestMonotoneAcrossSwitch(t *testing.T) {
 			prev = cur
 		}
 	}
-	for range 300 {
+	for range scaled(300) {
 		// fixed n >= 2^52, t across 2^52/n by single ulps
 		n := int64(1)<<52 + r.Int64N(math.MaxInt64-1<<52)
 		tv := 0x1p52 / float64(n)
