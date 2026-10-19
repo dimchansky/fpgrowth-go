@@ -55,4 +55,4 @@ linked documents.
 - Resolved after v0.1.0: RC-2 (Info, `docs/audit/rc1-verification.md`),
   mining returned nil instead of `ctx.Err()` when the context was
   canceled inside `OnStart` and nothing was left to mine; fixed by
-  issue #14 (PR PRNUM).
+  issue #14 (PR #26).
