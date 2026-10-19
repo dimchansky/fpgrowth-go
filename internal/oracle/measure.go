@@ -90,26 +90,35 @@ func aboveExpected(supp, body, head, base tract.Supp) bool {
 	return hi1 > hi2 || hi1 == hi2 && lo1 > lo2
 }
 
+// worstValue is the convention for sets that cannot be evaluated and for
+// rules invalidated by -i (ConvWorst).
+func (m *Measure) worstValue() Value { return conv(m.Dir.worst(), ConvWorst) }
+
 // ruleValue evaluates one rule like istree.c (r4set, evaluate), including
-// the -i invalidation, and returns the value and its tolerance (0 with
-// Func).
-func (m *Measure) ruleValue(supp, body, head, base tract.Supp) (v, tol float64, err error) {
+// the -i invalidation. With Func the value has no tolerance; with Ref it
+// is the reference Value.
+func (m *Measure) ruleValue(supp, body, head, base tract.Supp) (Value, error) {
 	if m.Ref == nil {
 		if m.InvalidateBelowExpected &&
 			!(float64(supp)*float64(base) > float64(head)*float64(body)) {
-			return m.Dir.worst(), 0, nil
+			return m.worstValue(), nil
 		}
-		return m.Func(supp, body, head, base), 0, nil
+		return Value{V: m.Func(supp, body, head, base)}, nil
 	}
 	if m.InvalidateBelowExpected && !aboveExpected(supp, body, head, base) {
-		return m.Dir.worst(), 0, nil
+		return m.worstValue(), nil
 	}
 	rv, err := m.Ref.Eval(supp, body, head, base)
 	if err != nil {
-		return 0, 0, fmt.Errorf("oracle: %s(%d, %d, %d, %d): %w", m.Ref.Name, supp, body, head, base, err)
+		return Value{}, fmt.Errorf("oracle: %s(%d, %d, %d, %d): %w", m.Ref.Name, supp, body, head, base, err)
 	}
-	return rv.V, rv.Tol, nil
+	return rv, nil
 }
+
+// margin returns the half-width of the band around a value in which an
+// implementation's threshold decision may go either way: its tolerance,
+// or the bound of its known defect if larger.
+func (v Value) margin() float64 { return max(v.Tol, v.DefectTol) }
 
 // decision is the outcome of a threshold test.
 type decision uint8
@@ -137,7 +146,8 @@ func decideTol(v, tol float64, m *Measure) decision {
 // dir*value < dir*threshold. A NaN value is therefore accepted
 // (rules-eval.md B5). With a tolerance, values within it of the
 // threshold are boundary cases.
-func (m *Measure) ruleDecision(v, tol float64) decision {
+func (m *Measure) ruleDecision(val Value) decision {
+	v, tol := val.V, val.margin()
 	if tol > 0 && !math.IsInf(v, 0) {
 		return decideTol(v, tol, m)
 	}
@@ -151,7 +161,8 @@ func (m *Measure) ruleDecision(v, tol float64) decision {
 // setDecision is upstream's item set test (isets): accept if
 // value*dir >= dir*threshold. A NaN value is therefore rejected. With a
 // tolerance, values within it of the threshold are boundary cases.
-func (m *Measure) setDecision(v, tol float64) decision {
+func (m *Measure) setDecision(val Value) decision {
+	v, tol := val.V, val.margin()
 	if tol > 0 && !math.IsInf(v, 0) {
 		return decideTol(v, tol, m)
 	}
@@ -197,7 +208,8 @@ const (
 // tolerance: that of the first rule for AggFirst, the largest tolerance of
 // the set's rules for AggMin and AggMax (the minimum of values that are
 // each within t_i of the reference is within max t_i of the reference
-// minimum), and the average tolerance plus refTau·|value| for AggAvg.
+// minimum), and the average tolerance plus ratTau·|value| for AggAvg;
+// known-defect bounds (Value.DefectTol) aggregate the same way.
 //
 // Which rule is first (AggFirst) depends on the item order of the
 // implementation, not on a definition (docs/differences.md P6); callers
@@ -249,19 +261,19 @@ func newSetEvaluator(db *DB, e *SetEval) *setEvaluator {
 	return &setEvaluator{db: db, eval: e, rank: rank}
 }
 
-// value returns the aggregated measure value of the set with mask m and
-// its tolerance (0 with Measure.Func).
-func (se *setEvaluator) value(m uint64) (float64, float64, error) {
+// value returns the aggregated measure value of the set with mask m with
+// its tolerance and known defect (none with Measure.Func).
+func (se *setEvaluator) value(m uint64) (Value, error) {
 	meas := &se.eval.Measure
 	n := bits.OnesCount64(m)
 	if n <= 1 {
-		return meas.Dir.worst(), 0, nil
+		return meas.worstValue(), nil
 	}
 	heads := make([]int, 0, n)
 	for r := m; r != 0; r &= r - 1 {
 		i := bits.TrailingZeros64(r)
 		if se.rank[i] < 0 {
-			return 0, 0, fmt.Errorf("oracle: item %q missing from SetEval.Order", se.db.items[i])
+			return Value{}, fmt.Errorf("oracle: item %q missing from SetEval.Order", se.db.items[i])
 		}
 		heads = append(heads, i)
 	}
@@ -269,45 +281,55 @@ func (se *setEvaluator) value(m uint64) (float64, float64, error) {
 
 	db := se.db
 	supp := db.supp[m]
-	ruleValue := func(h int) (float64, float64, error) {
+	ruleValue := func(h int) (Value, error) {
 		bit := uint64(1) << h
 		return meas.ruleValue(supp, db.supp[m&^bit], db.supp[bit], db.total)
 	}
-	agg, tol, err := ruleValue(heads[0])
+	agg, err := ruleValue(heads[0])
 	if err != nil || se.eval.Agg == AggFirst {
-		return agg, tol, err
+		return agg, err
 	}
+	agg.Kind, agg.Conv = Exact, "" // an aggregate of possibly different kinds
 	for _, h := range heads[1:] {
-		v, t, err := ruleValue(h)
+		v, err := ruleValue(h)
 		if err != nil {
-			return 0, 0, err
+			return Value{}, err
+		}
+		if v.KnownDefect != "" {
+			agg.KnownDefect = v.KnownDefect
 		}
 		switch se.eval.Agg {
 		case AggMin:
-			if v < agg {
-				agg = v
+			if v.V < agg.V {
+				agg.V = v.V
 			}
-			tol = max(tol, t)
+			agg.Tol, agg.DefectTol = max(agg.Tol, v.Tol), max(agg.DefectTol, v.DefectTol)
 		case AggMax:
-			if v > agg {
-				agg = v
+			if v.V > agg.V {
+				agg.V = v.V
 			}
-			tol = max(tol, t)
+			agg.Tol, agg.DefectTol = max(agg.Tol, v.Tol), max(agg.DefectTol, v.DefectTol)
 		default:
-			agg += v
-			tol += t
+			agg.V += v.V
+			agg.Tol += v.Tol
+			agg.DefectTol += max(v.Tol, v.DefectTol)
 		}
 	}
 	if se.eval.Agg == AggAvg {
-		agg /= float64(n)
+		fn := float64(n)
+		agg.V /= fn
 		if meas.Ref != nil {
-			tol = tol/float64(n) + refTau*math.Abs(agg)
+			agg.Tol = agg.Tol/fn + ratTau*math.Abs(agg.V)
+			agg.DefectTol = agg.DefectTol/fn + ratTau*math.Abs(agg.V)
 		}
 	}
-	if math.IsInf(agg, 0) {
-		tol = 0
+	if agg.KnownDefect == "" {
+		agg.DefectTol = 0
 	}
-	return agg, tol, nil
+	if math.IsInf(agg.V, 0) {
+		agg.Tol, agg.DefectTol, agg.KnownDefect = 0, 0, ""
+	}
+	return agg, nil
 }
 
 // sortByRank sorts the bit indices by increasing rank (insertion sort; the

@@ -116,9 +116,14 @@ type Rule struct {
 	// (Measure.Ref): an implementation's value matches if it is within
 	// EvalTol of Eval. It is 0 otherwise (values must be equal).
 	EvalTol float64
+	// Defect and DefectTol are the reference value's known implementation
+	// defect and its bound (Value.KnownDefect, Value.DefectTol); see
+	// DiffOptions.Defects.
+	Defect    string
+	DefectTol float64
 	// Optional marks a rule whose reference value lies within its
-	// tolerance of the threshold, so that an implementation may report it
-	// or not (DiffRules accepts both).
+	// tolerance (or known-defect bound) of the threshold, so that an
+	// implementation may report it or not (DiffRules accepts both).
 	Optional bool
 }
 
@@ -226,14 +231,14 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 				continue
 			}
 			h := db.supp[bit]
-			var v, tol float64
+			var val Value
 			optional := false
 			if p.Eval != nil {
 				var err error
-				if v, tol, err = p.Eval.ruleValue(s, b, h, db.total); err != nil {
+				if val, err = p.Eval.ruleValue(s, b, h, db.total); err != nil {
 					return nil, err
 				}
-				switch p.Eval.ruleDecision(v, tol) {
+				switch p.Eval.ruleDecision(val) {
 				case rejected:
 					continue
 				case boundary:
@@ -241,16 +246,18 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 				}
 			}
 			rules = append(rules, Rule{
-				Head:     db.items[bits.TrailingZeros64(bit)],
-				Body:     db.set(m &^ bit),
-				Supp:     s,
-				BodySupp: b,
-				HeadSupp: h,
-				Conf:     confidence(s, b),
-				Lift:     lift(s, b, h, db.total),
-				Eval:     v,
-				EvalTol:  tol,
-				Optional: optional,
+				Head:      db.items[bits.TrailingZeros64(bit)],
+				Body:      db.set(m &^ bit),
+				Supp:      s,
+				BodySupp:  b,
+				HeadSupp:  h,
+				Conf:      confidence(s, b),
+				Lift:      lift(s, b, h, db.total),
+				Eval:      val.V,
+				EvalTol:   val.Tol,
+				Defect:    val.KnownDefect,
+				DefectTol: val.DefectTol,
+				Optional:  optional,
 			})
 		}
 	}

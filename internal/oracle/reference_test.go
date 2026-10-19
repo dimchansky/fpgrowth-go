@@ -193,26 +193,26 @@ func TestLnBig(t *testing.T) {
 	// ln 2 to 60 digits (OEIS A002162)
 	const ln2Digits = "0.693147180559945309417232121458176568075500134360255254120680"
 	want, _, _ := big.ParseFloat(ln2Digits, 10, refPrec, big.ToNearestEven)
-	d := newFloat().Sub(ln2Big(), want)
+	d := newFloat(refPrec).Sub(ln2Big(refPrec), want)
 	if d.Sign() != 0 && d.MantExp(nil) > -(refPrec-4) {
-		t.Errorf("ln 2 = %v, want %s", ln2Big().Text('g', 60), ln2Digits)
+		t.Errorf("ln 2 = %v, want %s", ln2Big(refPrec).Text('g', 60), ln2Digits)
 	}
 	// ln 10 (OEIS A002392)
 	const ln10Digits = "2.30258509299404568401799145468436420760110148862877297603333"
 	want, _, _ = big.ParseFloat(ln10Digits, 10, refPrec, big.ToNearestEven)
-	d = newFloat().Sub(lnBig(newFloat().SetInt64(10)), want)
+	d = newFloat(refPrec).Sub(lnBig(newFloat(refPrec).SetInt64(10)), want)
 	if d.Sign() != 0 && d.MantExp(nil) > -(refPrec-6) {
-		t.Errorf("ln 10 = %v, want %s", lnBig(newFloat().SetInt64(10)).Text('g', 60), ln10Digits)
+		t.Errorf("ln 10 = %v, want %s", lnBig(newFloat(refPrec).SetInt64(10)).Text('g', 60), ln10Digits)
 	}
 	for _, x := range []float64{1, 0.5, 0.7, 1.4, 3, 1e-300, 1e300, 123456789} {
-		if got := float64Of(lnBig(newFloat().SetFloat64(x))); math.Abs(got-math.Log(x)) > 4.5e-16*max(1, math.Abs(math.Log(x))) {
+		if got := float64Of(lnBig(newFloat(refPrec).SetFloat64(x))); math.Abs(got-math.Log(x)) > 4.5e-16*max(1, math.Abs(math.Log(x))) {
 			t.Errorf("lnBig(%v) = %v, math.Log %v", x, got, math.Log(x))
 		}
 	}
 	// ln(1+eps) - eps ≈ -eps²/2 + eps³/3 for tiny eps
 	for _, e := range []int64{1 << 40, 1 << 62, -(1 << 50)} {
 		eps := big.NewRat(1, e)
-		got := float64Of(log1pMinus(eps))
+		got := float64Of(log1pMinus(eps, refPrec))
 		x := 1 / float64(e)
 		want := -x*x/2 + x*x*x/3
 		if math.Abs(got-want) > 1e-15*math.Abs(want) {
@@ -221,7 +221,7 @@ func TestLnBig(t *testing.T) {
 	}
 	for _, e := range []*big.Rat{big.NewRat(1, 2), big.NewRat(-1, 2), big.NewRat(3, 1), big.NewRat(-9, 10), big.NewRat(1, 3)} {
 		f, _ := e.Float64()
-		got := float64Of(log1pMinus(e))
+		got := float64Of(log1pMinus(e, refPrec))
 		if want := math.Log1p(f) - f; math.Abs(got-want) > 1e-15 {
 			t.Errorf("log1pMinus(%v) = %v, want %v", e, got, want)
 		}

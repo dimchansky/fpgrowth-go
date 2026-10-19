@@ -103,9 +103,14 @@ type Set struct {
 	// (Measure.Ref, LogRatio): an implementation's value matches if it is
 	// within EvalTol of Eval. It is 0 otherwise (values must be equal).
 	EvalTol float64
+	// Defect and DefectTol are the reference value's known implementation
+	// defect and its bound (Value.KnownDefect, Value.DefectTol); see
+	// DiffOptions.Defects.
+	Defect    string
+	DefectTol float64
 	// Optional marks a set whose reference value lies within its
-	// tolerance of the threshold, so that an implementation may report it
-	// or not (DiffSets accepts both).
+	// tolerance (or known-defect bound) of the threshold, so that an
+	// implementation may report it or not (DiffSets accepts both).
 	Optional bool
 }
 
@@ -165,24 +170,24 @@ func (db *DB) Mine(p SetParams) ([]Set, error) {
 		if !db.hasTarget(m, p.Target, smin) {
 			continue
 		}
-		var v, tol float64
+		var val Value
 		dec := accepted
 		switch {
 		case evaluator != nil:
 			var err error
-			if v, tol, err = evaluator.value(m); err != nil {
+			if val, err = evaluator.value(m); err != nil {
 				return nil, err
 			}
-			dec = p.Eval.Measure.setDecision(v, tol)
+			dec = p.Eval.Measure.setDecision(val)
 		case p.LogRatio != nil:
-			rv := db.logRatio(m)
-			v, tol = rv.V, rv.Tol
-			dec = p.LogRatio.decision(v, tol)
+			val = db.logRatio(m)
+			dec = p.LogRatio.decision(val.V, val.Tol)
 		}
 		if dec == rejected {
 			continue
 		}
-		sets = append(sets, Set{Items: db.set(m), Supp: s, Eval: v, EvalTol: tol, Optional: dec == boundary})
+		sets = append(sets, Set{Items: db.set(m), Supp: s, Eval: val.V, EvalTol: val.Tol,
+			Defect: val.KnownDefect, DefectTol: val.DefectTol, Optional: dec == boundary})
 	}
 	SortSets(sets)
 	return sets, nil

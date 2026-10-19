@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/bits"
 	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -98,6 +99,39 @@ const (
 	// statistic is n·max(0, |ad-bc| - n/2)²/(margins) (differences.md
 	// R9b, as R's chisq.test; upstream squares a negative difference).
 	ConvR9b = "R9b"
+	// ConvWorst: the constant an evaluation assigns where no rule can be
+	// evaluated (the empty set and singletons) or a rule is invalidated by
+	// -i: 0 for HigherIsBetter, 1 for LowerIsBetter (istree.c evaluate,
+	// rules-eval.md §4.1). The oracle applies it in Measure and SetEval;
+	// these values carry no tolerance.
+	ConvWorst = "worst"
+)
+
+// The other port fixes of docs/differences.md that concern measure values
+// are not conventions: they make the implementation agree with the exact
+// definition, which the reference computes directly, so their values
+// have Kind Exact. R6: the Fisher tests count tied tables (equal
+// probability or information) as in the region; the reference decides
+// ties exactly. R7: the information is never negative; the reference's
+// mutual information is >= 0 by construction. R9a: the Fisher p-values
+// lie in [0, 1]; the reference's exact sums do.
+
+// Known implementation defects. A Value may name one (KnownDefect) with
+// a bound on the deviation it explains (DefectTol). Matches ignores them:
+// a value within DefectTol but outside Tol does not match, so the strict
+// tests of the implementation see the defect. Comparisons of mined
+// results (DiffSets, DiffRules with DiffOptions.Defects) count such
+// values per defect instead of reporting them.
+const (
+	// DefectALG6: the implementation computes the information as
+	// (ln n + Σ t·ln(t/(r·k))/n)/ln 2, whose absolute error is a few ulps
+	// of ln n, and the G-test p-value from it. Near independence the
+	// chi²(1) tail amplifies that error (its slope is infinite at 0): the
+	// p-value of an exactly independent table is 1 - O(1e-7) instead of 1
+	// (audit ALG-6), and nearly independent tables are off by relative
+	// 1e-11 to 1e-7 for n from 10^3 to 10^5. Information values near 0
+	// carry the absolute error itself.
+	DefectALG6 = "ALG-6"
 )
 
 // Value is the reference value of a measure for one table.
@@ -108,13 +142,25 @@ type Value struct {
 	// float64 value with V (Matches). It is 0 for conventions, infinities
 	// and integral values, which must match exactly. Otherwise it bounds
 	// the rounding error that a float64 implementation of the measure
-	// accumulates on top of the error of V itself; see refTol.
+	// accumulates on top of the error of V itself; see ratTau.
 	Tol float64
 	// Kind tells whether V is exact or a convention.
 	Kind ValueKind
 	// Conv is the identifier of the convention (one of the Conv*
 	// constants) if Kind is Convention, else "".
 	Conv string
+	// KnownDefect names a known implementation defect (DefectALG6) that
+	// can make an implementation's value deviate from V by up to
+	// DefectTol, or is "".
+	KnownDefect string
+	DefectTol   float64
+}
+
+// MatchesDefect reports whether x deviates from v only within the bound
+// of v's known defect: x does not match v, but |x - V| <= DefectTol.
+func (v Value) MatchesDefect(x float64) bool {
+	return v.KnownDefect != "" && !v.Matches(x) && !math.IsNaN(x) && !math.IsInf(v.V, 0) &&
+		math.Abs(x-v.V) <= v.DefectTol
 }
 
 // Matches reports whether an implementation's value x matches v: x == V,
@@ -274,43 +320,65 @@ func frac(x, y *big.Int) *big.Rat { return new(big.Rat).SetFrac(x, y) }
 
 // Tolerances.
 //
-// refTau is the relative tolerance unit, 2^-36 ≈ 1.5e-11, about 65,000
-// ulps of float64. Every implementation value that is a short float64
-// formula of the four supports (at most a few dozen roundings, each of
-// relative size 2^-53, amplified by at most |value| + 1 through the
-// differences |x - 1|, |conf - prior|, ...) lies within refTau·max(1,
-// |value|) of the exact value as long as the formula's integer products
-// are exact in float64 (n < 2^26) and the prior head/n is not within
-// about 2^-14 of 1 (certainty). Beyond that, a float64 formula loses
-// precision (audit ALG-1, differences.md N1); the reference then still
-// returns the exact value with the same tolerance, so the loss shows as a
-// mismatch. The same holds for a G-test p-value computed from an
-// information value with an absolute rounding error: near independence
-// the tail function amplifies it (audit ALG-6). A wrong formula changes values by far more than refTau: the
-// TST-3 mutant (Kulczynski factor 0.5000001) changes them by 2e-7.
-const refTau = 0x1p-36
+// ratTau, 2^-44 ≈ 5.7e-14 (256 ulps of float64), is the tolerance unit of
+// the rational measures and the logarithms of rational values. An
+// implementation computes them with a short float64 formula of the four
+// supports (at most a few dozen roundings of relative size 2^-53). Two
+// forms are used:
+//
+//   - relative, ratTau·|v|, for the products and quotients c, l, v, b, k,
+//     u and for chi² and Yates (n, y), whose numerator s·n - b·h is exact
+//     in float64 as long as the products are below 2^53. A relative bound
+//     also catches a collapse to 0 of a small value (ALG-1: at a total
+//     weight of 9e15 the implementation's chi²/n is 27 % off);
+//   - absolute below 1, ratTau·max(1, |v|), for the differences d, a, q,
+//     e, r, w and for j (z: see certValue), where a float64 evaluation subtracts
+//     quantities of size about 1 (|conf - prior|, |lift - 1|, log2 of a
+//     ratio near 1) and keeps an absolute error of a few ulps.
+//
+// The information (i) is compared relatively, ratTau·|v|; its absolute
+// error from the implementation's formula is the known defect DefectALG6
+// (see there). Measured on every table with n <= 60, the boundary tables
+// and 20,000 random tables up to n = 2^24, the implementation stays below 1 % of
+// these tolerances (the Fisher tests below 4 % and the certainty factor
+// below 5 % of theirs, see fisherTol and certValue).
+// Beyond about n = 2^26, or for a prior h/n within about 2^-14 of 1
+// (certainty), a float64 formula can lose more (audit ALG-1,
+// differences.md N1); the reference still returns the exact value with
+// the same tolerance, so the loss shows as a mismatch unless it stays
+// below the absolute ratTau of the second form. A wrong formula changes
+// values by far more: the TST-3 mutant (Kulczynski factor 0.5000001)
+// changes them by 2e-7.
+const ratTau = 0x1p-44
 
-// refTol returns the tolerance for a finite value v of a measure whose
-// float64 evaluation is a short rational formula or a logarithm of one.
-func refTol(v float64) float64 { return refTau * max(1, math.Abs(v)) }
+// pTau, 2^-36, is the tolerance unit of the p-values and Fisher tests,
+// whose evaluation involves an incomplete gamma function or sums of
+// exponentials (see pValue and fisherTol).
+const pTau = 0x1p-36
 
-// exactRat returns the exact value r with the default tolerance.
+// exactRat returns the exact value r with the tolerance ratTau·max(1, |v|).
 func exactRat(r *big.Rat) Value {
 	v := ratFloat64(r)
-	return Value{V: v, Tol: refTol(v)}
+	return Value{V: v, Tol: ratTau * max(1, math.Abs(v))}
+}
+
+// relRat returns the exact value r with the relative tolerance ratTau·|v|.
+func relRat(r *big.Rat) Value {
+	v := ratFloat64(r)
+	return Value{V: v, Tol: ratTau * math.Abs(v)}
 }
 
 // conv returns a convention value.
 func conv(v float64, id string) Value { return Value{V: v, Kind: Convention, Conv: id} }
 
 // pValue returns the chi²(1) tail probability of the statistic x >= 0
-// (as float64) with its tolerance: relative refTau·(1 + x), which covers
+// (as float64) with its tolerance: relative pTau·(1 + x), which covers
 // the conditioning of the tail function (see q1) for the implementation
 // and for the reference, plus an absolute 2^-1000 for results near the
 // underflow range.
 func pValue(x float64) Value {
 	v := q1(x)
-	return Value{V: v, Tol: refTau*(1+x)*v + 0x1p-1000}
+	return Value{V: v, Tol: pTau*(1+x)*v + 0x1p-1000}
 }
 
 func refSupport(t *table) (Value, error) {
@@ -323,7 +391,7 @@ func refConfidence(t *table) (Value, error) {
 	if t.b == 0 {
 		return conv(0, ConvUndefined), nil
 	}
-	return exactRat(frac(t.bs, t.bb)), nil
+	return relRat(frac(t.bs, t.bb)), nil
 }
 
 // ConfidenceDiff: |P(h | B) - P(h)| = |s/b - h/n|.
@@ -348,7 +416,7 @@ func refLift(t *table) (Value, error) {
 	if l == nil {
 		return conv(0, ConvUndefined), nil
 	}
-	return exactRat(l), nil
+	return relRat(l), nil
 }
 
 // LiftDiff: |lift - 1|.
@@ -402,7 +470,7 @@ func refConviction(t *table) (Value, error) {
 	case t.b == t.s:
 		return conv(math.Inf(1), ConvR4), nil
 	}
-	return exactRat(t.conviction()), nil
+	return relRat(t.conviction()), nil
 }
 
 // ConvictionDiff: |conviction - 1|.
@@ -438,7 +506,7 @@ func refImbalance(t *table) (Value, error) {
 		return conv(math.Inf(1), ConvUndefined), nil
 	}
 	num := new(big.Int).Sub(t.bb, t.bh)
-	return exactRat(frac(num.Abs(num), d)), nil
+	return relRat(frac(num.Abs(num), d)), nil
 }
 
 // kulczynski returns (P(h | B) + P(B | h))/2 = (s/b + s/h)/2, or nil if
@@ -456,7 +524,7 @@ func refKulczynski(t *table) (Value, error) {
 	if k == nil {
 		return conv(math.Inf(1), ConvUndefined), nil
 	}
-	return exactRat(k), nil
+	return relRat(k), nil
 }
 
 // KulczynskiDiff: upstream's 2·|K - 1/2| (ALG-5), for every table.
@@ -506,7 +574,7 @@ func refCondProbRatio(t *table) (Value, error) {
 	if t.s == 0 {
 		return Value{}, nil // exactly 0
 	}
-	return exactRat(t.condProbRatio()), nil
+	return relRat(t.condProbRatio()), nil
 }
 
 // Importance: log2 of the conditional probability ratio.
@@ -518,9 +586,21 @@ func refImportance(t *table) (Value, error) {
 		// log2(0) = -Inf; upstream (re_import) returns 0 for s <= 0.
 		return conv(0, ConvUndefined), nil
 	}
-	l := lnRat(t.condProbRatio())
-	v := float64Of(l.Quo(l, ln2Big()))
-	return Value{V: v, Tol: refTol(v)}, nil
+	l := lnRat(t.condProbRatio(), refPrec)
+	v := float64Of(l.Quo(l, ln2Big(refPrec)))
+	return Value{V: v, Tol: ratTau * max(1, math.Abs(v))}, nil
+}
+
+// certValue returns the exact certainty factor r with the tolerance
+// pTau·max(1, |v|). A float64 evaluation divides the difference of the
+// rounded confidence and prior by 1 - h/n (or h/n), which amplifies their
+// rounding errors by up to n/(n-h): with ratTau the comparison would
+// already fail for priors within 2^-13 of 1 at n < 2^24 (measured in the
+// extended sweep); pTau covers n/(n-h) up to about 2^14 (beyond that the
+// loss is part of audit ALG-1).
+func certValue(r *big.Rat) Value {
+	v := ratFloat64(r)
+	return Value{V: v, Tol: pTau * max(1, math.Abs(v))}
 }
 
 // Certainty factor (Shortliffe and Buchanan; Berzal et al.): with the
@@ -534,12 +614,12 @@ func refCertainty(t *table) (Value, error) {
 	p := frac(t.bh, t.bn)
 	d := new(big.Rat).Sub(c, p)
 	if d.Sign() < 0 {
-		return exactRat(d.Quo(d, p)), nil // p > c >= 0
+		return certValue(d.Quo(d, p)), nil // p > c >= 0
 	}
 	if t.h == t.n {
 		return conv(0, ConvR5), nil // (1 - 1)/(1 - 1)
 	}
-	return exactRat(d.Quo(d, new(big.Rat).Sub(big.NewRat(1, 1), p))), nil
+	return certValue(d.Quo(d, new(big.Rat).Sub(big.NewRat(1, 1), p))), nil
 }
 
 // chi2Stat returns Pearson's statistic X² = Σ (O - E)²/E over the four
@@ -564,7 +644,7 @@ func refChi2(t *table) (Value, error) {
 	if x == nil {
 		return conv(0, ConvUndefined), nil
 	}
-	return exactRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
+	return relRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
 }
 
 // Chi2PValue: P(chi²(1) > X²).
@@ -610,7 +690,7 @@ func refYates(t *table) (Value, error) {
 	if clamped {
 		return conv(0, ConvR9b), nil
 	}
-	return exactRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
+	return relRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
 }
 
 // YatesPValue: P(chi²(1) > X²_Y).
@@ -625,19 +705,32 @@ func refYatesPValue(t *table) (Value, error) {
 	return pValue(ratFloat64(x)), nil
 }
 
+// infoPrec returns the working precision of the mutual information of a
+// table with total weight n: 128 + 2·bitlen(n) bits (see mutualInfo).
+func infoPrec(n int64) uint {
+	return refPrec + 2*uint(bits.Len64(uint64(n)))
+}
+
 // mutualInfo returns the mutual information of body and head in nats,
 //
 //	I = Σ_{cells, c > 0} (c/n)·ln(c·n/(r·k)),
 //
-// computed without cancellation: with eps = (c·n - r·k)/(r·k) (exact),
-// ln(1 + eps) = eps + (ln(1 + eps) - eps), and Σ (c/n)·eps = Σ c²/(r·k) - 1
-// is the exact rational φ² >= 0, while the remainders (c/n)·(ln(1 + eps) -
-// eps) are all <= 0 and are summed without cancellation (log1pMinus). It
-// is exactly 0 for an independent table (s·n = b·h, all eps = 0) and for
-// degenerate margins.
+// computed as follows: with eps = (c·n - r·k)/(r·k) (exact), ln(1 + eps)
+// = eps + (ln(1 + eps) - eps), and Σ (c/n)·eps = Σ c²/(r·k) - 1 is the
+// exact rational φ² >= 0, while the remainders (c/n)·(ln(1 + eps) - eps)
+// are all <= 0, computed with a small relative error (log1pMinus) and
+// summed without cancellation. The one cancellation left is I = φ² -
+// |remainders|. It is bounded: all four cells deviate from their
+// expectation by the same d (in probabilities), so φ² = d²·Σ 1/q over the
+// expected cell probabilities q, while Pinsker's inequality gives I >=
+// (1/2)·(4d)² = 8d²; hence φ²/I <= Σ 1/q / 8 <= 1/(2·min q) <= n²/2. The
+// working precision infoPrec(n) = 128 + 2·bitlen(n) bits therefore leaves
+// at least 128 bits of I. I is exactly 0 for an independent table (s·n =
+// b·h, all eps = 0) and for degenerate margins.
 func (t *table) mutualInfo() *big.Float {
+	prec := infoPrec(t.n)
 	phi2 := big.NewRat(-1, 1)
-	rest := newFloat()
+	rest := newFloat(prec)
 	for _, c := range t.cells() {
 		if c.c.Sign() == 0 {
 			continue // 0·ln 0 = 0; c > 0 implies r, k > 0
@@ -649,32 +742,59 @@ func (t *table) mutualInfo() *big.Float {
 		if eps.Sign() == 0 {
 			continue
 		}
-		term := log1pMinus(frac(eps, rk))
-		term.Mul(term, floatFromRat(frac(c.c, t.bn)))
+		term := log1pMinus(frac(eps, rk), prec)
+		term.Mul(term, floatFromRat(frac(c.c, t.bn), prec))
 		rest.Add(rest, term)
 	}
-	mi := floatFromRat(phi2)
+	mi := floatFromRat(phi2, prec)
 	mi.Add(mi, rest)
-	if mi.Sign() < 0 { // only by rounding far below 2^-100 relative
+	if mi.Sign() < 0 { // only by rounding, far below 2^-100 relative
 		mi.SetInt64(0)
 	}
 	return mi
 }
 
-// Information: the mutual information in bits.
+// alg6InfoErr is the bound on the absolute error, in nats, of the
+// implementation's information (ln n + Σ t·ln(t/(r·k))/n): about ten
+// roundings of quantities of size ln n, with a factor of 2 to spare.
+func alg6InfoErr(n int64) float64 {
+	return 16 * 0x1p-52 * max(1, math.Log(float64(n)))
+}
+
+// Information: the mutual information in bits, compared relatively. The
+// implementation's absolute error (alg6InfoErr) is its known defect
+// DefectALG6: near independence, where I is tiny, it dominates.
 func refInfo(t *table) (Value, error) {
 	mi := t.mutualInfo()
-	v := float64Of(mi.Quo(mi, ln2Big()))
-	return Value{V: v, Tol: refTol(v)}, nil
+	v := float64Of(mi.Quo(mi, ln2Big(infoPrec(t.n))))
+	tol := ratTau * v
+	return Value{V: v, Tol: tol, KnownDefect: DefectALG6, DefectTol: tol + alg6InfoErr(t.n)/math.Ln2}, nil
 }
 
 // InformationPValue: P(chi²(1) > G) with the G statistic G = 2·n·I (I in
-// nats). G = 0 (independence, degenerate margins) gives exactly 1.
+// nats). G = 0 (independence, degenerate margins) gives exactly 1. The
+// known defect DefectALG6: an absolute error δG = 2·n·alg6InfoErr(n) of
+// the implementation's G becomes a p-value error of at most √(6·δG/π)
+// for G <= 2·δG (the tail is 1 - √(2G/π) + O(G^1.5) near 0) and of at
+// most δG·f(G - δG) otherwise, where f is the chi²(1) density (decreasing
+// in G).
 func refInfoPValue(t *table) (Value, error) {
+	prec := infoPrec(t.n)
 	g := t.mutualInfo()
-	g.Mul(g, newFloat().SetInt64(t.n))
-	g.Mul(g, newFloat().SetInt64(2))
-	return pValue(float64Of(g)), nil
+	g.Mul(g, newFloat(prec).SetInt64(t.n))
+	g.Mul(g, newFloat(prec).SetInt64(2))
+	x := float64Of(g)
+	v := pValue(x)
+	dg := 2 * float64(t.n) * alg6InfoErr(t.n)
+	var bound float64
+	if x <= 2*dg {
+		bound = math.Sqrt(6 * dg / math.Pi)
+	} else {
+		y := x - dg
+		bound = dg * math.Exp(-y/2) / math.Sqrt(2*math.Pi*y)
+	}
+	v.KnownDefect, v.DefectTol = DefectALG6, v.Tol+bound
+	return v, nil
 }
 
 // Fisher's exact tests.
@@ -774,14 +894,14 @@ func fisher(variant byte, t *table) (Value, error) {
 // log-gamma differences; their absolute log error grows with ln(n!), so
 // the relative error of a sum is about a few ulps times ln Γ(n+1) (and
 // complement forms 1 - Σ, which upstream uses for h and s, have that error
-// absolutely). The tolerance is refTau·(1 + ln Γ(n+1)) relative (plus the
+// absolutely). The tolerance is pTau·(1 + ln Γ(n+1)) relative (plus the
 // same absolute amount for h and s), capped at 2^-20: an implementation
 // that is off by more than about one part in a million is wrong for any n
 // (a log-space method based on log-gamma differences of small arguments,
 // or exact ratios as here, is far more accurate).
 func fisherTol(variant byte, n int64, v float64) float64 {
 	lg, _ := math.Lgamma(float64(n) + 1)
-	rel := min(refTau*(1+lg), 0x1p-20)
+	rel := min(pTau*(1+lg), 0x1p-20)
 	if variant == 'h' || variant == 's' {
 		return rel * (v + 1)
 	}
@@ -839,11 +959,11 @@ func (t *table) cmpInfo(x, y int64) (int, error) {
 		return pow(cx).Cmp(pow(cy)), nil
 	}
 	f := func(c [4]int64) *big.Float {
-		sum := newFloat()
+		sum := newFloat(refPrec)
 		for _, v := range c {
 			if v > 1 {
-				l := lnBig(newFloat().SetInt64(v))
-				sum.Add(sum, l.Mul(l, newFloat().SetInt64(v)))
+				l := lnBig(newFloat(refPrec).SetInt64(v))
+				sum.Add(sum, l.Mul(l, newFloat(refPrec).SetInt64(v)))
 			}
 		}
 		return sum

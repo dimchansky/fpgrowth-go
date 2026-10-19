@@ -49,7 +49,7 @@ func (e *LogRatioEval) decision(v, tol float64) decision {
 
 // LogRatioValue returns the reference value of -eb for a set with support
 // supp, item supports items and total weight base. The tolerance is
-// refTau·(1 + |log2(s/n)| + Σ |log2(f_i/n)|): an implementation computes
+// ratTau·(1 + |log2(s/n)| + Σ |log2(f_i/n)|): an implementation computes
 // the logarithms of the quotients separately (with an absolute error of a
 // few ulps of each) and adds them. It returns ErrInvalidTable unless
 // 0 < supp <= f_i <= base for every item.
@@ -74,9 +74,9 @@ func LogRatioValue(supp tract.Supp, items []tract.Supp, base tract.Supp) (Value,
 	for range len(items) - 1 {
 		num.Mul(num, n)
 	}
-	l := lnRat(frac(num, den))
-	v := float64Of(l.Quo(l, ln2Big()))
-	return Value{V: v, Tol: refTau * (1 + scale)}, nil
+	l := lnRat(frac(num, den), refPrec)
+	v := float64Of(l.Quo(l, ln2Big(refPrec)))
+	return Value{V: v, Tol: ratTau * (1 + scale)}, nil
 }
 
 // logRatio returns the -eb reference value of the set with mask m.

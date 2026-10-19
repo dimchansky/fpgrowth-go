@@ -44,6 +44,25 @@ type DiffOptions struct {
 	EvalTol float64
 	// IgnoreEval skips the comparison of Eval values.
 	IgnoreEval bool
+	// Defects, if not nil, accepts Eval values that differ from a wanted
+	// value with a known implementation defect (Set.Defect, Rule.Defect)
+	// by no more than its bound (DefectTol), and counts them per defect
+	// instead of reporting them. With nil, they are differences.
+	Defects map[string]int
+}
+
+// evalCheck compares a wanted value (with its tolerance and known defect)
+// with a got value and returns a description of a difference, or "".
+func evalCheck(opts DiffOptions, want, got, wantTol float64, defect string, defectTol float64) string {
+	if opts.IgnoreEval || evalMatches(want, got, opts.EvalTol, wantTol) {
+		return ""
+	}
+	if opts.Defects != nil && defect != "" && !math.IsNaN(got) && !math.IsInf(want, 0) &&
+		math.Abs(got-want) <= defectTol {
+		opts.Defects[defect]++
+		return ""
+	}
+	return fmt.Sprintf("eval want %v%s, got %v", want, tolText(wantTol), got)
 }
 
 // DiffSets compares two item set results irrespective of order and
@@ -61,8 +80,8 @@ func DiffSets(want, got []Set, opts DiffOptions) string {
 			if w.Supp != g.Supp {
 				parts = append(parts, fmt.Sprintf("supp want %d, got %d", w.Supp, g.Supp))
 			}
-			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol, w.EvalTol) {
-				parts = append(parts, fmt.Sprintf("eval want %v%s, got %v", w.Eval, tolText(w.EvalTol), g.Eval))
+			if d := evalCheck(opts, w.Eval, g.Eval, w.EvalTol, w.Defect, w.DefectTol); d != "" {
+				parts = append(parts, d)
 			}
 			if len(parts) == 0 {
 				return ""
@@ -92,8 +111,8 @@ func DiffRules(want, got []Rule, opts DiffOptions) string {
 			if w.HeadSupp != g.HeadSupp {
 				parts = append(parts, fmt.Sprintf("head want %d, got %d", w.HeadSupp, g.HeadSupp))
 			}
-			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol, w.EvalTol) {
-				parts = append(parts, fmt.Sprintf("eval want %v%s, got %v", w.Eval, tolText(w.EvalTol), g.Eval))
+			if d := evalCheck(opts, w.Eval, g.Eval, w.EvalTol, w.Defect, w.DefectTol); d != "" {
+				parts = append(parts, d)
 			}
 			if len(parts) == 0 {
 				return ""
