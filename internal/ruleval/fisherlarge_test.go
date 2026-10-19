@@ -497,3 +497,53 @@ func TestFisherProbUnderflowCutoff(t *testing.T) {
 		t.Error("the sweep does not straddle the cutoff")
 	}
 }
+
+// TestFisherSubnormalAnchor checks tiny FisherProb and FisherChi2 values
+// whose walk anchor exp(ln P) underflows while the summed range does not
+// (review of #16, L1: FisherProb(2748994426, 5500000000, 5500000007,
+// 11000000000) is 8.6e-322 but was 0). σ ≈ 2.6·10^4; the reference sums
+// exp(ln P(x)) over both tails at 256 bits, scaled by e^-700 before
+// rounding so that subnormal terms keep their weight.
+func TestFisherSubnormalAnchor(t *testing.T) {
+	t.Parallel()
+	const b, h, n = 5500000000, 5500000007, 11000000000
+	for _, s := range []tract.Supp{2748994426, 2748994000, 2748995000, 2748996000, 2749000000} {
+		ht := newHyperTable(s, b, h, n)
+		ls, _ := ht.lnP(ht.ft.supp)
+		scale := new(big.Float).SetPrec(256)
+		add := func(lp float64) { scale.Add(scale, new(big.Float).SetFloat64(math.Exp(lp+700))) }
+		// lower tail: x <= supp (supp is below the mode)
+		for x := ht.ft.supp; x >= 0; x-- {
+			lp, _ := ht.lnP(x)
+			if lp < ls-60 {
+				break
+			}
+			add(lp)
+		}
+		// upper tail: from the first table beyond the mode with ln P <= ls
+		x := ht.mode
+		for step := tract.Supp(1 << 30); step > 0; step /= 2 { // bisection on ln P
+			if y := x + step; y <= ht.ft.body {
+				if lp, _ := ht.lnP(y); lp > ls {
+					x = y
+				}
+			}
+		}
+		for x++; x <= ht.ft.body; x++ {
+			lp, _ := ht.lnP(x)
+			if lp < ls-60 {
+				break
+			}
+			add(lp)
+		}
+		// want = scale·e^-700, rounded to float64 (subnormal if small)
+		want, _ := new(big.Float).Mul(scale, new(big.Float).SetFloat64(math.Exp(-700))).Float64()
+		got := Eval(FisherProb, s, b, h, n)
+		if want == 0 || math.Abs(got-want) > 0x1p-36*want+0x1p-1070 {
+			t.Errorf("FisherProb(%d, %d, %d, %d) = %v, reference %v (ln P(supp) = %v)", s, b, h, n, got, want, ls)
+		}
+	}
+	if got := Eval(FisherProb, 2748994426, b, h, n); got < 8.5e-322 || got > 8.7e-322 {
+		t.Errorf("FisherProb(2748994426, ...) = %v, want 8.6e-322", got)
+	}
+}

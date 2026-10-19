@@ -213,7 +213,14 @@ func (t *hyperTable) fisherSum(st *stepper, ranges ...[2]tract.Supp) (float64, e
 		if err != nil {
 			return math.NaN(), err
 		}
-		p += float64(math.Exp(lnA) * q)
+		a := math.Exp(lnA)
+		if a < 0x1p-1022 {
+			// exp(lnA) is subnormal or 0 although q (>= 1) can be large:
+			// scale in the log domain (review of #16, L1). Normal anchors
+			// keep the product, so their values are unchanged.
+			a, q = math.Exp(lnA+math.Log(q)), 1
+		}
+		p += float64(a * q)
 	}
 	return clampUnit(p), nil
 }
