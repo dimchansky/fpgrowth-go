@@ -18,15 +18,34 @@ import (
 // YatesPValue, InformationPValue and the Fisher measures) smaller values
 // are better and the threshold is a maximum. Measure.HigherIsBetter tells.
 //
+// Accuracy: the values are accurate for every valid rule up to a total
+// transaction weight of math.MaxInt64: Chi2 and Yates within 8 ulps
+// (relative), Information within 32 ulps, Certainty within 2^-40
+// (absolute), the p-values of the chi², Yates and G statistics within
+// 2^-36·(1+x) relative for the statistic x, and the Fisher measures
+// within 2^-36 relative (plus 2^-1000 absolute; for total weights up to
+// 170, where FisherChi2 and FisherSupport keep upstream's complement
+// sums, within 2^-36 absolute). InvalidateBelowExpected is decided
+// exactly. The other measures are short formulas of the supports with a
+// few roundings. Values differ from the C program's in the last bits
+// where the C program loses precision, and for Information,
+// InformationPValue and the Fisher measures generally in the last bits
+// (docs/differences.md, N1 and F-1).
+//
 // Cost: every measure takes constant time per evaluated rule, except the
-// four Fisher measures, which sum the probabilities of all contingency
-// tables with the rule's margins and take O(min(body, head)) time per
-// rule, where body and head are the supports of B and {h}. With large
-// transaction weights this dominates: with body and head supports of
-// 5·10^7 (total weight 10^8) one evaluation takes about 0.7 to 4.4
-// seconds, depending on the measure (Apple M1 Max). The sums check for
-// cancellation every 4096 tables, so a canceled context still stops
-// mining promptly.
+// four Fisher measures, which sum the probabilities of the contingency
+// tables with the rule's margins. For total weights up to 170 they sum
+// all min(body, head)+1 tables, like upstream; above, they visit the
+// tables from the most probable one outwards until the rest is
+// negligible, about 9 standard deviations σ of the hypergeometric
+// distribution on each side, where σ <= √n/4 for the total weight n.
+// That is a few hundred tables for ordinary data, but grows with large
+// transaction weights: with balanced margins at independence one
+// evaluation of a two-sided test takes about 0.4 ms at n = 10^8, 35 ms at
+// 10^12, 1.4 s at 1.6·10^15 and 11 s at 10^17 (Apple M1 Max; FisherSupport
+// half of that). The sums
+// check for cancellation every 4096 tables, so a canceled context still
+// stops mining promptly.
 //
 // The zero Measure is not a measure; an Evaluation must name one.
 type Measure int

@@ -189,11 +189,16 @@ factor, chi² and G-test values and p-values, Fisher's exact test, ...) for
 rules and, aggregated over the rules `S \ {h} -> h`, for item sets; the
 binary logarithm of the support ratio for item sets; the values alone or,
 with `Evaluation.Filter`, thresholds and evaluation-based pruning;
-"invalidate below expected support". Every measure costs constant time per
-evaluated rule except the four Fisher measures, which take
-O(min(body, head)) time per rule (body and head supports): with body and
-head supports of 5·10^7 one evaluation takes about 0.7 to 4.4 seconds
-(Apple M1 Max). These sums check for cancellation every 4096 tables.
+"invalidate below expected support". The statistical measures are
+accurate over the whole `int64` weight range (exact integer cross
+products, a cancellation-free information, Fisher sums from Stirling's
+formula; the bounds are in the `Measure` documentation). Every measure
+costs constant time per evaluated rule except the four Fisher measures,
+which visit about 9 standard deviations σ of the hypergeometric
+distribution on each side of its mode (σ <= √n/4 for the total weight n):
+a few hundred tables for ordinary data; with balanced margins about 35 ms
+per evaluation at n = 10^12 and 11 s at 10^17 (Apple M1 Max). These
+sums check for cancellation every 4096 tables.
 
 **Rules** carry the support of body ∪ head, body support, head support,
 confidence, lift and the evaluation value. `OriginalSupport` (`-o`) makes
@@ -1142,8 +1147,13 @@ plus two upstream crashes that it avoids and five latent defects
 - **Floating point.** Values are bit-identical to the C reference built
   without fused multiply-add, except log-based values, which can differ in
   the last bit from the platform's C library; a value exactly on a
-  threshold can fall on either side for any measure (F-1). Numeric limits
-  for very large weights are N1-N3 (see [Limitations](#limitations)).
+  threshold can fall on either side for any measure (F-1). The statistical
+  measures are computed without the C program's cancellation (N1): chi²,
+  Yates, certainty and `-i` stay bit-identical wherever the C formula is
+  exact (products up to 2^53), the information, the G-test and the Fisher
+  tests above a total weight of 170 differ in the last bits on ordinary
+  data, and all are accurate for weights up to 2^63. Numeric limits for
+  very large weights are N2 and N3 (see [Limitations](#limitations)).
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
   write errors are reported; no crash with supports above about 2·10^8
@@ -1177,11 +1187,9 @@ plus two upstream crashes that it avoids and five latent defects
   on dense data with a small size limit, but 2.2–3.2× slower on large
   sparse data and up to 2.6× slower for dense maximal sets of exactly the
   maximum size.
-- Numeric limits for very large weights (`docs/differences.md`, N1-N3;
-  N1 is the known limitation ALG-1 of the independent audit):
-  the statistical evaluation measures (chi², Yates, G-test and
-  information, Fisher, certainty factor, and `-i`) are reliable only
-  below a total transaction weight of about 10^12; above about 2^52 the
+- Numeric limits for very large weights (`docs/differences.md`, N2 and
+  N3; the former limit N1 of the statistical measures, audit ALG-1, was
+  fixed by issue #16): above about 2^52 the
   support and confidence thresholds admit results just outside the bound;
   CLI absolute thresholds above 2^53 are rounded like upstream's doubles
   (the library's `Count` is exact). For any measure, a value exactly on
@@ -1234,16 +1242,15 @@ port's formula packages. The oracle comparisons in the root package,
 against it within a stated tolerance, so a wrong measure formula fails
 `go test ./...` without the C fixtures. `internal/ruleval` compares
 every measure with it on all tables with a total weight up to 20,
-boundary margins and random weighted tables up to 2^24; the known
-numerical defects for large total weights (ALG-1, `docs/differences.md`
-N1 and N2, and ALG-6) are kept in expected-failure tables that fail when
-an entry starts to pass. The one defect that also shows on small data,
-ALG-6 (the information's absolute rounding error, amplified by the
-G-test p-value near independence), is accepted in the oracle comparisons
-only within a derived bound and counted. `FPG_REF_CASES=<k>` runs the
+boundary margins, random weighted tables up to 2^24 and a grid of large
+tables up to 2^63; the tolerances are the documented error bounds of the
+measures, so these comparisons check the accuracy claims directly. The
+remaining known numerical defect for large total weights (ALG-2,
+`docs/differences.md` N2) is kept in an expected-failure table that fails
+when an entry starts to pass. `FPG_REF_CASES=<k>` runs the
 root package's evaluated oracle comparisons on k random datasets each. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
 runs the extended sweep (all tables up to a total weight of 60, k random
-tables up to 2^24, and k up to 2^62 with the ALG-1 mismatches counted).
+tables up to 2^24, and k up to 2^62).
 
 In tests of your own code, remember that `Value` is NaN without an
 evaluation: compare results by items and supports or with NaN-aware

@@ -134,6 +134,15 @@ All under `_audit/alg/` in the clone (a leading underscore keeps them out of `./
   constant time per evaluated rule, except…"); measured 7 s for n = 1e8 and 71 s for n = 1e9 with
   balanced margins (`ftime.sh`, `fl1.txt`/`fl2.txt`). With int64 weights this cost has no
   practical bound but can be cancelled.
+- **Note (2026-10-19, issue #16):** fixed. The cross-product difference is exact (128-bit
+  integers), the information is a sum of non-negative terms, the certainty factor uses an exact
+  form near p = 1, `-i` is exact, and the Fisher tests above a total of 170 use Stirling's
+  formula with the exact deviation and visit only the contributing tables (about 9 standard
+  deviations per side, so the linear cost noted above is gone: about 0.4 ms at n = 1e8 with
+  balanced margins, 11 s at 1e17). The bounds and the bit-identity rules are in `docs/differences.md` N1
+  ("Numeric contract"); the tables of this finding are regression tests
+  (`internal/ruleval` `TestLargeTablesMatchReference`, root `TestALG1API`, `cmd/fpgrowth`
+  `TestALG1CLI`).
 
 ### ALG-2: (1−ε) tolerances exceed the requested bound beyond 2^52 (Low)
 
@@ -228,6 +237,10 @@ All under `_audit/alg/` in the clone (a leading underscore keeps them out of `./
   already at n = 9,000. The test suite accepts these deviations only within a derived bound
   (`oracle.DefectALG6`) and pins the defect in strict expected-failure tables
   (`internal/ruleval` `TestKnownMeasureFailures`, root `TestALG6Exemption`). Tracked by #16.
+- **Note (2026-10-19, issue #16):** fixed together with ALG-1. The information is computed as
+  Σ E·g(δ) with g >= 0 and an exact δ, so it is exactly 0 at independence (the G-test p-value
+  exactly 1) and within 32 ulps relative near it; `oracle.DefectALG6` and the exemption were
+  removed, and root `TestALG6Regression` pins the case.
 
 ### ALG-7: Library `IncludeEmpty` with no frequent item (Info)
 

@@ -388,11 +388,15 @@ small.
 Several measures are corrected for edge cases where upstream returns 0,
 NaN or slightly wrong values (deviations R4-R7, R9).
 
-All measures are computed in float64. The statistical ones (chi², Yates,
-information and G-test, Fisher, certainty factor, and `-i`) lose
-precision at very large total transaction weights and are reliable only
-below about 10^12; a value exactly on a threshold may fall on either side
-for any measure (deviations N1 and F-1).
+All measures are computed in float64. The statistical ones avoid
+upstream's cancellation (deviation N1): the deviation from independence
+supp·base − head·body is computed exactly in 128-bit integers, the
+information as a sum of non-negative terms, and the Fisher tests above a
+total weight of 170 from Stirling's formula, summing only the tables
+that contribute (about 9 standard deviations of the hypergeometric
+distribution on each side of its mode); they are accurate up to a total
+weight of 2^63 (numeric contract in `docs/differences.md`). A value
+exactly on a threshold may fall on either side for any measure (F-1).
 
 ## 13. Order of the results
 
@@ -436,7 +440,7 @@ threshold under `AggregateFirst`, possibly also different sets, section
   (`Add` and `Report` calls and sets of an expanded perfect-extension
   hypercube, `report.AbortEvery`); every 256 nodes or counters while the
   item set tree is filtered (`Filter`, `CloMax`) and reported; and every
-  4096 tables of a Fisher test (O(min(body, head)) per evaluation). The
+  4096 tables of a Fisher test (about 9σ per side of the mode, σ <= √n/4). The
   recursion entries alone are not enough: a hypercube of 2^k sets or a
   burst of the 16-items machine reports without returning to one. The
   reporter latches the abort error like a repository overflow, so `Add`

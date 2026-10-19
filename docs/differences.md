@@ -55,6 +55,10 @@ tract T4; O11, pre-format table overflow, reference-build F5), and **5
 latent defects** are fixed: R9c, R10 (a defect of the project's patched C
 used to check R2, not of upstream), R11a, R11b and C2.
 
+Since v0.1.0: N1, the precision loss of the statistical measures (a
+documented limit of v0.1.0), is fixed and is now a defect fix row
+(issue #16, 2026-10-19).
+
 ## Mining results
 
 | # | Kind | Upstream behavior (evidence, location) | Go behavior | Status / test |
@@ -91,23 +95,45 @@ used to check R2, not of upstream), R11a, R11b and C2.
 
 | # | Kind | Upstream behavior | Go behavior | Status / test |
 | --- | --- | --- | --- | --- |
-| F-1 | platform | Log-based values (`-eb`, measures `j p t i g f h m s`) use the platform libm; results are libm-dependent | Go's `math` package, which can differ by 1 ulp from Apple libm (e.g. `log 3`, `log 14`). A set or rule whose true measure value lies exactly on the threshold (e.g. exactly independent items with `-eb -d0`) may be included by one implementation and not the other (review F1). This holds for **every** measure, not only the log-based ones: a value that is mathematically equal to the threshold is computed with rounding and may fall on either side, in C and in Go alike (e.g. `printf 'x y 5\nx 5\ny 4\nz 6\n'`, `-tr -w -s0 -c0 -m2 -ed -d5` omits `y <- x`, whose value is exactly 0.05 but computes to 0.049999999999999988898; C gives the same; audit ALG-4). All other values are bit-identical to the C reference built with `-ffp-contract=off` (not necessarily to a stock upstream build, since arm64 clang contracts by default) | documented; regression test pins Go's value on the review reproducer; difftest tolerates boundary cases |
+| F-1 | platform | Log-based values (`-eb`, measures `j p t i g f h m s`) use the platform libm; results are libm-dependent | Go's `math` package, which can differ by 1 ulp from Apple libm (e.g. `log 3`, `log 14`). A set or rule whose true measure value lies exactly on the threshold (e.g. exactly independent items with `-eb -d0`) may be included by one implementation and not the other (review F1). This holds for **every** measure, not only the log-based ones: a value that is mathematically equal to the threshold is computed with rounding and may fall on either side, in C and in Go alike (e.g. `printf 'x y 5\nx 5\ny 4\nz 6\n'`, `-tr -w -s0 -c0 -m2 -ed -d5` omits `y <- x`, whose value is exactly 0.05 but computes to 0.049999999999999988898; C gives the same; audit ALG-4). All other values are bit-identical to the C reference built with `-ffp-contract=off` (not necessarily to a stock upstream build, since arm64 clang contracts by default), with the exceptions of N1 (issue #16): the information, the G-test p-value and the Fisher tests for total weights above 170 use cancellation-free formulas and differ from C in the last bits on ordinary data (within the same tolerances: at most 2.2 of 8 and 0.2 of 1 tolerance units on `testdata/measures_c.txt`), and chi², Yates, their p-values, the certainty factor and `-i` differ only where C loses precision. Go's own arithmetic is FMA-safe (every product that feeds a sum is rounded explicitly, `TestPinnedBits`); `math.Log`/`math.Exp` may differ per architecture as before | documented; regression test pins Go's value on the review reproducer; difftest tolerates boundary cases |
 
 ## Numeric limits
 
 Limits of float64 arithmetic that matter only for very large total
 transaction weights or thresholds. Upstream cannot reach most of this
-range (32-bit supports), so N1 is new exposure created by the 64-bit
-supports; N2 and N3 are upstream semantics. None of them affects data
-whose total weight is below about 10^12. Found by the independent audit
-(ALG-1 to ALG-3); not changed, because exact arithmetic would change the
-last bits against C on normal data.
+range (32-bit supports); N2 and N3 are upstream semantics, found by the
+independent audit (ALG-2, ALG-3) and not changed. N1 (audit ALG-1 and
+ALG-6), the precision loss of the statistical measures, was a limit of
+v0.1.0 and is fixed (issue #16); its row now records the fix and the
+numeric contract below.
 
 | # | Kind | Behavior | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| N1 | limit | The statistical measures lose precision in float64 when the total transaction weight is large: chi² and its p-value (`n p`), Yates (`y t`), information and the G-test p-value (`i g`; `head·body − supp·base` and `log(base) + Σ/base` cancel), the certainty factor (`z`; `head/base` rounds to 1), the four Fisher tests (`f h m s`; log-gamma differences) and "invalidate below expected support" (`-i`; products beyond 2^53). They are **reliable only below a total transaction weight of about 10^12**; beyond that strong associations can get p = 1, chi² = 0 or information 0 and be filtered out (or kept wrongly by a (−) threshold), without a warning. The rational measures (`c d l a q v e r b k w u j`) were exact to rounding in all large checks | On the table supp = 3k−2, body = 3k, head = 9k−2, n = 9k (exact chi² p 0.0455003, G-test p 0.0360561): at n = 9·10^9 Go gives 0.0455003 and 0.0360564; at 9·10^12 0.0454978 and 0.0356771; at 9·10^13 the G-test p is 0.0501 (crosses 5 %); at 9·10^14 G-test p = 1 and information 0; from 9·10^16 the chi² p-value is 1. Randomized: 0 mismatches against a brute force in 32,000 cases with small weights; all 27 mismatches of the large-weight campaign had a total weight ≥ 10^13 | documented (audit ALG-1); the deviations from the exact values are pinned as expected failures by `internal/ruleval` `TestKnownMeasureFailures` and root `TestKnownAPIFailures` (independent reference of `internal/oracle`, #15). Related (audit ALG-6, note of 2026-10-19): the information has an absolute error of a few ulps of ln n, so the G-test p-value is off near independence also for moderate totals (up to 3e-7 below 1 at exact independence; relative 2.4e-8 for s = 16383, b = h = 32767, n = 65535); the oracle comparisons accept it only within a derived bound (`oracle.DefectALG6`, counted), pinned by root `TestALG6Exemption` |
+| N1 | defect fix | The statistical measures cancel in float64. Chi², Yates and their p-values (`n y p t`) compute `head·body − supp·base` from products rounded to double; the information and the G-test (`i g`) compute `(ln n + Σ t·ln(t/(r·k))/n)/ln 2`, whose absolute error of a few ulps of ln n is unbounded relative to small values (ALG-6: G-test p = 0.99999996 at exact independence, relative 2.4e-8 at n = 65535); the certainty factor (`z`) divides by `1 − head/base`, which rounds to 0; the Fisher tests (`f h m s`) compute every probability from log-gamma values of size n·ln n (relative error about 2^-52·n·ln n) and FisherChi2's mirror table from a rounded expected support; `-i` compares rounded products (`ruleval.c` `re_chi2` … `re_fetsupp`, `istree.c` `FPG_INVBXS` test). With upstream's 32-bit supports this already shows in its own outputs: of the 103 rows of `internal/ruleval/testdata/measures_c.txt` (totals up to 2^31−1) with a product above 2^53, 36 chi² and 38 Yates values are off by more than 8 ulps (one chi² is 0 instead of 6.6e-17). With 64-bit weights (M7) the measures collapse beyond about 10^12: strong associations get p = 1, chi² = 0 or information 0 (audit ALG-1, v0.1.0 "Known limitations") | D = supp·base − head·body is exact and rounded once (upstream's double expression while all supports are below 2^26, where it is exact; int64 below 2^31; 128-bit `math/bits` beyond); the information is Σ E·g(δ) over the cells with g(δ) = (1+δ)·ln(1+δ) − δ >= 0 and δ = ±D/(r·k) (no cancellation; exactly 0, and the G-test p exactly 1, at independence); the certainty factor is D/(body·(base−head)) when conf > prior and base/(base−head) > 2^10; the Fisher tests for base > 170 compute ln P from Stirling's formula with the exact D, sum the region directly (no complement) from the mode outwards with exact probability ratios, stop when a geometric bound of the rest is below 2^-60 of the sum (about 9σ per side instead of min(body, head) tables), and find the mirror tables exactly (FisherChi2 in integers, FisherProb/FisherInfo by bisection with exact tie-breaks for distances up to 1024, beyond that a near-tie within the error bound counts as a tie); `-i` is exact. Error bounds: see "Numeric contract" below. Bit-identity with upstream: chi², Yates, their p-values and `-i` whenever supp·base and head·body are at most 2^53 (`TestUpstreamFormulaIdentity`); the certainty factor except for conf > prior with base/(base−head) > 2^10 (14 fixture rows are in that scope, 2 change, upstream within 2^-40 on all); the Fisher tests for base <= 170 (unchanged code). The information, the G-test and the Fisher tests for base > 170 differ in the last bits on ordinary data (F-1). Membership at a threshold can change for values within those last bits; the Fisher tests for large totals are much faster | implemented (issue #16) in `internal/ruleval` (`TestLargeTablesMatchReference`, the former expected failures, all within the bounds; `TestEvalMatchesUpstream`, rows beyond the bit-identity scope compared with the exact reference; `TestUpstreamFormulaIdentity`, `TestFisherLargeMatchesReference`, `TestFisherLargeMatchesPerTerm`, `TestFisherLargeCost`, `TestFisherLargeNearTie`, `TestHyperLnP`, `TestInfoBranches`, `TestPinnedBits`), root `TestALG1API` (the audit's CLI reproductions and the `-i` case) and `TestALG6Regression`, `cmd/fpgrowth` `TestALG1CLI` |
 | N2 | limit (upstream semantics) | The thresholds are applied with a relative tolerance (1 − 2^-52): `-s`/`-S` as `smin/100·W·(1−ε)`, `-c` (`MinConfidence`) multiplied by (1 − ε). Above a total weight of about 2^52 this admits sets and rules just outside the requested bound (by up to W·2^-52, e.g. 512 for W = 2^61), and `-c100`/`MinConfidence: 1` no longer means "exact rules only" | `printf 'a 2305843009213693752\nb 2305843009213694152\n'`, `-w -s50` reports `a` at 49.999999999999992895 %; `printf 'x y 4611686018427387000\nx 1000\n'`, `-tr -w -s0 -c100 -m2` reports `y <- x` at 99.999999999999971578 % confidence | documented (audit ALG-2); both reproductions are pinned as expected failures by root `TestKnownAPIFailures` (#15) |
 | N3 | limit (upstream semantics) | CLI absolute thresholds (`-s-<n>`, `-S-<n>`) are parsed as C doubles, as upstream, so values above 2^53 are rounded (off by up to 1024 in either direction near 2^63). The library's `Count(n)` is exact over the whole `int64` range | `-w -s-2305843009213693753` reports a set of support 2305843009213693752; `-s-4611686018427387840` rounds to 2^62 and finds no frequent item although one has that support | documented (audit ALG-3) |
+
+### Numeric contract
+
+For every valid table with supports up to 2^63 − 1 (issue #16; the
+tolerances of the independent reference `internal/oracle` are these
+bounds, so the reference comparisons check them):
+
+| Measure | Bound |
+| --- | --- |
+| `n` Chi2, `y` Yates | relative 8 ulps (2^-49) |
+| `i` Information | relative 32 ulps (2^-47) |
+| `p t g` p-values | relative 2^-36·(1 + x) for the statistic x (plus 2^-1000) |
+| `z` Certainty | absolute 2^-40 |
+| `f h m s` Fisher | relative 2^-36 (plus 2^-1000); for base <= 170, `h` and `s` absolute 2^-36 (upstream's complement sums) |
+| `-i` | exact |
+| other measures | relative or absolute 2^-44 (short formulas of the supports) |
+
+The Fisher tests take time proportional to the standard deviation σ <=
+√base/4 of the hypergeometric distribution (about 9σ per side) and are
+cancellable every 4096 tables. A Fisher near-tie (two tables whose
+probabilities agree within the error bound) more than 1024 tables apart
+counts as a tie; ties count as in the region (R6).
 
 ## Output (CLI)
 
