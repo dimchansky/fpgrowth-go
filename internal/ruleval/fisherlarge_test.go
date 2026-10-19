@@ -506,7 +506,7 @@ func TestFisherProbUnderflowCutoff(t *testing.T) {
 // rounding so that subnormal terms keep their weight.
 func TestFisherSubnormalAnchor(t *testing.T) {
 	t.Parallel()
-	const b, h, n = 5500000000, 5500000007, 11000000000
+	const b, h, n tract.Supp = 5500000000, 5500000007, 11000000000
 	for _, s := range []tract.Supp{2748994426, 2748994000, 2748995000, 2748996000, 2749000000} {
 		ht := newHyperTable(s, b, h, n)
 		ls, _ := ht.lnP(ht.ft.supp)
