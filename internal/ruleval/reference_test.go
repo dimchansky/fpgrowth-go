@@ -252,6 +252,12 @@ func largeTables() []largeTable {
 		largeTable{"perfect association", table{m, m, m, m + 3}},
 		largeTable{"certainty near 1", table{2, 2, m - 2, m}},
 	)
+	// supports between 2^31 and 2^40 with |s·n - b·h| >= 2^63 (int64
+	// would overflow; review of #16, F5)
+	tables = append(tables,
+		largeTable{"int64 overflow 1e10", table{3e9, 6e9, 7e9, 1e10}},
+		largeTable{"int64 overflow 1e11", table{3e10, 6e10, 7e10, 1e11}},
+	)
 	// ALG-6: exactly independent tables (s·n = b·h), the audit's worst
 	// case (numcheck) and two small ones.
 	tables = append(tables,

@@ -149,13 +149,17 @@ func TestFisherLargeMatchesPerTerm(t *testing.T) {
 
 // TestFisherLargeMatchesReference compares the four Fisher tests for
 // base > maxFact with the exact rational reference (internal/oracle) on
-// tables with up to oracle.FisherMaxTables tables and totals up to 2^63,
+// tables with up to 256 tables (oracle.FisherMaxTables with
+// FPG_MEASURE_CASES) and totals up to 2^63,
 // within the documented bound 2^-36 relative (+2^-1000).
 func TestFisherLargeMatchesReference(t *testing.T) {
 	t.Parallel()
-	count, maxT := 300, int64(oracle.FisherMaxTables)
+	count, maxT := 80, int64(256) // FPG_MEASURE_CASES: 300 tables up to the reference's limit
 	if testing.Short() || raceEnabled {
 		count, maxT = 40, 200
+	}
+	if measureCases(t) > 0 {
+		count, maxT = 300, oracle.FisherMaxTables
 	}
 	r := rand.New(rand.NewPCG(16, 2))
 	worst := 0.0
@@ -274,30 +278,151 @@ func TestFisherLargeCost(t *testing.T) {
 	}
 }
 
-// TestFisherLargeNearTie checks that a near-tie of FisherProb far from the
-// observed table is decided without big integers: with the computed
-// log-probabilities forced equal, probAtMost must count the table as tied
-// at once (fisherTieExact), even at n = 10^18 where the exact comparison
-// would multiply about 10^8 63-bit numbers.
+// TestFisherLargeNearTie checks the near-ties of FisherProb far from the
+// observed table (review of #16, F3): they are decided at 320 bits
+// (cmpWeightBig) within a bounded time, also at n = 10^18 where the exact
+// big-integer comparison would multiply about 10^8 63-bit numbers.
 func TestFisherLargeNearTie(t *testing.T) {
 	t.Parallel()
-	const n, b, h = 1_000_000_000_000_000_000, 400_000_000_000_000_000, 300_000_000_000_000_000
-	s := tract.Supp(120_000_000_000_000_000 - 50_000_000)
+	// The review's table: x lies 696,676 tables from supp on the other
+	// side of the mode, and ln P(x) - ln P(supp) = +1.35e-14, within the
+	// float error bound. x must not be summed: FisherProb then equals
+	// FisherChi2 and FisherInfo, whose regions are the same two tails
+	// (counting x as a tie made it larger by P(x) = 6.2e-7).
+	const s, b, h, n = 814290028136, 1744408929115, 2100559551280, 4499911755383
 	ht := newHyperTable(s, b, h, n)
-	x := ht.ft.supp + 100_000_000 // other side of the mode, distance 10^8
-	lx, sx := ht.lnP(x)
-	start := time.Now()
-	if !ht.probAtMost(x, lx, sx) {
-		t.Error("forced near-tie not counted as a tie")
+	x := tract.Supp(814290724812)
+	ls, ss := ht.lnP(ht.ft.supp)
+	if ht.probAtMost(x, ls, ss) {
+		t.Errorf("table %d counted with P(x) <= P(supp)", x)
 	}
+	if c, ok := ht.ft.cmpWeightBig(x); !ok || c >= 0 {
+		t.Errorf("cmpWeightBig(%d) = %d, %v; want -1 (P(x) > P(supp))", x, c, ok)
+	}
+	f, c := Eval(FisherProb, s, b, h, n), Eval(FisherChi2, s, b, h, n)
+	if math.Abs(f-c) > 0x1p-36*c {
+		t.Errorf("FisherProb %.17g, FisherChi2 %.17g", f, c)
+	}
+	// a far comparison at n = 10^18 (σ ≈ 2·10^8) is cheap
+	const n2, b2, h2 = 1_000_000_000_000_000_000, 400_000_000_000_000_000, 300_000_000_000_000_000
+	s2 := tract.Supp(120_000_000_000_000_000 - 50_000_000)
+	h18 := newHyperTable(s2, b2, h2, n2)
+	start := time.Now()
+	c18, ok := h18.ft.cmpWeightBig(h18.ft.supp + 100_000_000)
 	if d := time.Since(start); d > 100*time.Millisecond {
-		t.Errorf("near-tie decision took %v", d)
+		t.Errorf("far comparison took %v", d)
+	}
+	lx, _ := h18.lnP(h18.ft.supp + 100_000_000)
+	l2, _ := h18.lnP(h18.ft.supp)
+	if want := -cmpFloat(lx, l2); !ok || c18 != want { // W ∝ 1/P
+		t.Errorf("cmpWeightBig at 1e18 = %d, %v; float ln P says %d", c18, ok, want)
 	}
 	// an exact tie of a symmetric table (equal cells) far away
 	const m2 = 1 << 61
 	hs := newHyperTable(m2/2-100, m2, m2, 2*m2) // mode m2/2, mirror m2/2+100
-	ls, ss := hs.lnP(hs.ft.supp)
+	ls, ss = hs.lnP(hs.ft.supp)
 	if !hs.probAtMost(m2/2+100, ls, ss) || hs.probAtMost(m2/2+99, ls, ss) {
 		t.Error("symmetric tie decided wrongly")
+	}
+}
+
+func cmpFloat(a, b float64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+// TestCmpWeightBig checks the 320-bit comparison against the exact
+// big-integer one (cmpWeight) on tables at most 1024 apart, including
+// exact and near ties, and ln m! against the exact factorial.
+func TestCmpWeightBig(t *testing.T) {
+	t.Parallel()
+	ln2 := bigConsts()[0]
+	for _, m := range []tract.Supp{0, 1, 2, 10, 255, 256, 257, 300, 600} {
+		want := bigLog(newBig().SetInt(new(big.Int).MulRange(1, int64(max(m, 1)))), ln2)
+		if m < 2 {
+			want = newBig()
+		}
+		d := newBig().Sub(bigLnFact(m), want)
+		if d.Abs(d).Cmp(big.NewFloat(0x1p-220)) > 0 {
+			t.Errorf("bigLnFact(%d) off by %v", m, d)
+		}
+	}
+	r := rand.New(rand.NewPCG(16, 5))
+	decided, ties := 0, 0
+	for range 400 {
+		n := int64(200) + r.Int64N(1<<40)
+		b := 1 + r.Int64N(n-1)
+		h := 1 + r.Int64N(n-1)
+		if r.IntN(3) == 0 { // symmetric margins: exact ties
+			n &^= 1
+			b, h = n/2, n/2
+		}
+		lo, hi := max(0, b+h-n), min(b, h)
+		s := lo + r.Int64N(hi-lo+1)
+		ft := newFisherTable(tract.Supp(s), tract.Supp(b), tract.Supp(h), tract.Supp(n))
+		for range 5 {
+			x := ft.supp + tract.Supp(r.Int64N(2049)) - 1024
+			if x < 0 || x > ft.body || x == ft.supp {
+				continue
+			}
+			want := ft.cmpWeight(x)
+			got, ok := ft.cmpWeightBig(x)
+			if !ok {
+				ties++
+				if want != 0 && ft.cells(x) != ft.cells(ft.supp) {
+					t.Logf("undecided near-tie (exact sign %d) at %v x=%d", want, ft, x)
+				}
+				continue
+			}
+			decided++
+			if got != want {
+				t.Errorf("cmpWeightBig(%d) on %v = %d, exact %d", x, ft, got, want)
+			}
+		}
+	}
+	t.Logf("%d decided, %d ties", decided, ties)
+}
+
+// TestFisherLongWalk compares FisherSupport and FisherChi2 on tables with
+// σ = 10^5 (walks of about 10^6 tables, where the re-anchoring and the
+// compensated sum matter) with an independent sum: exp(lnP(x)) of every
+// table within 14σ of the tail start, accumulated exactly in big.Float.
+// The tolerance 2^-48 is far below the contract (2^-36) but well above the
+// walk's actual error (about 2e-16 here): without re-anchoring the walk
+// drifts by 6e-15 to 3e-14, and a plain instead of a compensated sum is
+// off by 5e-13, so both are caught.
+func TestFisherLongWalk(t *testing.T) {
+	t.Parallel()
+	if testing.Short() || raceEnabled {
+		t.Skip("sums 2.8·10^6 tables")
+	}
+	const n, b, h = 160_000_000_000, 80_000_000_000, 80_000_000_000 // σ = 10^5
+	const sigma = 100_000
+	for _, s := range []tract.Supp{40_000_000_000 + 1, 40_000_000_000 + 2*sigma, 40_000_000_000 + 40_000} {
+		ht := newHyperTable(s, b, h, n)
+		sum := func(lo, hi tract.Supp) *big.Float {
+			acc := new(big.Float).SetPrec(256)
+			for x := max(lo, 0); x <= min(hi, ht.ft.body); x++ {
+				lp, _ := ht.lnP(x)
+				acc.Add(acc, new(big.Float).SetFloat64(math.Exp(lp)))
+			}
+			return acc
+		}
+		want, _ := sum(s, s+14*sigma).Float64() // the upper tail from s
+		if got := Eval(FisherSupport, s, b, h, n); math.Abs(got-want) > 0x1p-48*want {
+			t.Errorf("FisherSupport(%d) = %.17g, sum %.17g (rel %.3g)", s, got, want, math.Abs(got-want)/want)
+		}
+		mirror := 2*40_000_000_000 - s // E = 4·10^10 exactly
+		w2 := sum(s, s+14*sigma)
+		w2.Add(w2, sum(mirror-14*sigma, mirror))
+		want2, _ := w2.Float64()
+		if got := Eval(FisherChi2, s, b, h, n); math.Abs(got-want2) > 0x1p-48*want2 {
+			t.Errorf("FisherChi2(%d) = %.17g, sum %.17g (rel %.3g)", s, got, want2, math.Abs(got-want2)/want2)
+		}
 	}
 }

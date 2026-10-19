@@ -34,7 +34,7 @@ func bigCrossDiff(tb table) *big.Int {
 	return d.Sub(d, new(big.Int).Mul(big.NewInt(tb.h), big.NewInt(tb.b)))
 }
 
-// TestCrossDiff checks crossDiff, crossDiffFloat and AboveExpected
+// TestCrossDiff checks crossDiff, crossDiffWide and AboveExpected
 // against big integers, including the correct rounding of D to float64.
 func TestCrossDiff(t *testing.T) {
 	t.Parallel()
@@ -52,8 +52,8 @@ func TestCrossDiff(t *testing.T) {
 			t.Fatalf("crossDiff%v = %v, want %v", tb, got, want)
 		}
 		wf, _ := new(big.Float).SetInt(want).Float64() // nearest even
-		if f := crossDiffFloat(s, b, h, n); f != wf {
-			t.Errorf("crossDiffFloat%v = %v, want %v", tb, f, wf)
+		if f := crossDiffWide(s, b, h, n); f != wf {
+			t.Errorf("crossDiffWide%v = %v, want %v", tb, f, wf)
 		}
 		if AboveExpected(s, b, h, n) != (want.Sign() > 0) {
 			t.Errorf("AboveExpected%v = %v, D = %v", tb, AboveExpected(s, b, h, n), want)
@@ -133,7 +133,7 @@ func upstreamCert(s, b, h, n tract.Supp) float64 { // with the B5 fix
 // TestUpstreamFormulaIdentity checks the claims of bit-identity with
 // upstream's double formulas: Chi2, Yates, their p-values and -i whenever
 // both products s·n and h·b are at most 2^53, and Certainty except for
-// conf > prior with n/(n-h) > certGate.
+// n/(n-h) > certGate.
 func TestUpstreamFormulaIdentity(t *testing.T) {
 	t.Parallel()
 	r := rand.New(rand.NewPCG(16, 12))
@@ -171,7 +171,7 @@ func TestUpstreamFormulaIdentity(t *testing.T) {
 				t.Errorf("AboveExpected%v differs from upstream's double test", tb)
 			}
 		}
-		if b > 0 && h < n && n-h < n/certGate && AboveExpected(s, b, h, n) {
+		if b > 0 && h < n && n-h < n/certGate {
 			gated++
 			continue
 		}
@@ -214,10 +214,17 @@ func TestInfoBranches(t *testing.T) {
 			worst = max(worst, math.Abs(got-v.V)/v.V)
 		}
 	}
-	for d := -0.3; d <= 0.3; d += 1.0 / 64 { // gSeries against the direct form
-		want := float64(1+d)*math.Log1p(d) - d
-		if got := gSeries(d); math.Abs(got-want) > 64*epsilon*want+1e-300 {
-			t.Errorf("gSeries(%v) = %v, direct %v", d, got, want)
+	// gSeries against a 256-bit evaluation, on a grid and near 0 (the
+	// direct form (1+δ)·log1p(δ) - δ cancels by a factor 2/|δ| and is no
+	// reference: it is off by 188 ulps at δ = -0.01875 off arm64)
+	ds := []float64{-0.25, 0.25, -1e-3, 1e-3, -1e-9, 1e-9, -0x1p-30, 0x1p-30, -0.01874999999999999}
+	for d := -0.25; d <= 0.25; d += 1.0 / 64 {
+		ds = append(ds, d)
+	}
+	for _, d := range ds {
+		want, _ := bigG(d).Float64()
+		if got := gSeries(d); math.Abs(got-want) > 8*epsilon*want {
+			t.Errorf("gSeries(%v) = %v, 256-bit %v (%.3g ulps)", d, got, want, math.Abs(got-want)/(epsilon*want))
 		}
 	}
 	t.Logf("largest relative error %.3g (%.3g ulps)", worst, worst/epsilon)
@@ -272,4 +279,73 @@ func FuzzMeasuresMatchReference(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestCertaintyNearIndependence checks the certainty factor against the
+// reference near independence at large totals, where a rounded conf - p
+// can have the wrong sign (review of #16, F1): inside the exact-form gate
+// (n/(n-h) > certGate) and just outside it, absolute error within 2^-40.
+// The first tables are the review's reproductions (upstream's formula
+// gave 1, 0.1667 and 6.7e-6).
+func TestCertaintyNearIndependence(t *testing.T) {
+	t.Parallel()
+	ref, _ := oracle.RefByLetter('z')
+	tables := []table{
+		{7974968969870368360, 7974968969870368421, 8766415699794613718, 8766415699794613784},
+		{3458764513820538678, 3458764513820540928, 4611686018427384904, 1 << 62},
+	}
+	r := rand.New(rand.NewPCG(16, 14))
+	for range 20000 {
+		n := int64(1)<<61 + r.Int64N(math.MaxInt64-1<<61)
+		var nh int64
+		if r.IntN(2) == 0 {
+			nh = 1 + r.Int64N(1<<40) // inside the gate
+		} else {
+			nh = n/certGate + r.Int64N(n/certGate) // just outside it
+		}
+		h := n - nh
+		b := 1 + r.Int64N(n)
+		e := new(big.Int).Mul(big.NewInt(b), big.NewInt(h))
+		e.Quo(e, big.NewInt(n)) // floor of the expected support
+		lo, hi := max(0, b-nh), min(b, h)
+		s := min(max(e.Int64()+r.Int64N(5)-2, lo), hi)
+		tables = append(tables, table{s, b, h, n})
+	}
+	worst := 0.0
+	for i, tb := range tables {
+		s, b, h, n := tract.Supp(tb.s), tract.Supp(tb.b), tract.Supp(tb.h), tract.Supp(tb.n)
+		want, err := ref.Eval(s, b, h, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Eval(Certainty, s, b, h, n)
+		worst = max(worst, math.Abs(got-want.V))
+		if !want.Matches(got) || i < 2 && math.Abs(got-want.V) > 1e-15 {
+			t.Errorf("Certainty%v = %.17g, reference %v", tb, got, want)
+		}
+	}
+	t.Logf("%d tables, largest absolute error %.3g", len(tables), worst)
+}
+
+// bigG returns g(δ) = (1+δ)·ln(1+δ) - δ for the float64 δ > -1 at 256
+// bits, with ln(1+δ) = 2·atanh(δ/(2+δ)) summed until the terms vanish
+// (|δ/(2+δ)| < 1/3 for |δ| <= 1/2, so the series converges quickly).
+func bigG(delta float64) *big.Float {
+	const prec = 256
+	nf := func() *big.Float { return new(big.Float).SetPrec(prec) }
+	d := nf().SetFloat64(delta)
+	z := nf().Quo(d, nf().Add(nf().SetInt64(2), d))
+	z2 := nf().Mul(z, z)
+	term, ln := nf().Set(z), nf().Set(z)
+	for k := int64(3); ; k += 2 {
+		term.Mul(term, z2)
+		q := nf().Quo(term, nf().SetInt64(k))
+		if q.Sign() == 0 || q.MantExp(nil)-ln.MantExp(nil) < -prec-8 {
+			break
+		}
+		ln.Add(ln, q)
+	}
+	ln.Mul(ln, nf().SetInt64(2))
+	g := nf().Mul(nf().Add(nf().SetInt64(1), d), ln)
+	return g.Sub(g, d)
 }

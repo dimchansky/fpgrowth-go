@@ -63,3 +63,44 @@ func TestALG1CLI(t *testing.T) {
 		}
 	}
 }
+
+// TestCertaintyNearIndependenceCLI is the CLI reproduction of review
+// finding F1 of #16: the rule y <- x is slightly below independence
+// (certainty factor -1.2e-19, chi² 1.9e-20), but upstream's formula gave
+// it the certainty factor 1, so -ez -d99 reported it. It must not be
+// reported, and with -d-100 (no filtering) its value must match the
+// reference.
+func TestCertaintyNearIndependenceCLI(t *testing.T) {
+	t.Parallel()
+	in := writeFile(t, t.TempDir(), "near.txt", "x y 7974968969870368360\nx 61\ny 791446729924245358\nq 5\n")
+	out, stderr, code := invocation{args: []string{"-tr", "-w", "-s0", "-c0", "-m2", "-ez", "-d99",
+		"-v %a %b %h %20e", in, "-"}}.run(t)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if strings.Contains(out, "y <- x") {
+		t.Errorf("-ez -d99 reports y <- x:\n%s", out)
+	}
+	out, stderr, code = invocation{args: []string{"-tr", "-w", "-s0", "-c0", "-m2", "-ez", "-d-100",
+		"-v %a %b %h %20e", in, "-"}}.run(t)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	ref, _ := oracle.RefByLetter('z')
+	want, _ := ref.Eval(7974968969870368360, 7974968969870368421, 8766415699794613718, 8766415699794613784)
+	for line := range strings.SplitSeq(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 7 && f[0] == "y" && f[2] == "x" {
+			v, err := strconv.ParseFloat(f[6], 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// %20e prints 20 decimals: the value rounds to 0 there
+			if d := v - want.V; d > want.Tol+1e-20 || -d > want.Tol+1e-20 {
+				t.Errorf("-ez -d-100: printed %v for y <- x, reference %v", v, want)
+			}
+			return
+		}
+	}
+	t.Errorf("-ez -d-100: rule y <- x not reported:\n%s", out)
+}

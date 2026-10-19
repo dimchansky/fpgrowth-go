@@ -436,8 +436,8 @@ func productsSmall(supp, body, head, base tract.Supp) bool {
 //   - Chi2, Yates and their p-values when a product exceeds 2^53
 //     (upstream rounds them; below, the values are bit-identical
 //     respectively within the class tolerance);
-//   - Certainty when conf > prior and base/(base-head) > certGate (the
-//     exact form; elsewhere bit-identical);
+//   - Certainty when base/(base-head) > certGate (the exact form, for
+//     every sign of D; elsewhere bit-identical);
 //   - the Fisher tests for base > maxFact where the reference has a value
 //     (at most oracle.FisherMaxTables tables); with more tables they keep
 //     the class tolerance against upstream's (fixed) value.
@@ -447,7 +447,7 @@ func exactScope(m Measure, r upstreamRow) bool {
 	case Chi2, Yates, Chi2PValue, YatesPValue:
 		return !productsSmall(s, b, h, n)
 	case Certainty:
-		return b > 0 && h < n && n-h < n/certGate && AboveExpected(s, b, h, n)
+		return b > 0 && h < n && n-h < n/certGate
 	case FisherProb, FisherChi2, FisherInfo, FisherSupport:
 		lo, hi := max(0, b-(n-h)), min(b, h)
 		return n > maxFact && hi-lo+1 <= oracle.FisherMaxTables
