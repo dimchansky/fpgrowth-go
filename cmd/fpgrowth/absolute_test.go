@@ -12,7 +12,7 @@ import (
 // TestSuppValue checks the support literal grammar of issue #18
 // (differences.md N3): the strtod value and end position are upstream's
 // for every literal, and exactly the negative decimal integer literals
-// carry an exact count (or, beyond int64, an error literal).
+// carry an exact count (saturated at math.MaxInt64 beyond int64).
 func TestSuppValue(t *testing.T) {
 	t.Parallel()
 	negZero := math.Copysign(0, -1)
@@ -20,7 +20,6 @@ func TestSuppValue(t *testing.T) {
 		in    string
 		v     float64
 		count int64
-		bad   string
 		rest  string
 	}{
 		{in: "-17", v: -17, count: 17},
@@ -58,8 +57,8 @@ func TestSuppValue(t *testing.T) {
 		{in: "-4611686018427387904", v: -(1 << 62), count: 1 << 62},    // 2^62
 		{in: "-9223372036854775807", v: -0x1p63, count: math.MaxInt64}, // MaxInt64
 		{in: "-9223372036854775806m2", v: -0x1p63, count: math.MaxInt64 - 1, rest: "m2"},
-		{in: "-9223372036854775808", v: -0x1p63, bad: "-9223372036854775808"}, // MaxInt64+1
-		{in: " -99999999999999999999Z", v: -1e20, bad: "-99999999999999999999", rest: "Z"},
+		{in: "-9223372036854775808", v: -0x1p63, count: math.MaxInt64}, // MaxInt64+1 saturates
+		{in: " -99999999999999999999Z", v: -1e20, count: math.MaxInt64, rest: "Z"},
 		{in: "-1e19", v: -1e19},
 		{in: "9223372036854775808", v: 0x1p63}, // a percentage, rejected by validate as > 100
 	}
@@ -69,9 +68,9 @@ func TestSuppValue(t *testing.T) {
 		if math.Float64bits(a.v) != math.Float64bits(fv) || rest != frest {
 			t.Errorf("suppValue(%q) = %v, %q; strtod %v, %q", tt.in, a.v, rest, fv, frest)
 		}
-		if math.Float64bits(a.v) != math.Float64bits(tt.v) || a.count != tt.count || a.bad != tt.bad || rest != tt.rest {
-			t.Errorf("suppValue(%q) = %+v, %q; want v %v count %d bad %q rest %q",
-				tt.in, a, rest, tt.v, tt.count, tt.bad, tt.rest)
+		if math.Float64bits(a.v) != math.Float64bits(tt.v) || a.count != tt.count || rest != tt.rest {
+			t.Errorf("suppValue(%q) = %+v, %q; want v %v count %d rest %q",
+				tt.in, a, rest, tt.v, tt.count, tt.rest)
 		}
 		if a.exact() != (tt.count > 0) {
 			t.Errorf("suppValue(%q).exact() = %v", tt.in, a.exact())
@@ -80,26 +79,40 @@ func TestSuppValue(t *testing.T) {
 }
 
 // TestAbsoluteOptions checks parsing, validation and the miner
-// configuration of exact absolute thresholds: errors for integer
-// literals beyond int64 (in upstream's validation order, with exit
-// status 11), clustering, mixed kinds, -F entries and the sign rule of
-// the default output format.
+// configuration of exact absolute thresholds: saturation of integer
+// literals beyond int64 (accepted, as upstream and v0.1.0, like the
+// other spellings of such values), clustering, mixed kinds, -F entries
+// and the sign rule of the default output format.
 func TestAbsoluteOptions(t *testing.T) {
 	t.Parallel()
+	for _, args := range [][]string{
+		{"-s-9223372036854775808", "-S-9223372036854775808", "-F-5:-9223372036854775808", "x"},
+		{"-s-99999999999999999999", "-S -99999999999999999999", "-F-99999999999999999999", "x"},
+		{"-s -0009223372036854775808m2", "-S-1000000000000000000000000000000Z", "x"},
+	} {
+		o, _, err := parseArgs(args)
+		if err == nil {
+			err = o.validate()
+		}
+		if err != nil {
+			t.Fatalf("%q: error %d %q", args, err.code, err.msg)
+		}
+		c := o.minerConfig()
+		if !c.HasMinCount || c.MinCount != math.MaxInt64 || !c.HasMaxCount || c.MaxCount != math.MaxInt64 ||
+			o.border != nil && o.border[len(o.border)-1].count != math.MaxInt64 {
+			t.Errorf("%q: not saturated: %+v, border %+v", args, c, o.border)
+		}
+	}
 	for _, tc := range []struct {
 		args []string
 		code int
 		msg  string
 	}{
-		{[]string{"-s-9223372036854775808", "x"}, exitSupport, "invalid minimum support -9223372036854775808"},
-		{[]string{"-s-99999999999999999999", "x"}, exitSupport, "invalid minimum support -99999999999999999999"},
-		{[]string{"-s -9223372036854775808", "x"}, exitSupport, "invalid minimum support -9223372036854775808"},
-		{[]string{"-S-9223372036854775808", "x"}, exitSupport, "invalid maximum support -9223372036854775808"},
-		{[]string{"-F-5:-9223372036854775808", "x"}, exitSupport, "invalid support border -9223372036854775808"},
+		// validation order and messages are unchanged
 		{[]string{"-m-1", "-s-9223372036854775808", "x"}, exitSize, "invalid item set size -1"},
-		{[]string{"-s-9223372036854775808", "-Snan", "x"}, exitSupport, "invalid minimum support -9223372036854775808"},
+		{[]string{"-s-9223372036854775808", "-Snan", "x"}, exitSupport, "invalid maximum support nan"},
 		{[]string{"-s200", "-S-9223372036854775808", "x"}, exitSupport, "invalid minimum support 200"},
-		{[]string{"-S-9223372036854775808", "-c200", "x"}, exitSupport, "invalid maximum support -9223372036854775808"},
+		{[]string{"-S-9223372036854775808", "-c200", "x"}, exitConf, "invalid minimum confidence 200"},
 		// the last value wins, as upstream
 		{[]string{"-s-9223372036854775808", "-s-5", "x"}, 0, ""},
 		// non-integer syntax keeps upstream's double (saturating)
@@ -201,7 +214,13 @@ func TestALG3CLI(t *testing.T) {
 		{"MaxInt64-1 (rounded)", []string{"-w", "-s-9223372036854775806", smax, "-"}, "a (9223372036854775806)\n", 0},
 		{"MaxInt64", []string{"-w", "-s-9223372036854775807", smax, "-"}, "", exitNoItems},
 		{"MaxInt64 support", []string{"-w", "-s-9223372036854775807", sall, "-"}, "a (9223372036854775807)\n", 0},
-		{"MaxInt64+1", []string{"-w", "-s-9223372036854775808", sall, "-"}, "", exitSupport},
+		// beyond int64 an integer literal saturates at math.MaxInt64, as in
+		// C and v0.1.0 (no support exceeds it)
+		{"MaxInt64+1 saturates", []string{"-w", "-s-9223372036854775808", sall, "-"}, "a (9223372036854775807)\n", 0},
+		{"-s 10^20 saturates", []string{"-w", "-s-99999999999999999999", smax, "-"}, "", exitNoItems},
+		{"-S 10^20 saturates", []string{"-w", "-s-1", "-S-99999999999999999999", smax, "-"},
+			"a (9223372036854775806)\nb (1)\n", 0},
+		{"-F 10^20 saturates", []string{"-w", "-s-1", "-F-99999999999999999999", smax, "-"}, "", 0},
 		{"-S 2^53+1 (rounded)", []string{"-w", "-s-1", "-S-9007199254740993", m53, "-"}, "b (9007199254740993)\n", 0},
 		{"-S MaxInt64", []string{"-w", "-s-1", "-S-9223372036854775807", smax, "-"},
 			"a (9223372036854775806)\nb (1)\n", 0},

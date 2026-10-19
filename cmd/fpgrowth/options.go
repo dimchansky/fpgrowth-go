@@ -279,11 +279,8 @@ func floatValue(s string) (float64, string) {
 type suppArg struct {
 	v float64
 	// count is the exact absolute support (>= 1) of an absolute integer
-	// literal in the int64 range, 0 otherwise.
+	// literal, saturated at math.MaxInt64, and 0 otherwise.
 	count int64
-	// bad is an absolute integer literal outside the int64 range (an
-	// error raised by validate), empty otherwise.
-	bad string
 }
 
 // exact reports whether the value is an exact absolute support (count).
@@ -302,9 +299,9 @@ func (a suppArg) exact() bool { return a.count > 0 }
 // prefix, inf or nan), and the value is not -0, the absolute support is
 // that integer, exactly. Below 2^53 it equals upstream's ceil(-v) and
 // floor(-v). An integer literal whose absolute value exceeds
-// math.MaxInt64 is recorded in bad and rejected by validate (upstream
-// converts it to int with undefined behavior). Every other literal keeps
-// upstream's double.
+// math.MaxInt64 saturates at math.MaxInt64, like every other spelling of
+// such a value (fpgrowth-core.md B9; no support exceeds it, so the bound
+// keeps its meaning). Every other literal keeps upstream's double.
 func suppValue(s string) (suppArg, string) {
 	v, n := cconv.Strtod(s)
 	a := suppArg{v: v}
@@ -312,7 +309,7 @@ func suppValue(s string) (suppArg, string) {
 		i, m, overflow := cconv.Strtol(s[:n], 10)
 		if m == n { // the subject is a decimal integer literal
 			if overflow || i == math.MinInt64 {
-				a.bad = strings.TrimLeft(s[:n], " \t\n\v\f\r")
+				a.count = math.MaxInt64 // beyond int64: saturate
 			} else {
 				a.count = -i
 			}
@@ -360,22 +357,18 @@ func (o *options) validate() *cliError {
 		return errorf(exitSize, "invalid item set size "+strconv.Itoa(int(o.zmax)))
 	// Deviation from upstream: NaN passes "smin > 100" and is converted
 	// to an integer with undefined behavior; it is rejected here.
-	// Deviation from upstream (N3): an absolute integer literal beyond
-	// math.MaxInt64 is rejected (upstream: undefined conversion to int).
-	case o.smin.v > 100 || math.IsNaN(o.smin.v) || o.smin.bad != "":
-		return errorf(exitSupport, "invalid minimum support "+o.smin.String())
-	// Deviation from upstream: -S is not validated upstream; NaN and
-	// integer literals beyond math.MaxInt64 are rejected here (other
-	// values, also -S0, are well defined).
-	case math.IsNaN(o.smax.v) || o.smax.bad != "":
-		return errorf(exitSupport, "invalid maximum support "+o.smax.String())
+	case o.smin.v > 100 || math.IsNaN(o.smin.v):
+		return errorf(exitSupport, "invalid minimum support "+formatG(o.smin.v))
+	// Deviation from upstream: -S is not validated upstream; NaN is
+	// rejected here (other values, also -S0, are well defined).
+	case math.IsNaN(o.smax.v):
+		return errorf(exitSupport, "invalid maximum support "+formatG(o.smax.v))
 	}
 	for _, v := range o.border {
-		// Deviation from upstream: a NaN border value (or an integer
-		// literal beyond math.MaxInt64) is converted to an integer with
-		// undefined behavior upstream.
-		if math.IsNaN(v.v) || v.bad != "" {
-			return errorf(exitSupport, "invalid support border "+v.String())
+		// Deviation from upstream: a NaN border value is converted to an
+		// integer with undefined behavior upstream.
+		if math.IsNaN(v.v) {
+			return errorf(exitSupport, "invalid support border "+formatG(v.v))
 		}
 	}
 	// NaN fails both comparisons upstream and is accepted; rejected here.
@@ -495,15 +488,6 @@ func (o *options) minerConfig() fpg.Config {
 	c.Sort = int(o.sort)
 	c.Prune = int(o.prune)
 	return c
-}
-
-// String formats the value for an error message: an out-of-range
-// integer literal as given, every other value like C's "%g".
-func (a suppArg) String() string {
-	if a.bad != "" {
-		return a.bad
-	}
-	return formatG(a.v)
 }
 
 // formatG formats x like C's printf("%g").

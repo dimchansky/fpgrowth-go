@@ -287,12 +287,12 @@ The full list with evidence and tests is in
   (optional blanks, `-`, decimal digits; leading zeros allowed) is used
   exactly up to 2^63−1, for each of `-s`, `-S` and the `-F` entries
   independently; below 2^53 that is upstream's value. A larger integer
-  literal (from `-9223372036854775808` on) is rejected with exit status 11
-  (`invalid minimum support -9223372036854775808`, likewise `invalid
-  maximum support` and `invalid support border`). Every other spelling
-  keeps upstream's double: `-s-2.5` means 3 (rounded up), `-S-2.5` 2
-  (rounded down), `-s-17.0`, `-s-1e3` and `-s-0x11` are rounded above
-  2^53, and values from 2^63 on (`-s-1e19`, `-S-inf`) saturate.
+  literal (from `-9223372036854775808` on) saturates at 2^63−1, as do the
+  other spellings of such values (`-s-1e19`, `-S-inf`), C and v0.1.0: as a
+  minimum it finds nothing (unless a support is exactly 2^63−1), as a
+  maximum it is no limit. Every other spelling keeps upstream's double:
+  `-s-2.5` means 3 (rounded up), `-S-2.5` 2 (rounded down), and
+  `-s-17.0`, `-s-1e3` and `-s-0x11` are rounded above 2^53.
   The syntax and the option clustering are upstream's (`-s-17m2` is
   `-s-17 -m2`); `-s-0` is a percentage of 0.
 - **Closed standard output** (C10): when the caller closes standard

@@ -66,9 +66,9 @@ linked documents.
   identical to v0.1.0 below x = 2^52 and exact above it ("Threshold
   contract" in `docs/differences.md`). ALG-3 (CLI absolute thresholds
   rounded to doubles above 2^53), issue #18 (PR #31): absolute integer
-  literals of `-s`, `-S` and `-F` are exact up to 2^63−1, larger ones are
-  rejected (exit 11), every other spelling and all results up to 2^53 are
-  unchanged (N3 in `docs/differences.md`).
+  literals of `-s`, `-S` and `-F` are exact up to 2^63−1, larger ones
+  saturate as before, every other spelling and all results up to 2^53
+  are unchanged (N3 in `docs/differences.md`).
 - Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
   #23), #29 (three difftest harness gaps). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,

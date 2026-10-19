@@ -356,8 +356,9 @@ func nanFree(o options) any {
 // configuration that fpg.New accepts (run treats a failure as excluded
 // by validate). Support literals (issue #18) keep strtod's value and end
 // position at every offset of every argument, exactly the negative
-// decimal integer literals are exact (checked with strconv.ParseInt), and
-// the configuration takes the exact counts.
+// decimal integer literals are exact (checked with strconv.ParseInt;
+// saturated at math.MaxInt64 beyond int64), and the configuration takes
+// the exact counts.
 //
 //	go test ./cmd/fpgrowth/ -run '^$' -fuzz FuzzParseArgs -fuzztime 60s
 func FuzzParseArgs(f *testing.F) {
@@ -445,19 +446,15 @@ func checkSuppValue(t *testing.T, s string) {
 	n, perr := strconv.ParseInt(lit, 10, 64)
 	switch {
 	case !(v < 0) || !isInt: // not an absolute integer literal (also -0)
-		if a.count != 0 || a.bad != "" {
+		if a.count != 0 {
 			t.Fatalf("suppValue(%q) = %+v: not an absolute integer literal", s, a)
 		}
-	case perr != nil: // out of range (MinInt64 is -(MaxInt64+1))
-		if a.count != 0 || a.bad != lit {
-			t.Fatalf("suppValue(%q) = %+v: want bad %q", s, a, lit)
-		}
-	case n == math.MinInt64:
-		if a.count != 0 || a.bad != lit {
-			t.Fatalf("suppValue(%q) = %+v: want bad %q", s, a, lit)
+	case perr != nil || n == math.MinInt64: // beyond int64 (MinInt64 is -(MaxInt64+1))
+		if a.count != math.MaxInt64 || !a.exact() {
+			t.Fatalf("suppValue(%q) = %+v: want saturation at math.MaxInt64", s, a)
 		}
 	default:
-		if a.count != -n || a.bad != "" || !a.exact() {
+		if a.count != -n || !a.exact() {
 			t.Fatalf("suppValue(%q) = %+v: want count %d", s, a, -n)
 		}
 		// below 2^53 the exact count is upstream's double
