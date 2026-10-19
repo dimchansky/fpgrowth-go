@@ -281,13 +281,37 @@ func measureDeviation(c *tcase) *valueDev {
 // docs/differences.md N1; the bound of the #15 oracle's DefectALG6): its
 // information (ln n + Σ t·ln(t/(r·k))/n) has an absolute error of at most
 // δI = 16·2^-52·max(1, ln n) nats, so its statistic G = 2·n·I is off by
-// δG = 2·n·δI, which the chi²(1) tail turns into a p-value error of at
-// most √(6·δG/π) (the tail is 1 - √(2G/π) + O(G^1.5) near 0, where the
-// error is largest). The port computes the exact value (within 2^-36
+// δG = 2·n·δI. The chi²(1) tail turns that into a p-value error of at
+// most √(6·δG/π) for G <= 2·δG (the tail is 1 - √(2G/π) + O(G^1.5) near
+// 0) and of at most δG·f(G - δG) beyond, where f is the chi²(1) density
+// (decreasing). G is evaluated here in float64 from the supports; its own
+// error is below δG, which the bound absorbs by using G - δG (and 3·δG
+// for the switch). The port computes the exact value (within 2^-36
 // relative), so the difference is upstream's error.
-func alg6Slack(_, _, _, n int64) float64 {
+func alg6Slack(s, b, h, n int64) float64 {
 	dg := 2 * float64(n) * 16 * dblEpsilon * max(1, math.Log(float64(n)))
-	return math.Sqrt(6 * dg / math.Pi)
+	g := gStat(s, b, h, n)
+	if g <= 3*dg {
+		return math.Sqrt(6 * dg / math.Pi)
+	}
+	y := g - 2*dg
+	return dg * math.Exp(-y/2) / math.Sqrt(2*math.Pi*y)
+}
+
+// gStat returns the G statistic 2·Σ c·ln(c·n/(r·k)) of a table in
+// float64 (0 for degenerate margins).
+func gStat(s, b, h, n int64) float64 {
+	if b <= 0 || b >= n || h <= 0 || h >= n {
+		return 0
+	}
+	fn := float64(n)
+	var sum float64
+	for _, c := range [4][3]int64{{s, b, h}, {b - s, b, n - h}, {h - s, n - b, h}, {n - b - h + s, n - b, n - h}} {
+		if c[0] > 0 {
+			sum += float64(c[0]) * math.Log(float64(c[0])*fn/(float64(c[1])*float64(c[2])))
+		}
+	}
+	return max(2*sum, 0)
 }
 
 // yatesClamped reports whether |head*body - supp*base| < base/2, where

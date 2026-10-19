@@ -264,8 +264,9 @@ The full list with evidence and tests is in
   threshold may fall on either side after rounding, in both programs.
 - **Statistical measures** (N1): `-e n p y t i g f h m s z` and `-i` are
   accurate for total weights up to 2^63 (upstream's double formulas
-  cancel beyond about 10^12). Chi², Yates, certainty and `-i` print
-  upstream's values wherever upstream's arithmetic is exact; `-ei`, `-eg`
+  cancel beyond about 10^12). Chi², Yates and `-i` print upstream's
+  values wherever upstream's arithmetic is exact, the certainty factor
+  wherever base/(base−head) <= 2^10; `-ei`, `-eg`
   and the Fisher tests above a total weight of 170 can differ from
   upstream in the last digits. The Fisher tests take time proportional to
   the square root of the total weight in the worst case.

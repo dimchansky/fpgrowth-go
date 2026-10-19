@@ -197,7 +197,9 @@ costs constant time per evaluated rule except the four Fisher measures,
 which visit about 9 standard deviations σ of the hypergeometric
 distribution on each side of its mode (σ <= √n/4 for the total weight n):
 a few hundred tables for ordinary data; with balanced margins about 35 ms
-per evaluation at n = 10^12 and 11 s at 10^17 (Apple M1 Max). These
+per evaluation at n = 10^12, 11 s at 10^17 and, extrapolated, about 100 s
+near the `int64` limit (Apple M1 Max), so bound such evaluations with a
+context deadline. These
 sums check for cancellation every 4096 tables.
 
 **Rules** carry the support of body ∪ head, body support, head support,
@@ -1149,8 +1151,9 @@ plus two upstream crashes that it avoids and five latent defects
   the last bit from the platform's C library; a value exactly on a
   threshold can fall on either side for any measure (F-1). The statistical
   measures are computed without the C program's cancellation (N1): chi²,
-  Yates, certainty and `-i` stay bit-identical wherever the C formula is
-  exact (products up to 2^53), the information, the G-test and the Fisher
+  Yates and `-i` stay bit-identical wherever the C formula is exact
+  (products up to 2^53), the certainty factor wherever base/(base−head)
+  <= 2^10 (beyond, an exact form is used), the information, the G-test and the Fisher
   tests above a total weight of 170 differ in the last bits on ordinary
   data, and all are accurate for weights up to 2^63. Numeric limits for
   very large weights are N2 and N3 (see [Limitations](#limitations)).

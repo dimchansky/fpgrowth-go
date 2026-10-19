@@ -25,7 +25,9 @@ import (
 // 2^-36·(1+x) relative for the statistic x, and the Fisher measures
 // within 2^-36 relative (plus 2^-1000 absolute; for total weights up to
 // 170, where FisherChi2 and FisherSupport keep upstream's complement
-// sums, within 2^-36 absolute). InvalidateBelowExpected is decided
+// sums, within 2^-36 absolute); ties of the Fisher tests count as in the
+// region, and FisherProb treats two probabilities as tied only when they
+// agree within a relative 2^-200. InvalidateBelowExpected is decided
 // exactly. The other measures are short formulas of the supports with a
 // few roundings. Values differ from the C program's in the last bits
 // where the C program loses precision, and for Information,
@@ -42,8 +44,9 @@ import (
 // That is a few hundred tables for ordinary data, but grows with large
 // transaction weights: with balanced margins at independence one
 // evaluation of a two-sided test takes about 0.4 ms at n = 10^8, 35 ms at
-// 10^12, 1.4 s at 1.6·10^15 and 11 s at 10^17 (Apple M1 Max; FisherSupport
-// half of that). The sums
+// 10^12, 1.4 s at 1.6·10^15, 11 s at 10^17 and, extrapolated, about 100 s
+// near math.MaxInt64 (Apple M1 Max; FisherSupport half of that), so bound
+// such evaluations with a context deadline. The sums
 // check for cancellation every 4096 tables, so a canceled context still
 // stops mining promptly.
 //

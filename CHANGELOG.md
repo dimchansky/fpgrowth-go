@@ -31,8 +31,8 @@ The release workflow publishes the section whose heading matches the tag
   computed with cancellation-free formulas (see Fixed). Chi², Yates,
   their p-values, the certainty factor and `-i` keep upstream's values
   wherever upstream's double arithmetic is exact (products up to 2^53;
-  for the certainty factor, unless conf > prior and
-  base/(base−head) > 2^10). A rule or item set whose value lies within
+  for the certainty factor, unless base/(base−head) > 2^10, where an
+  exact form is used). A rule or item set whose value lies within
   those last bits of an evaluation threshold can change membership
   (`docs/differences.md` N1, F-1).
 - The Fisher tests for total weights above 170 visit only the tables
@@ -64,9 +64,12 @@ The release workflow publishes the section whose heading matches the tag
   `-en`, `-ey` on the perfect association and 1 for `-ez` on the
   certainty case. FisherChi2 finds its mirror table exactly, and
   FisherChi2 and FisherSupport sum tiny tails directly (for totals above
-  170), so they have a relative error bound; a FisherProb near-tie more
-  than 1024 tables away from the observed table counts as a tie
-  (documented).
+  170), so they have a relative error bound. The certainty factor no
+  longer gets the wrong sign near independence at large totals (it gave
+  1 instead of −1.2e-19, and 0.1667 for an independent table at
+  n = 2^62). FisherProb decides near-ties of far-apart tables at 320
+  bits, so only probabilities equal within a relative 2^-200 count as
+  ties.
 - `MineItemsets`, `Itemsets`, `CollectItemsets`, `MineRules`, `Rules` and
   `CollectRules` return `ctx.Err()` when the context is canceled inside
   `OnStart` (which then returns nil) and nothing is mined: an empty
