@@ -547,16 +547,18 @@ func TestFisherSubnormalAnchor(t *testing.T) {
 // TestFisherNearTieCost bounds the cost of a far near-tie comparison at
 // n = 10^18 by counting allocations rather than by wall time, which
 // hosted CI runners exceed under load (124 ms against a 100 ms bound on
-// macos-latest). One such comparison makes about 1,000-1,700
-// allocations (review of PR #28); an unbounded or regressed computation
-// makes far more. Not parallel: testing.AllocsPerRun requires it.
+// macos-latest). One such comparison makes 1,138 allocations (measured on
+// arm64, amd64 and with -race). The bound catches regressions that
+// allocate more, such as a higher working precision or more big-float
+// calls per comparison; it does not see slower non-allocating loops.
+// Not parallel: testing.AllocsPerRun requires it.
 func TestFisherNearTieCost(t *testing.T) {
 	const n2, b2, h2 = 1_000_000_000_000_000_000, 400_000_000_000_000_000, 300_000_000_000_000_000
 	s2 := tract.Supp(120_000_000_000_000_000 - 50_000_000)
 	h18 := newHyperTable(s2, b2, h2, n2)
 	if a := testing.AllocsPerRun(3, func() {
 		h18.ft.cmpWeightBig(h18.ft.supp + 100_000_000)
-	}); a > 5000 {
-		t.Errorf("far comparison made %.0f allocations, want at most 5000", a)
+	}); a > 2500 {
+		t.Errorf("far comparison made %.0f allocations, want at most 2500", a)
 	}
 }
