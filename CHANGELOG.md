@@ -12,6 +12,17 @@ The release workflow publishes the section whose heading matches the tag
 
 ## [Unreleased]
 
+### Added
+
+- Tests: the test oracle (`internal/oracle`) has an independent reference
+  for all 25 rule evaluation measures and `LogSupportRatio`, written from
+  the definitions with exact arithmetic, and the oracle comparisons check
+  every evaluation value against it, so a wrong measure formula now fails
+  `go test ./...` without the C-derived fixtures (audit TST-3, #15). The
+  known numerical defects for large total weights (ALG-1, ALG-2, ALG-6)
+  are recorded in expected-failure tables. No library or CLI behavior
+  changes.
+
 ### Fixed
 
 - `MineItemsets`, `Itemsets`, `CollectItemsets`, `MineRules`, `Rules` and

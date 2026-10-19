@@ -50,9 +50,12 @@ linked documents.
   weights (ALG-1, `docs/differences.md` N1), `fpgpsp` and `-z`, faster
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
-  too), the remaining quadratic closed-check shape (NEW-3), independent
-  measure formulas in the oracle (TST-3).
+  too), the remaining quadratic closed-check shape (NEW-3).
 - Resolved after v0.1.0: RC-2 (Info, `docs/audit/rc1-verification.md`),
   mining returned nil instead of `ctx.Err()` when the context was
   canceled inside `OnStart` and nothing was left to mine; fixed by
-  issue #14 (PR #26).
+  issue #14 (PR #26). TST-3 (Low, `docs/audit/testing.md`), the oracle
+  shared the measure formulas with the implementation; the oracle now
+  has an independent reference for every measure, with the ALG-1, ALG-2
+  and ALG-6 deviations in strict expected-failure tables; issue #15
+  (PR #27).

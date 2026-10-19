@@ -1224,10 +1224,22 @@ Exception: `cmd/fpgrowth/testdata/golden-go/` holds reviewed snapshots
 of the Go program's output for the CLI cases that deviate from upstream
 by design (`cmd/fpgrowth/testdata/deviations.txt`); they are rewritten
 with `go test ./cmd/fpgrowth -update`, and the test requires them to
-differ from the C golden. The oracle's mining is independent of the
-port's code, but its rule measures are the port's own `internal/ruleval`
-functions, so a wrong measure formula is caught only by the C-derived
-fixtures and the differential tests.
+differ from the C golden. The oracle is independent of the port's code
+for mining and for the evaluation measures: it has its own reference
+for all 25 rule measures and `LogSupportRatio`, written from the
+definitions with exact rational arithmetic, high-precision logarithms
+and exact Fisher sums, and a test checks that it imports none of the
+port's formula packages. The oracle comparisons in the root package,
+`internal/istree` and `internal/fpg` check every evaluation value
+against it within a stated tolerance, so a wrong measure formula fails
+`go test ./...` without the C fixtures. `internal/ruleval` compares
+every measure with it on all tables with a total weight up to 20,
+boundary margins and random weighted tables up to 2^24; the known
+numerical defects for large total weights (ALG-1, `docs/differences.md`
+N1 and N2, and ALG-6) are kept in expected-failure tables that fail when
+an entry starts to pass. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
+runs the extended sweep (all tables up to a total weight of 60, k random
+tables up to 2^24, and k up to 2^62 with the ALG-1 mismatches counted).
 
 In tests of your own code, remember that `Value` is NaN without an
 evaluation: compare results by items and supports or with NaN-aware
