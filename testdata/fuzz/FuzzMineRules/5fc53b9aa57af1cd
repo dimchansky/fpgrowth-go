@@ -1,0 +1,3 @@
+go test fuzz v1
+uint64(18364758544493064840)
+[]byte("178\xf690\xf1021\xf2AB")

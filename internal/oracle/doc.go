@@ -1,11 +1,14 @@
 // Package oracle is an independent brute-force reference for testing the
 // FP-growth port and, through differential tests, the upstream C program.
 //
-// Nothing here reuses the port's mining code: the package enumerates every
-// subset of a small item universe (at most MaxItems items) as a uint64
-// bit mask, computes exact weighted supports with a superset-sum transform,
-// and applies the definitions below literally. It is meant for tests only
-// and is fast enough for thousands of small random cases.
+// Nothing here reuses the port's mining or measure code: the package
+// enumerates every subset of a small item universe (at most MaxItems
+// items) as a uint64 bit mask, computes exact weighted supports with a
+// superset-sum transform, applies the definitions below literally, and
+// evaluates rules and item sets with its own reference measures (see
+// "Reference measures"; callers may also pass the implementation's
+// measure functions, for bit-identical comparisons). It is meant for
+// tests only and is fast enough for thousands of small random cases.
 //
 // # Data model
 //
@@ -81,12 +84,55 @@
 //
 // # Evaluation measures
 //
-// A Measure wraps a rule evaluation function with the signature of
-// upstream's ruleval functions, a direction and a threshold. Rules are
-// filtered with upstream's reject-if-less test, item sets with the
+// A Measure has a direction, a threshold and either a rule evaluation
+// function with the signature of upstream's ruleval functions (Func) or
+// an independent reference measure (Ref). Rules are filtered with
+// upstream's reject-if-less test, item sets with the
 // accept-if-greater-or-equal test of the item set tree, and item sets are
 // evaluated by aggregating the measure over the rules S\{h} -> h
-// (see SetEval).
+// (see SetEval). LogRatioEval evaluates item sets by upstream's item set
+// measure -eb (LogSupportRatio).
+//
+// # Reference measures
+//
+// RefMeasures holds an independent reference for each of the 25 rule
+// measures, and LogRatioValue one for -eb. They are written from the
+// mathematical definitions; this package does not import the
+// implementation's formula packages (internal/ruleval, internal/istree,
+// internal/report, internal/fpg; TestReferenceImportGraph checks the
+// import graph) and does not reuse their formulas. Products and quotients
+// are exact (math/big), logarithms are computed with 128-bit big.Float
+// series, the mutual information is computed with a precision that
+// covers its one bounded cancellation, the chi²-type p-values use
+// math.Erfc, and the Fisher tests are exact
+// hypergeometric sums over big integer weights (up to FisherMaxTables
+// tables; ErrOutOfScope beyond). Each Value is labelled Exact or
+// Convention; conventions cover the cases where a definition is undefined
+// (ConvUndefined) and the upstream or port conventions ALG-5, R4, R5 and
+// R9b (see the Conv* constants), and the worst value given to sets that
+// cannot be evaluated and to rules invalidated by -i (ConvWorst). The
+// port fixes R6, R7 and R9a coincide with the exact definition and give
+// exact values. The first rule of AggFirst follows the implementation's
+// item order (Order; docs/differences.md P6).
+//
+// Reference values carry a tolerance (Value.Tol, see ratTau and pTau):
+// 2^-44 relative for products and quotients and for chi², Yates and the
+// information, 2^-44·max(1, |v|) for the differences and Importance,
+// 2^-36 scaled by the conditioning of the chi² tail for p-values and by
+// ln Γ(n+1) (capped at 2^-20) for the Fisher tests. With Measure.Ref,
+// rules and item sets whose value lies within the tolerance of the
+// threshold are reported with Optional set, and DiffRules/DiffSets accept
+// them missing; Eval values must lie within EvalTol. The -i test is then
+// exact in integers.
+//
+// The information and the G-test p-value also name the known
+// implementation defect DefectALG6 with a derived bound
+// (Value.DefectTol): the implementation's information has an absolute
+// error of a few ulps of ln n, which the p-value amplifies near
+// independence. DiffRules and DiffSets accept and count such deviations
+// only with DiffOptions.Defects; Value.Matches never does, so the strict
+// tests of the implementation keep them, and the precision loss for
+// large total weights (audit ALG-1), in expected-failure tables.
 //
 // # Helpers
 //

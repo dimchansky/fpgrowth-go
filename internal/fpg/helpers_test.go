@@ -50,7 +50,7 @@ func (s *collectSink) ItemSet(is report.ItemSet) error {
 	for i, it := range is.Items {
 		names[i] = s.ib.ID(it)
 	}
-	s.sets = append(s.sets, oracle.Set{Items: oracle.NewItemSet(names...), Supp: is.Supp})
+	s.sets = append(s.sets, oracle.Set{Items: oracle.NewItemSet(names...), Supp: is.Supp, Eval: is.Eval})
 	var b strings.Builder
 	for i, n := range names {
 		if i > 0 {

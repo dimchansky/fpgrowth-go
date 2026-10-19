@@ -78,13 +78,19 @@ func TestRulesEquivalenceCLI(t *testing.T) {
 
 // TestRulesOracle compares rules, including appearances, with the
 // brute-force oracle; confidence and lift must equal the oracle's values.
+// With an evaluation, the rules are compared twice: with the
+// implementation's measure function (bit-identical values and threshold
+// decisions) and with the independent reference measure (values within
+// their tolerances), which catches formula errors.
 func TestRulesOracle(t *testing.T) {
 	t.Parallel()
+	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
+	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(51, 52))
 	pubApp := []Appearance{AppearBoth, AppearBody, AppearHead, AppearNone}
 	oraApp := []oracle.Appearance{oracle.AppearBoth, oracle.AppearBody, oracle.AppearHead, oracle.AppearNone}
 	rules := 0
-	for seed := range uint64(numCases(500)) {
+	for seed := range uint64(refCases(t, 500)) {
 		c, err := genTestCase(seed+6000, 8)
 		if err != nil {
 			t.Fatal(err)
@@ -127,9 +133,12 @@ func TestRulesOracle(t *testing.T) {
 			m := Measure(1 + r.IntN(int(LogSupportRatio)-1))
 			opt.Evaluation = &Evaluation{Measure: m, Filter: true, Threshold: []float64{0, 0.1, 0.5, 1, 2}[r.IntN(5)],
 				InvalidateBelowExpected: r.IntN(4) == 0}
+			if r.IntN(5) == 0 {
+				opt.Evaluation.Filter, opt.Evaluation.Threshold = false, 0 // values only
+			}
 			rm := ruleval.Measure(m)
 			p.Eval = &oracle.Measure{Func: oracle.MeasureFunc(rm.Func()), Dir: oracle.Direction(rm.Dir()),
-				Threshold: opt.Evaluation.Threshold, InvalidateBelowExpected: opt.Evaluation.InvalidateBelowExpected}
+				Threshold: refMeasure(t, opt.Evaluation).Threshold, InvalidateBelowExpected: opt.Evaluation.InvalidateBelowExpected}
 		}
 		want, err := db.Rules(p)
 		if err != nil {
@@ -148,6 +157,16 @@ func TestRulesOracle(t *testing.T) {
 		rules += len(got)
 		if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{IgnoreEval: opt.Evaluation == nil}); d != "" {
 			t.Fatalf("seed %d opt %+v:\n%s", seed, opt, d)
+		}
+		if opt.Evaluation != nil {
+			p.Eval = refMeasure(t, opt.Evaluation)
+			ref, err := db.Rules(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{Defects: defects}); d != "" {
+				t.Fatalf("seed %d opt %+v eval %+v: reference measure:\n%s", seed, opt, *opt.Evaluation, d)
+			}
 		}
 		byKey := map[string]oracle.Rule{}
 		for _, w := range want {
@@ -384,6 +403,16 @@ func FuzzMineRules(f *testing.F) {
 		}
 		if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{IgnoreEval: evalMode != 3}); d != "" {
 			t.Fatalf("opt %+v eval %+v:\n%s", opt, opt.Evaluation, d)
+		}
+		if opt.Evaluation != nil {
+			p.Eval = refMeasure(t, opt.Evaluation)
+			ref, err := db.Rules(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{Defects: map[string]int{}}); d != "" {
+				t.Fatalf("opt %+v eval %+v: reference measure:\n%s", opt, *opt.Evaluation, d)
+			}
 		}
 		for _, r := range got {
 			if opt.Evaluation == nil && !math.IsNaN(r.Value) {

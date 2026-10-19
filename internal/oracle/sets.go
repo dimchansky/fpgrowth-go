@@ -55,6 +55,9 @@ type SetParams struct {
 	// Eval, if non-nil, evaluates sets by a rule measure and reports only
 	// sets that pass its threshold (see SetEval).
 	Eval *SetEval
+	// LogRatio, if non-nil, evaluates sets by the item set measure -eb
+	// (see LogRatioEval). At most one of Eval and LogRatio may be set.
+	LogRatio *LogRatioEval
 }
 
 // NewSetParams returns upstream's defaults for target with the absolute
@@ -78,6 +81,12 @@ func (p *SetParams) validate() error {
 	if p.MinSize < 0 || p.MaxSize < 0 {
 		return fmt.Errorf("oracle: invalid size range [%d, %d]", p.MinSize, p.MaxSize)
 	}
+	if p.Eval != nil && p.LogRatio != nil {
+		return fmt.Errorf("oracle: both a rule measure and the log support ratio")
+	}
+	if p.LogRatio != nil {
+		return p.LogRatio.validate()
+	}
 	if p.Eval != nil {
 		return p.Eval.validate()
 	}
@@ -88,16 +97,36 @@ func (p *SetParams) validate() error {
 type Set struct {
 	Items ItemSet
 	Supp  tract.Supp
-	// Eval is the SetEval value, 0 without evaluation.
+	// Eval is the SetEval or LogRatio value, 0 without evaluation.
 	Eval float64
+	// EvalTol is the tolerance of Eval with a reference measure
+	// (Measure.Ref, LogRatio): an implementation's value matches if it is
+	// within EvalTol of Eval. It is 0 otherwise (values must be equal).
+	EvalTol float64
+	// Defect and DefectTol are the reference value's known implementation
+	// defect and its bound (Value.KnownDefect, Value.DefectTol); see
+	// DiffOptions.Defects.
+	Defect    string
+	DefectTol float64
+	// Optional marks a set whose reference value lies within its
+	// tolerance (or known-defect bound) of the threshold, so that an
+	// implementation may report it or not (DiffSets accepts both).
+	Optional bool
 }
 
 // String formats the set as {"a" "b"} supp=3 (plus eval=... if non-zero).
 func (s Set) String() string {
+	str := fmt.Sprintf("%v supp=%d", s.Items, s.Supp)
 	if s.Eval != 0 {
-		return fmt.Sprintf("%v supp=%d eval=%v", s.Items, s.Supp, s.Eval)
+		str += fmt.Sprintf(" eval=%v", s.Eval)
 	}
-	return fmt.Sprintf("%v supp=%d", s.Items, s.Supp)
+	if s.EvalTol != 0 {
+		str += fmt.Sprintf(" ±%.3g", s.EvalTol)
+	}
+	if s.Optional {
+		str += " (optional)"
+	}
+	return str
 }
 
 // Mine returns the item sets selected by p, in canonical order (SortSets).
@@ -110,7 +139,10 @@ func (s Set) String() string {
 //  3. supp(S) <= MaxSupp;
 //  4. MinSize <= |S| <= MaxSize;
 //  5. |S| >= len(Border) or supp(S) >= Border[|S|];
-//  6. Eval is nil or the set's value v satisfies v*dir >= dir*threshold.
+//  6. Eval is nil or the set's value v satisfies v*dir >= dir*threshold;
+//     LogRatio is nil or not v < threshold. With a reference measure or
+//     LogRatio, a set whose value is within its tolerance of the
+//     threshold is reported with Optional set.
 //
 // Filters 3-6 never change which sets are closed, maximal or generators.
 func (db *DB) Mine(p SetParams) ([]Set, error) {
@@ -138,17 +170,24 @@ func (db *DB) Mine(p SetParams) ([]Set, error) {
 		if !db.hasTarget(m, p.Target, smin) {
 			continue
 		}
-		var v float64
-		if evaluator != nil {
+		var val Value
+		dec := accepted
+		switch {
+		case evaluator != nil:
 			var err error
-			if v, err = evaluator.value(m); err != nil {
+			if val, err = evaluator.value(m); err != nil {
 				return nil, err
 			}
-			if !p.Eval.Measure.acceptsSet(v) {
-				continue
-			}
+			dec = p.Eval.Measure.setDecision(val)
+		case p.LogRatio != nil:
+			val = db.logRatio(m)
+			dec = p.LogRatio.decision(val.V, val.Tol)
 		}
-		sets = append(sets, Set{Items: db.set(m), Supp: s, Eval: v})
+		if dec == rejected {
+			continue
+		}
+		sets = append(sets, Set{Items: db.set(m), Supp: s, Eval: val.V, EvalTol: val.Tol,
+			Defect: val.KnownDefect, DefectTol: val.DefectTol, Optional: dec == boundary})
 	}
 	SortSets(sets)
 	return sets, nil

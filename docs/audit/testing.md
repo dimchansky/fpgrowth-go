@@ -155,6 +155,12 @@ primary reproduction signal where available.
 - Resolution: state the limitation in `internal/oracle/doc.go` and README "Testing";
   optionally give the oracle independent textbook implementations of a handful of
   measures (confidence, lift, conviction, Kulczynski, chi²) to cross-check `ruleval`.
+- Status note (2026-10-19, issue #15): resolved. `internal/oracle` has an independent
+  reference for all 25 rule measures and `-eb` (`RefMeasures`, `LogRatioValue`), and
+  the oracle comparisons in the root package, `internal/istree` and `internal/fpg`
+  use it next to the implementation's functions. The `reKulc` mutant above and
+  mutants in chi², information and FisherSupport fail those tests with the C goldens
+  skipped (commands and output in the pull request for #15).
 
 ### TST-4 — Difftest case counts overstate the effective comparisons
 - Severity: **Low**. Status: **confirmed**. Blocks: no.
