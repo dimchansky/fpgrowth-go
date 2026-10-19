@@ -86,13 +86,14 @@ records and the total weight. Negative weights and an overflowing total
 weight are errors (deviations M6, M7).
 
 **Thresholds.** The minimum support is converted to an absolute support
-with upstream's formula, evaluated exactly (`internal/thresh`, the
-threshold contract of `docs/differences.md`): a percentage `s` is the
-fraction t = s/100, x = t·W exactly, and the minimum is
-`max(ceil(x · (1 − 2⁻⁵²)), floor(x))`, a maximum
-`min(floor(x · (1 + 2⁻⁵²)), ceil(x))`. The tolerance absorbs the
-representation error of decimal fractions and is never as large as one
-unit, so an integer x is exact at every weight. The library's
+with upstream's arithmetic (`internal/thresh`, the threshold contract of
+`docs/differences.md`): a percentage `s` is the fraction t = s/100, and
+while x = t·W < 2^52 the minimum is `ceil(t · W · (1 − 2⁻⁵²))` in double
+arithmetic, a maximum `floor(t · W · (1 + 2⁻⁵²))` (for x <= 2^52). The
+tolerance absorbs the representation error of decimal fractions. From
+2^52 on it would exceed one unit of support, so the bound is the exact
+`floor(x)` (maximum: `ceil(x)` above 2^52); both branches together are
+monotone in t and W. The library's
 `Fraction(f)` applies the same conversion to `f` directly; the library's
 `Count(n)` is passed to the miner as an exact integer, so absolute
 thresholds are exact beyond 2^53, where the CLI's float notation `-s-n`
@@ -100,8 +101,8 @@ is not. The effective minimum support is at least 1 (deviation
 M2). For association
 rules, where the minimum support applies to the rule body, the item set
 threshold is lowered to the smallest support that meets the confidence for
-the minimum body support (the same conversion with the body support in
-place of W), because a rule `B -> h` with a frequent body and enough
+the minimum body support (upstream's `ceil(smin · conf · (1 − 2⁻⁵²))`
+below 2^52, `floor(conf · smin)` above), because a rule `B -> h` with a frequent body and enough
 confidence can have a body ∪ head support down to that value; with
 `OriginalSupport` (`-o`) it is not lowered.
 

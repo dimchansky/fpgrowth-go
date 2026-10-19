@@ -262,11 +262,11 @@ generic methods are not needed for this surface.
    `Fraction(K/100)` equals CLI `-sK` exactly. Confidence and evaluation
    thresholds use a percentage `p` with `p/100 == f` when one exists,
    otherwise the neighbor on the permissive side.
-   Note (2026-10-19, issue #17): the conversion is now upstream's formula
-   evaluated exactly with its tolerance capped below one unit (the
-   threshold contract, `docs/differences.md` N2, `internal/thresh`), and
-   `MinConfidence` is used as the fraction itself under the same
-   contract; only the evaluation threshold still goes through `p`.
+   Note (2026-10-19, issue #17): the conversions follow the threshold
+   contract (`docs/differences.md` N2, `internal/thresh`): upstream's
+   formula as above while threshold × weight < 2^52, the exact bound with
+   the tolerance capped below one unit from 2^52 on. `MinConfidence`
+   still goes through `p` and then follows the same contract.
 2. `CSVFormat` zero value is usable: `WeightColumn` is 1-based (0 = none,
    negative counts from the end), `KeepEmptyFields` (default false),
    `LazyQuotes`, a UTF-8 BOM is skipped, blank lines are not transactions.

@@ -248,16 +248,18 @@ type Support struct {
 func Count(n int64) Support { return Support{kind: supportCount, count: n} }
 
 // Fraction returns a support of f times the total transaction weight W,
-// 0 < f <= 1, with f taken at its exact float64 value. Let x = f·W
-// (exact) and ε = 2^-52. As a minimum, a support s qualifies iff
-// s >= x·(1-ε) and s > x-1: the absolute minimum is ⌈x·(1-ε)⌉, or ⌊x⌋
-// if that is larger. As a maximum, s qualifies iff s <= x·(1+ε) and
-// s < x+1. This is upstream's tolerance for the representation error of
-// decimal fractions, evaluated exactly and never as large as one unit of
-// support: Fraction(0.3) of W = 10 is exactly 3, and so is
-// Fraction(0.30000000000000004); Fraction(1) is exactly W and
-// Fraction(0.5) of an even W exactly W/2 for every W. For x below 2^52
-// the result is exactly ⌈x·(1-ε)⌉ (minimum) or ⌊x·(1+ε)⌋ (maximum).
+// 0 < f <= 1. Let x = f·W, exactly, with f's float64 value, and
+// ε = 2^-52. While x < 2^52 (for a maximum: x <= 2^52) the threshold is
+// upstream's double formula, exactly as in v0.1.0 and in the command line
+// program: as a minimum ceil(f·W·(1-ε)), as a maximum floor(f·W·(1+ε)),
+// every product rounded to float64. Its tolerance absorbs the
+// representation error of decimal fractions, so Fraction(0.3) of W = 10
+// is exactly 3. From 2^52 on that tolerance would exceed one unit of
+// support (it used to admit sets just outside the bound), so the formula
+// is evaluated exactly with the tolerance capped below one unit: the
+// minimum is ⌊x⌋ and the maximum ⌈x⌉. Fraction(1) is therefore exactly W
+// from 2^52 on (below, the minimum keeps upstream's ceil(W·(1-ε)), which
+// is W too), and a larger fraction never gives a smaller bound.
 //
 // Fraction(float64(k)/100) for an integer k gives exactly the thresholds
 // of the command line options -sk and -Sk, for every W; for a decimal p
@@ -302,18 +304,21 @@ func (s Support) validate(field string) error {
 
 // checkRange rejects a maximum support below the minimum one when both
 // are of the same kind; a Count minimum below 1 acts as 1. Fractions are
-// rejected only if the range is empty for every total weight W: a
-// minimum f admits only supports s >= f·W·(1-ε) and a maximum g only
-// s <= g·W·(1+ε) (see Fraction), so the range is empty for every W if
-// g·(1+ε) < f·(1-ε) exactly. The test below implies that: each of the two
-// float64 products is rounded by at most a relative 2^-53, so
-// RN(g·(1+4ε)) < RN(f·(1-4ε)) gives g·(1+4ε)·(1-2^-53) < f·(1-4ε)·(1+2^-53),
-// hence g·(1+ε) < f·(1-ε). It therefore never rejects a range that can
-// be non-empty; it may accept empty ones within a few ε, which then
-// report nothing. Fraction(0.30000000000000004) to Fraction(0.3) is valid
-// (both are 3 of W = 10). Mixed kinds (a Count and a Fraction) can only
-// be compared once the total weight is known and are not checked: such a
-// range may report nothing.
+// rejected only if the range is empty for every total weight W. In both
+// branches of the threshold contract (see Fraction) a minimum f admits
+// only supports s >= f·W·(1-ε)·(1-3u) and a maximum g only
+// s <= g·W·(1+ε)·(1+3u), with u = 2^-53 for the three roundings of the
+// double branch (the exact branch is tighter). The test below gives
+// g·(1+4ε)·(1-u) < f·(1-4ε)·(1+u), and to first order
+// (1-4ε)(1+u)/((1+4ε)(1-u)) = 1-7ε < 1-5ε = (1-ε)(1-3u)/((1+ε)(1+3u))
+// (ε = 2u; the second-order terms are below 2^-100), so
+// g·(1+ε)·(1+3u) < f·(1-ε)·(1-3u): the range is empty for every W. The
+// test therefore never rejects a range that can be non-empty; it may
+// accept empty ones within a few ε, which then report nothing.
+// Fraction(0.30000000000000004) to Fraction(0.3) is valid (both are 3 of
+// W = 10). Mixed kinds (a Count and a Fraction) can only be compared once
+// the total weight is known and are not checked: such a range may report
+// nothing.
 func checkRange(minSupp, maxSupp Support) error {
 	switch {
 	case minSupp.kind == supportCount && maxSupp.kind == supportCount && maxSupp.count < max(minSupp.count, 1):

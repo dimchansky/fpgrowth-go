@@ -146,6 +146,9 @@ func TestFracThresholds(t *testing.T) {
 		{"1 of MaxInt64", 1, math.MaxInt64, math.MaxInt64, math.MaxInt64},
 		{"0.1 of 10·2^59", 0.1, 10 << 59, 1<<59 + 32, 1<<59 + 32},
 		{"0.25 of 10", 0.25, 10, 3, 2},
+		{"1 of 2^52-1: upstream's formula", 1, 1<<52 - 1, 1<<52 - 2, 1 << 52},
+		{"1 of 2^52: exact minimum, upstream's maximum", 1, 1 << 52, 1 << 52, 1<<52 + 1},
+		{"1/8 of 2^55-1: upstream's formula", 0.125, 1<<55 - 1, 1<<52 - 1, 1<<52 + 1},
 		{"nextafter(0.3) of 10", math.Nextafter(0.3, 1), 10, 3, 3},
 		{"2 of MaxInt64 saturates", 2, math.MaxInt64, math.MaxInt64, math.MaxInt64},
 		{"zero", 0, 10, 0, 0},
@@ -168,13 +171,16 @@ func TestFracThresholds(t *testing.T) {
 			if !MeetsMax(hi, f, n) || MeetsMax(hi+1, f, n) {
 				t.Errorf("FracMaxSupp(%v, %d) = %d is not the largest accepted support", f, n, hi)
 			}
+			if c := ConfMinSupp(f, n); f <= 1 && (!MeetsConf(c, f, n) || (c > 0 && MeetsConf(c-1, f, n))) {
+				t.Errorf("ConfMinSupp(%v, %d) = %d is not the smallest accepted support", f, n, c)
+			}
 		}
 	}
 	if !MeetsMin(0, 0, 5) || MeetsMin(5, math.Inf(1), 5) || MeetsMax(1, 0, 5) || !MeetsMax(5, math.Inf(1), 5) {
 		t.Error("MeetsMin/MeetsMax at 0 and +Inf")
 	}
 	// -c100 at the ALG-2 reproduction: confidence < 1 is rejected
-	if RuleSetMinSupp(4611686018427388000, 1) != 4611686018427388000 || MeetsMin(4611686018427387000, 1, 4611686018427388000) {
+	if RuleSetMinSupp(4611686018427388000, 1) != 4611686018427388000 || MeetsConf(4611686018427387000, 1, 4611686018427388000) {
 		t.Error("confidence 1 is not exact")
 	}
 }

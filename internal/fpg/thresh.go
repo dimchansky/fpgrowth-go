@@ -14,9 +14,9 @@ import (
 //
 // Deviation from upstream (differences.md N2, issue #17): fpg_data
 // computes ceil((smin/100)*w*(1-DBL_EPSILON)) in double arithmetic, whose
-// relative tolerance exceeds one unit of support beyond about 2^52 and
-// whose rounding can cross an integer before that. Here the same formula
-// is evaluated exactly and its tolerance is capped below one unit.
+// relative tolerance exceeds one unit of support beyond about 2^52. Here
+// that formula is kept where x = smin/100·w < 2^52 (identical results)
+// and evaluated exactly, with the tolerance capped below one unit, above.
 func minSupp(smin float64, w tract.Supp) tract.Supp {
 	if smin < 0 {
 		return suppOf(math.Ceil(-smin))
@@ -70,11 +70,11 @@ func computeThresholds(c *Config, w tract.Supp) thresholds {
 
 // derive completes the thresholds from the absolute minimum and maximum
 // support. For rules with the body support definition, the minimum set
-// support is the minimum ConfFrac of the minimum body support (fpg_data's
-// smin *= conf*(1-DBL_EPSILON), here under the exact threshold contract):
-// a rule's support must meet the minimum ConfFrac of its body support,
-// which is nondecreasing in the body support, so this is the smallest
-// support any rule can have.
+// support is the smallest support that meets the confidence ConfFrac for
+// the minimum body support (fpg_data's ceil(smin*(conf*(1-DBL_EPSILON))),
+// under the threshold contract: thresh.Frac.RuleSetMin). That minimum is
+// nondecreasing in the body support, so no rule can have a smaller
+// support.
 //
 // Deviation from upstream (fpgrowth-core.md B2): fpg_data does not clamp,
 // so -s0 gives a minimum support of 0 and the miners dereference empty
@@ -85,7 +85,7 @@ func derive(c *Config, minimum, maximum tract.Supp) thresholds {
 	t.body = max(minimum, 1)
 	t.supp = t.body
 	if c.Target == report.TargetRules && c.Mode&ModeOrigSupp == 0 {
-		t.supp = min(max(tract.Supp(thresh.New(c.ConfFrac).Min(int64(t.body))), 1), t.body)
+		t.supp = min(max(tract.Supp(thresh.New(c.ConfFrac).RuleSetMin(int64(t.body))), 1), t.body)
 	}
 	t.smax = maximum
 	return t

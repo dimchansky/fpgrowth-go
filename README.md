@@ -168,10 +168,10 @@ above). See
 
 **Thresholds**: minimum and maximum support, absolute (`Count`, exact over
 the whole `int64` range, bounds inclusive) or relative to the total
-transaction weight (`Fraction`, converted with upstream's tolerance
-evaluated exactly and below one unit, so `Fraction(1)` is the total
-weight and `Fraction(k/100)` equals `-sk` at every weight); minimum and
-maximum size;
+transaction weight (`Fraction`, converted with upstream's formula, and
+exactly once threshold × weight reaches 2^52, so `Fraction(1)` is the
+total weight and `Fraction(k/100)` equals `-sk` at every weight); minimum
+and maximum size;
 the empty set (`IncludeEmpty`, `-m0`); a per-size support border
 (`Border`, `-F`); minimum rule confidence (`MinConfidence`, `-c`).
 
@@ -1159,9 +1159,10 @@ plus two upstream crashes that it avoids and five latent defects
   <= 2^10 (beyond, an exact form is used), the information, the G-test and the Fisher
   tests above a total weight of 170 differ in the last bits on ordinary
   data, and all are accurate for weights up to 2^63. Relative support and
-  confidence thresholds use upstream's tolerance evaluated exactly and
-  below one unit of support (N2; at weights above about 2^52 upstream
-  admitted results outside the bound). The numeric limit for very large
+  confidence thresholds keep upstream's double formula while threshold ×
+  weight is below 2^52 (no change there) and are exact, with the
+  tolerance below one unit of support, above it (N2; upstream admitted
+  results outside the bound there). The numeric limit for very large
   weights is N3 (see [Limitations](#limitations)).
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
@@ -1256,8 +1257,9 @@ boundary margins, random weighted tables up to 2^24 and a grid of large
 tables up to 2^63; the tolerances are the documented error bounds of the
 measures, so these comparisons check the accuracy claims directly. The
 oracle also evaluates the support and confidence thresholds
-independently with exact rationals (`docs/differences.md` N2), and the
-comparisons include databases with total weights up to 2^62.
+independently (`docs/differences.md` N2: upstream's formulas below 2^52,
+exact rationals above), and the comparisons include databases with total
+weights up to 2^62.
 `FPG_REF_CASES=<k>` runs the
 root package's evaluated oracle comparisons on k random datasets each. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
 runs the extended sweep (all tables up to a total weight of 60, k random

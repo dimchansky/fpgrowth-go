@@ -1,35 +1,72 @@
 // Package thresh converts relative thresholds (fractions of a reference
-// support) to exact absolute supports. It implements the threshold
-// contract of docs/differences.md (N2, issue #17) for minimum and maximum
-// supports, the per-size border and the rule confidence.
+// support) to absolute supports. It implements the threshold contract of
+// docs/differences.md (N2, issue #17) for minimum and maximum supports,
+// the per-size border and the rule confidence.
 //
 // # Contract
 //
-// A threshold is a float64 t >= 0, taken at its exact binary value, and N
-// is a reference support (the total transaction weight for supports, the
-// body support for confidence). Let x = t·N be the exact rational
-// product and ε = 2^-52 (C's DBL_EPSILON). An integer support s
+// A threshold is a float64 t >= 0 and N a reference support (the total
+// transaction weight for supports, the body support for confidence). Let
+// x = t·N be the exact rational product of t's binary value and N, and
+// ε = 2^-52 (C's DBL_EPSILON). The contract is a hybrid:
 //
-//   - meets the minimum t iff s >= x·(1−ε) and s > x−1, so the minimum
-//     support is max(⌈x·(1−ε)⌉, ⌊x⌋);
-//   - meets the maximum t iff s <= x·(1+ε) and s < x+1, so the maximum
-//     support is min(⌊x·(1+ε)⌋, ⌈x⌉).
+//   - Below the switch (x < 2^52 for minima and confidence, x <= 2^52 for
+//     maxima) the result is upstream's double formula, bit for bit the
+//     decision of v0.1.0 and of the C program: a minimum support
+//     ⌈RN(RN(t·RN(N))·(1−ε))⌉ (fpg_data, setbdr), a maximum
+//     ⌊RN(RN(t·RN(N))·(1+ε))⌋ (fpg_report), and a rule meets the
+//     confidence t iff RN(s) >= RN(RN(N)·RN(t·(1−ε))) (istree), where RN
+//     rounds to float64 in that evaluation order.
+//   - At and above the switch the formula is evaluated exactly with its
+//     tolerance capped below one unit of support: s meets a minimum (or
+//     the confidence) iff s >= x·(1−ε) and s > x−1, i.e. the minimum is
+//     max(⌈x·(1−ε)⌉, ⌊x⌋) = ⌊x⌋; s meets a maximum iff s <= x·(1+ε) and
+//     s < x+1, i.e. the maximum is min(⌊x·(1+ε)⌋, ⌈x⌉) = ⌈x⌉.
 //
-// This is upstream's relative tolerance (fpg_data, fpg_report, istree's
-// confidence test), evaluated exactly instead of in rounded double
-// arithmetic, and capped below one unit of support. For x < 2^52 the cap
-// never applies (⌊x⌋ > ⌈x·(1−ε)⌉ needs x·ε >= 1), so the result is
-// exactly ⌈x·(1−ε)⌉ (or ⌊x·(1+ε)⌋). For an integer x the result is x
-// itself, at every N: t = 1 means exactly N.
+// The branch is decided by the exact x, not by a rounded value. Above the
+// switch upstream's relative tolerance would exceed one unit (audit
+// ALG-2); below it the double formula is kept unchanged so that no
+// result at ordinary weights changes.
+//
+// # Monotonicity across the switch
+//
+// Each branch is nondecreasing in t and in N (RN, products, floor and
+// ceil are monotone). Across the switch:
+//
+//   - minimum: for x < 2^52, t·RN(N) <= x·(1+2^-53) < 2^52+1/2, so
+//     RN(t·RN(N)) <= 2^52 and the double minimum is at most
+//     ⌈RN(2^52·(1−ε))⌉ = 2^52−1, while the exact minimum for x >= 2^52 is
+//     ⌊x⌋ >= 2^52;
+//   - maximum: for x <= 2^52 likewise RN(t·RN(N)) <= 2^52 and the double
+//     maximum is at most ⌊2^52·(1+ε)⌋ = 2^52+1, while the exact maximum
+//     for x > 2^52 is ⌈x⌉ >= 2^52+1 (switching at x >= 2^52 would break
+//     this: for t = 1/8 the double maximum of N = 2^55−1 is 2^52+1, as
+//     RN(N) = 2^55, while the exact one of N = 2^55 would be 2^52);
+//   - confidence: for x < 2^52, RN(N)·RN(t·(1−ε)) <= x·(1−ε)·(1+2^-53)^2
+//     < 2^52, so the double minimum ⌈RN(...)⌉ is at most 2^52, the exact
+//     minimum for x >= 2^52 at least 2^52.
+//
+// So every minimum, maximum and confidence minimum is nondecreasing in t
+// and in N over the whole range: a larger threshold never admits a
+// support that a smaller one rejects, and no rule with a body support of
+// at least bodyMin has a support below ConfMin(bodyMin) >=
+// RuleSetMin(bodyMin), the rule set minimum. For the same t, every
+// support meets the minimum or the maximum (Min(N) <= Max(N)+1) in each
+// branch, and at x = 2^52 the exact minimum 2^52 is at most the double
+// maximum (>= 2^52).
 //
 // Results saturate at math.MaxInt64. t <= 0 (also −0) gives 0, +Inf gives
-// math.MaxInt64; NaN panics (callers validate it).
+// math.MaxInt64 (0 for N = 0, where C's Inf·0 is NaN); NaN panics (callers
+// validate it).
 package thresh
 
 import (
 	"math"
 	"math/bits"
 )
+
+// eps is C's DBL_EPSILON, the relative tolerance of upstream's formulas.
+const eps = 0x1p-52
 
 // kind classifies a Frac.
 type kind uint8
@@ -40,18 +77,18 @@ const (
 	kindInf // t = +Inf
 )
 
-// Frac is a relative threshold t >= 0 in an exact form: t = m·2^-k with
-// an odd m < 2^53 (k may be negative). The zero value is t = 0.
+// Frac is a relative threshold t >= 0: its float64 value for upstream's
+// double formulas and an exact form t = m·2^-k (odd m < 2^53, k may be
+// negative) for the exact branch. The zero value is t = 0.
 type Frac struct {
 	kind kind
 	m    uint64
 	k    int
-	// lo and hi are t·(1∓2^-50), rounded, for the fast path of Meets
-	// where it applies (2^-60 <= t <= 1, where t·n does not exceed n, so
-	// Min does not saturate); otherwise −Inf and +Inf, which make both
-	// fast comparisons false (also for n = 0: 0·Inf is NaN). For t = 0
-	// both are 0 (every s >= 0 meets it).
-	lo, hi float64
+	t    float64 // t itself (0 for t <= 0)
+	adj  float64 // RN(t·(1−ε)), istree's confidence factor
+	// small reports t <= 1 (and t finite): then n < 2^52 implies
+	// x = t·n < 2^52, which Quick uses without the exact comparison.
+	small bool
 }
 
 // New returns the threshold t. It panics if t is NaN.
@@ -60,19 +97,15 @@ func New(t float64) Frac {
 	case math.IsNaN(t):
 		panic("thresh: NaN threshold")
 	case !(t > 0): // also −0 and negative values
-		return Frac{}
+		return Frac{small: true}
 	case math.IsInf(t, 1):
-		return Frac{kind: kindInf, lo: math.Inf(-1), hi: math.Inf(1)}
+		return Frac{kind: kindInf, t: t, adj: t}
 	}
 	fr, e := math.Frexp(t) // t = fr·2^e, fr in [0.5, 1), also for subnormals
 	m := uint64(fr * (1 << 53))
 	k := 53 - e
 	tz := bits.TrailingZeros64(m)
-	f := Frac{kind: kindFinite, m: m >> tz, k: k - tz, lo: math.Inf(-1), hi: math.Inf(1)}
-	if t >= 0x1p-60 && t <= 1 {
-		f.lo, f.hi = t*(1-0x1p-50), t*(1+0x1p-50)
-	}
-	return f
+	return Frac{kind: kindFinite, m: m >> tz, k: k - tz, t: t, adj: t * (1 - eps), small: t <= 1}
 }
 
 // IsZero reports whether the threshold is 0 (every support meets it as a
@@ -152,17 +185,134 @@ func (f Frac) parts(n int64) (q int64, r, x u128, k uint, integer bool) {
 	return q, r, x, k, r.isZero()
 }
 
-// Min returns the minimum support for the reference support n >= 0:
-// max(⌈t·n·(1−ε)⌉, ⌊t·n⌋), saturating at math.MaxInt64. A negative n
-// counts as 0.
+// cmpSwitch returns the sign of x − 2^52 for x = t·n (n >= 0), exactly.
+func (f Frac) cmpSwitch(n int64) int {
+	switch {
+	case f.kind == kindZero || n <= 0:
+		return -1
+	case f.kind == kindInf:
+		return 1
+	}
+	hi, lo := bits.Mul64(f.m, uint64(n)) // X = m·n; x = X·2^-k
+	x := u128{hi, lo}
+	e := 52 + f.k // x < 2^52 iff X < 2^e
+	switch {
+	case e < 0:
+		return 1 // X >= 1 > 2^e
+	case e >= 128:
+		return -1 // X < 2^116
+	}
+	var p u128 // 2^e
+	if e >= 64 {
+		p.hi = 1 << (e - 64)
+	} else {
+		p.lo = 1 << e
+	}
+	switch {
+	case x.less(p):
+		return -1
+	case p.less(x):
+		return 1
+	}
+	return 0
+}
+
+// satFloat converts an integral float64 to int64: 0 for values <= 0 and
+// NaN, math.MaxInt64 from 2^63 on.
+func satFloat(v float64) int64 {
+	switch {
+	case !(v > 0):
+		return 0
+	case v >= 0x1p63:
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
+// Min returns the minimum support for the reference support n >= 0 (a
+// negative n counts as 0): upstream's ⌈t·n·(1−ε)⌉ in double arithmetic
+// for x = t·n < 2^52, the exact ⌊x⌋ = max(⌈x·(1−ε)⌉, ⌊x⌋) from 2^52 on.
 func (f Frac) Min(n int64) int64 {
+	n = max(n, 0)
+	if f.cmpSwitch(n) < 0 {
+		// fpg_data: ceil((smin/100)*w*(1-DBL_EPSILON)), left to right
+		return satFloat(math.Ceil(f.t * float64(n) * (1 - eps)))
+	}
+	return f.exactMin(n)
+}
+
+// Max returns the maximum support for the reference support n >= 0 (a
+// negative n counts as 0): upstream's ⌊t·n·(1+ε)⌋ in double arithmetic
+// for x = t·n <= 2^52, the exact ⌈x⌉ = min(⌊x·(1+ε)⌋, ⌈x⌉) above.
+func (f Frac) Max(n int64) int64 {
+	n = max(n, 0)
+	if f.cmpSwitch(n) <= 0 {
+		// fpg_report: floor((smax/100)*w*(1+DBL_EPSILON))
+		return satFloat(math.Floor(f.t * float64(n) * (1 + eps)))
+	}
+	return f.exactMax(n)
+}
+
+// ConfMin returns the smallest support that meets the confidence t for
+// the body support n >= 0 (see Meets): ⌈RN(RN(n)·RN(t·(1−ε)))⌉ for
+// x = t·n < 2^52, the exact ⌊x⌋ from 2^52 on. It is nondecreasing in n.
+func (f Frac) ConfMin(n int64) int64 {
+	n = max(n, 0)
+	if f.cmpSwitch(n) < 0 {
+		// below 2^52 every integer is a float64, so the smallest s with
+		// RN(s) >= z is ⌈z⌉
+		return satFloat(math.Ceil(float64(n) * f.adj))
+	}
+	return f.exactMin(n)
+}
+
+// RuleSetMin returns the rule set minimum for the minimum body support
+// n >= 0: like ConfMin, but in the double branch with n rounded toward
+// zero to a float64 (fpg_data multiplies the double smin, which is n
+// itself below 2^53; v0.1.0's library rounded the exact count down). It is
+// at most ConfMin(n') for every n' >= n, so no rule with a body support of
+// at least n has a smaller support.
+func (f Frac) RuleSetMin(n int64) int64 {
+	n = max(n, 0)
+	if f.cmpSwitch(n) < 0 {
+		v := float64(n)
+		if v >= 0x1p63 || int64(v) > n {
+			v = math.Nextafter(v, 0)
+		}
+		return satFloat(math.Ceil(v * f.adj))
+	}
+	return f.exactMin(n)
+}
+
+// Meets reports whether a rule with support s and body support n >= 0
+// meets the confidence t: for x = t·n < 2^52 upstream's test
+// !(float64(s) < float64(n)·RN(t·(1−ε))) (istree), from 2^52 on
+// s >= ⌊x⌋ = ConfMin(n). Equivalently s >= ConfMin(n).
+func (f *Frac) Meets(s, n int64) bool {
+	if f.cmpSwitch(n) < 0 {
+		return float64(s) >= float64(n)*f.adj
+	}
+	return s >= f.exactMin(n)
+}
+
+// Quick is the inlinable part of Meets for the per-rule test: for t <= 1
+// and n < 2^52, x = t·n < 2^52, so the result is upstream's double test
+// itself and sure is true; otherwise sure is false and Meets decides.
+func (f *Frac) Quick(s, n int64) (meets, sure bool) {
+	if f.small && n < 1<<52 {
+		return float64(s) >= float64(n)*f.adj, true
+	}
+	return false, false
+}
+
+// exactMin returns max(⌈x·(1−ε)⌉, ⌊x⌋) for x = t·n, saturating.
+func (f Frac) exactMin(n int64) int64 {
 	switch f.kind {
 	case kindZero:
 		return 0
 	case kindInf:
 		return math.MaxInt64
 	}
-	n = max(n, 0)
 	q, r, x, _, integer := f.parts(n)
 	// ⌊x⌋ >= x·(1−ε) iff (x−⌊x⌋)·2^52 <= x iff r·2^52 <= X iff
 	// r <= ⌊X/2^52⌋ (r is an integer).
@@ -172,17 +322,14 @@ func (f Frac) Min(n int64) int64 {
 	return inc(q)
 }
 
-// Max returns the maximum support for the reference support n >= 0:
-// min(⌊t·n·(1+ε)⌋, ⌈t·n⌉), saturating at math.MaxInt64. A negative n
-// counts as 0.
-func (f Frac) Max(n int64) int64 {
+// exactMax returns min(⌊x·(1+ε)⌋, ⌈x⌉) for x = t·n, saturating.
+func (f Frac) exactMax(n int64) int64 {
 	switch f.kind {
 	case kindZero:
 		return 0
 	case kindInf:
 		return math.MaxInt64
 	}
-	n = max(n, 0)
 	q, r, x, k, integer := f.parts(n)
 	if integer || k >= 128 {
 		// k >= 128: x < 2^-12, and ⌈x⌉ = 1 > x·(1+ε)
@@ -202,35 +349,4 @@ func (f Frac) Max(n int64) int64 {
 		return inc(q)
 	}
 	return q
-}
-
-// Meets reports whether the support s meets the minimum t of the
-// reference support n >= 0, i.e. s >= f.Min(n), for 0 <= s <= n. It is
-// the per-rule confidence test, so it first decides in float64 and falls
-// back to Min only near the boundary.
-//
-// Fast path: a = float64(s) and b = float64(n)·hi (or ·lo) carry at most
-// four roundings of a relative 2^-53 each (s, n, t·(1±2^-50) and the
-// product); with x = t·n, a >= b implies s >= x·(1+2^-50)·(1−2^-51) > x,
-// which meets the minimum, and a < float64(n)·lo implies
-// s < x·(1−2^-50)·(1+2^-51) < x·(1−2^-52), which does not. All values are
-// normal floats for 2^-60 <= t <= 1 and n >= 1 (n = 0 gives x = 0, met
-// by every s >= 0), and x <= n, so Min does not saturate; other t use
-// Min.
-func (f *Frac) Meets(s, n int64) bool {
-	if meets, sure := f.Quick(s, n); sure {
-		return meets
-	}
-	return s >= f.Min(n)
-}
-
-// Quick is the float64 part of Meets: if sure, meets is the result of
-// Meets(s, n); otherwise s is near the boundary and only Min decides. It
-// is small enough to be inlined into the per-rule confidence test.
-func (f *Frac) Quick(s, n int64) (meets, sure bool) {
-	a, b := float64(s), float64(n)
-	if a >= b*f.hi {
-		return true, true
-	}
-	return false, a < b*f.lo
 }

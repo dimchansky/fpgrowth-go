@@ -238,8 +238,8 @@ func (r *runner) mine() *cliError {
 // borderSupp is setbdr's conversion of a -F value to an absolute support:
 // ceil(-v) for v < 0 (saturating; upstream: undefined beyond int), else
 // the minimum of the fraction v/100 of w under the threshold contract of
-// package thresh (upstream: ceil(v/100*w*(1-DBL_EPSILON)) in double
-// arithmetic; deviation N2 in docs/differences.md).
+// package thresh: upstream's ceil(v/100*w*(1-DBL_EPSILON)) while
+// v/100·w < 2^52, exact above (deviation N2 in docs/differences.md).
 func borderSupp(v float64, w tract.Supp) tract.Supp {
 	if v >= 0 { // also -0, which upstream treats as a percentage of 0
 		return tract.Supp(thresh.New(v / 100.0).Min(int64(w)))

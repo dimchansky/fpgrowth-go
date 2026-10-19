@@ -319,7 +319,7 @@ func TestALG2HugeWeights(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want, err := db.Rules(oracle.NewRuleParams(oracle.FracMinSupp(f, total), c))
+		want, err := db.Rules(oracle.NewRuleParams(oracle.FracMinSupp(f, total), percentOf(c, +1)/100))
 		if err != nil {
 			t.Fatal(err)
 		}

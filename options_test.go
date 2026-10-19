@@ -6,13 +6,13 @@ import (
 	"math"
 	"math/big"
 	"math/rand/v2"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -383,89 +383,137 @@ func TestStringers(t *testing.T) {
 	}
 }
 
-// TestLibraryThresholdsUnchanged compares the threshold contract (issue
-// #17, N2) with the library's former double arithmetic at ordinary
-// weights (W < 2^31): Fraction converted with ceil(f·W·(1-ε)) and
-// floor(f·W·(1+ε)), MinConfidence mapped through percentOf and tested as
-// !(supp < body·(p/100·(1-ε))). Short decimals and fractions k/d with
-// d <= 1000 cannot change there (the double rounding would have to cross
-// an integer within about 4.5·2^-53·x of x, which needs x >= about
-// 2^53/(4.5·d)). Fractions with many digits (random values, one ulp off a
-// decimal) can change in rare cases, and then the new result is the exact
-// one for the shortest decimal of f (what fmt prints): such a change
-// corrects the double rounding.
+// adversarialFraction draws a library fraction from the classes where an
+// exact evaluation would differ from v0.1.0's double rounding (review of
+// PR #30, C1): 1-a for 2-dp and 3-dp a (1-0.8 = 0.19999999999999996),
+// running sums of 0.01 and 0.001 (21·0.01 = 0.21000000000000005), values
+// one or two ulps off a decimal, products, k/d and random values.
+func adversarialFraction(r *rand.Rand) float64 {
+	switch r.IntN(7) {
+	case 0:
+		return 1 - float64(r.IntN(100))/100
+	case 1:
+		return 1 - float64(r.IntN(1000))/1000
+	case 2:
+		step := []float64{0.01, 0.001, 0.1}[r.IntN(3)]
+		f := 0.0
+		for range 1 + r.IntN(int(min(1/step, 999))) {
+			f += step
+		}
+		return min(f, 1)
+	case 3:
+		f := float64(1+r.IntN(100)) / 100
+		for range 1 + r.IntN(2) {
+			f = math.Nextafter(f, float64(r.IntN(2)))
+		}
+		return f
+	case 4:
+		return float64(1+r.IntN(100)) / 100 * float64(1+r.IntN(100)) / 100
+	case 5:
+		d := 1 + r.IntN(1000)
+		return float64(1+r.IntN(d)) / float64(d)
+	}
+	return r.Float64()
+}
+
+// TestLibraryThresholdsUnchanged checks that the threshold contract
+// (issue #17, N2) keeps every decision of v0.1.0 while x = f·W (or
+// MinConfidence·body) is below the switch at 2^52: Fraction minima and
+// maxima, converted there with ceil(f·W·(1-ε)) and floor(f·W·(1+ε)) in
+// double arithmetic, and MinConfidence, mapped through percentOf and
+// tested as !(supp < body·(p/100·(1-ε))), over adversarial fractions and
+// weights (multiples of 100 and 1000 make the intended threshold an
+// integer). Two cases of the review are pinned end to end.
 func TestLibraryThresholdsUnchanged(t *testing.T) {
 	t.Parallel()
 	const eps = 0x1p-52
 	oldMin := func(f float64, w int64) int64 { return int64(math.Ceil(f * float64(w) * (1 - eps))) }
 	oldMax := func(f float64, w int64) int64 { return int64(math.Floor(f * float64(w) * (1 + eps))) }
 	oldConf := func(supp, body int64, f float64) bool {
-		c := percentOf(f, +1) / 100
+		c := percentOf(f, +1) / 100 // v0.1.0: cfg.Conf = percentOf(f, +1); MinConf: Conf/100
 		return !(float64(supp) < float64(body)*(c*(1-eps)))
 	}
-	newConf := func(supp, body int64, f float64) bool { return supp >= Fraction(f).minAbs(body) }
-	// decimal returns ⌈dec·w⌉ and ⌊dec·w⌋ for the shortest decimal dec of f.
-	decimal := func(f float64, w int64) (lo, hi int64) {
-		d, _ := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
-		x := new(big.Rat).Mul(d, new(big.Rat).SetInt64(w))
-		q, m := new(big.Int).QuoRem(x.Num(), x.Denom(), new(big.Int))
-		lo, hi = q.Int64(), q.Int64()
-		if m.Sign() > 0 {
-			lo++
-		}
-		return lo, hi
+	below := func(f float64, w int64, orEqual bool) bool {
+		x := new(big.Rat).Mul(new(big.Rat).SetFloat64(f), new(big.Rat).SetInt64(w))
+		c := x.Cmp(new(big.Rat).SetInt64(1 << 52))
+		return c < 0 || orEqual && c == 0
 	}
 	r := rand.New(rand.NewPCG(17, 5))
-	changes, randomChanges := 0, 0
-	for range 300000 {
-		var f float64
-		guaranteed := true
-		switch r.IntN(4) {
+	n := 0
+	for range 400000 {
+		f := adversarialFraction(r)
+		if f <= 0 {
+			continue
+		}
+		var w int64
+		switch r.IntN(3) {
 		case 0:
-			f, guaranteed = r.Float64(), false
+			w = 1 + r.Int64N(1<<31-1)
 		case 1:
-			f = float64(1+r.IntN(100000)) / 100000
-		case 2:
-			d := 1 + r.IntN(1000)
-			f = float64(1+r.IntN(d)) / float64(d)
+			w = []int64{100, 1000, 10000}[r.IntN(3)]*(1+r.Int64N(1<<20)) + r.Int64N(2)
 		default:
-			f, guaranteed = math.Nextafter(float64(1+r.IntN(100))/100, float64(r.IntN(2))), false
+			w = 1 + r.Int64N(int64(min(0x1p52/f, 0x1p62)))
 		}
-		if f == 0 {
-			continue
-		}
-		w := 1 + r.Int64N(1<<31-1)
-		lo, hi := Fraction(f).minAbs(w), Fraction(f).maxAbs(w)
-		if a, b := oldMin(f, w), oldMax(f, w); a != lo || b != hi {
-			changes++
-			if f != math.Nextafter(math.Round(f*100)/100, f) {
-				randomChanges++ // not one ulp off a 2-dp decimal
-			}
-			if dlo, dhi := decimal(f, w); guaranteed || lo != dlo || hi != dhi {
-				t.Fatalf("Fraction(%v) of %d: was %d..%d, now %d..%d (shortest decimal: %d..%d)", f, w, a, b, lo, hi, dlo, dhi)
+		if below(f, w, false) {
+			n++
+			if a, b := oldMin(f, w), Fraction(f).minAbs(w); a != b {
+				t.Fatalf("Fraction(%v) of %d: minimum was %d, now %d", f, w, a, b)
 			}
 		}
-		if !guaranteed {
+		if below(f, w, true) {
+			if a, b := oldMax(f, w), Fraction(f).maxAbs(w); a != b {
+				t.Fatalf("Fraction(%v) of %d: maximum was %d, now %d", f, w, a, b)
+			}
+		}
+		// MinConfidence f with the body support w, through the plan
+		rp, err := (&RuleOptions[string]{MinSupport: Count(1), MinConfidence: f}).plan()
+		if err != nil {
+			t.Fatal(err)
+		}
+		conf := thresh.New(rp.cfg.ConfFrac)
+		pc := percentOf(f, +1) / 100
+		if !below(pc, w, false) {
 			continue
 		}
-		body := w
-		s := int64(math.Round(f * float64(body)))
-		for _, supp := range []int64{s - 1, s, s + 1} {
-			if supp >= 0 && supp <= body && oldConf(supp, body, f) != newConf(supp, body, f) {
-				t.Fatalf("MinConfidence %v supp %d body %d: was %v", f, supp, body, oldConf(supp, body, f))
+		s := int64(math.Ceil(float64(w) * (pc * (1 - eps))))
+		for _, supp := range []int64{s - 2, s - 1, s, s + 1, s + 2} {
+			if supp >= 0 && supp <= w && oldConf(supp, w, f) != conf.Meets(supp, w) {
+				t.Fatalf("MinConfidence %v supp %d body %d: was %v", f, supp, w, oldConf(supp, w, f))
 			}
 		}
 	}
-	t.Logf("%d changes (%d not one ulp off a 2-dp decimal), all exact for the shortest decimal", changes, randomChanges)
+	if n < 300000 {
+		t.Errorf("only %d cases below the switch", n)
+	}
 	for k := 0; k <= 1000; k++ {
 		f := float64(k) / 1000
+		conf := thresh.New(percentOf(f, +1) / 100)
 		for body := int64(1); body <= 200; body++ {
 			for supp := int64(0); supp <= body; supp++ {
-				if oldConf(supp, body, f) != newConf(supp, body, f) {
+				if oldConf(supp, body, f) != conf.Meets(supp, body) {
 					t.Fatalf("MinConfidence %v supp %d body %d: was %v", f, supp, body, oldConf(supp, body, f))
 				}
 			}
 		}
+	}
+	// review cases (C1): MaxSupport Fraction(1-0.8) of W = 5 is 1, a rule
+	// with confidence 17/100 meets MinConfidence 1-0.83
+	a, b := 0.8, 0.83 // variables: run-time subtraction
+	txs := []Transaction[string]{{Items: []string{"x"}, Weight: 1}, {Items: []string{"y"}, Weight: 4}}
+	sets, _, err := CollectItemsets(context.Background(), FromSlice(txs),
+		Options[string]{MinSupport: Count(1), MaxSupport: Fraction(1 - a)})
+	if err != nil || len(sets) != 1 || sets[0].Support != 1 {
+		t.Errorf("MaxSupport Fraction(1-0.8) of 5: %v, %v", sets, err)
+	}
+	rtxs := []Transaction[string]{{Items: []string{"x", "y"}, Weight: 17}, {Items: []string{"x"}, Weight: 83}}
+	rules, _, err := CollectRules(context.Background(), FromSlice(rtxs),
+		RuleOptions[string]{MinSupport: Count(1), MinConfidence: 1 - b, MinSize: 2})
+	found := false
+	for _, rl := range rules {
+		found = found || rl.Head == "y" && rl.Support == 17 && rl.BodySupport == 100
+	}
+	if err != nil || !found {
+		t.Errorf("MinConfidence 1-0.83: rule y <- x (17/100) not reported: %v, %v", rules, err)
 	}
 }
 

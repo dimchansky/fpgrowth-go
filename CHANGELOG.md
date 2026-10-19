@@ -46,21 +46,15 @@ The release workflow publishes the section whose heading matches the tag
   smallest float64 (strong associations at large totals), without
   resolving near-ties.
 - Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
-  `-s`, `-S`, `-F`, `-c`) follow an exact threshold contract
-  (`docs/differences.md` N2 and "Threshold contract", #17): upstream's
-  relative tolerance of 2^-52, evaluated exactly and never as large as one
-  unit of support. Below t·N = 2^52 this is upstream's formula without its
-  double rounding. Results change (a) for total weights where the
-  tolerance used to exceed one unit (about 2^52 and above: fewer sets and
-  rules, see Fixed) and (b) rarely below, where upstream's rounding
-  crossed an integer: for a CLI percentage with d decimals only from
-  about 2^53/(4.5·10^(d+2)) (2^34 for three decimals, 2^44 for integer
-  percentages), always to the exact decimal answer (`-S3.091` of
-  833815673989: 25773242483 → 25773242482); a library fraction with many
-  digits (for example one ulp off a decimal) can change by one unit at
-  any weight, to the exact result of its shortest decimal.
-  `MinConfidence` is used as the fraction itself, no longer through a
-  percentage.
+  `-s`, `-S`, `-F`, `-c`) follow a threshold contract
+  (`docs/differences.md` N2 and "Threshold contract", #17). Behavior
+  change only for large weights: where x = threshold × total weight (or
+  confidence × body support) is below 2^52, every decision is unchanged
+  (upstream's and v0.1.0's double formula, bit for bit, for every
+  fraction, percentage and `MinConfidence` value). From 2^52 on the bound
+  is exact, ⌊x⌋ for a minimum or the confidence and ⌈x⌉ for a maximum,
+  instead of upstream's value, which could be up to x·2^-52 more
+  permissive (see Fixed); maxima switch above 2^52.
 
 ### Fixed
 
@@ -73,7 +67,8 @@ The release workflow publishes the section whose heading matches the tag
   reports `a` (49.999999999999992895 %), `-tr -w -s0 -c100 -m2` on
   `x y 4611686018427387000`, `x 1000` no longer reports `y <- x`, and
   `Fraction(1)` of a total weight W is exactly W (it was W−257 for
-  W = 2^60+1, not W−256 as the `Fraction` documentation said).
+  W = 2^60+1, not W−256 as the `Fraction` documentation said). Results
+  for x below 2^52 do not change.
 
 - The statistical evaluation measures are accurate for every total
   transaction weight up to 2^63−1 (audit ALG-1 and ALG-6, #16;

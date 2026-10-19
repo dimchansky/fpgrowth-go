@@ -14,21 +14,25 @@ const (
 )
 
 // The threshold contract (docs/differences.md N2, issue #17), evaluated
-// here independently of the miner with math/big only: a threshold t >= 0
-// (a float64 fraction, taken at its exact binary value) of a reference
-// support n defines x = t·n exactly; with ε = 2^-52 a support s meets
+// here independently of the miner: a threshold t >= 0 (a float64
+// fraction) of a reference support n defines the exact rational
+// x = t·n (math/big). Below the switch (x < 2^52 for minima and the
+// confidence, x <= 2^52 for maxima) the contract is upstream's double
+// formula, restated in upstream.go; at and above it, with ε = 2^-52, a
+// support s meets
 //
-//   - the minimum t iff s >= x·(1−ε) and s > x−1;
-//   - the maximum t iff s <= x·(1+ε) and s < x+1.
+//   - a minimum (or the confidence) t iff s >= x·(1−ε) and s > x−1;
+//   - a maximum t iff s <= x·(1+ε) and s < x+1.
 //
 // t <= 0 is met by every support as a minimum and by none above 0 as a
-// maximum; t = +Inf by none as a minimum and by all as a maximum. The
-// absolute conversions saturate at math.MaxInt64.
+// maximum; t = +Inf by none as a minimum (n > 0) and by all as a maximum.
+// The absolute conversions saturate at math.MaxInt64.
 
 var (
 	ratOneMinusEps = new(big.Rat).SetFrac(big.NewInt(1<<52-1), big.NewInt(1<<52))
 	ratOnePlusEps  = new(big.Rat).SetFrac(big.NewInt(1<<52+1), big.NewInt(1<<52))
 	ratOne         = big.NewRat(1, 1)
+	ratSwitch      = new(big.Rat).SetInt64(1 << 52)
 	bigMaxSupp     = big.NewInt(math.MaxInt64)
 )
 
@@ -37,15 +41,11 @@ func product(t float64, n tract.Supp) *big.Rat {
 	return new(big.Rat).Mul(new(big.Rat).SetFloat64(t), new(big.Rat).SetInt64(int64(max(n, 0))))
 }
 
-// MeetsMin reports whether the support s meets the minimum threshold t of
-// the reference support n under the contract above.
-func MeetsMin(s tract.Supp, t float64, n tract.Supp) bool {
-	switch {
-	case !(t > 0):
-		return true
-	case math.IsInf(t, 1):
-		return false
-	}
+// branch returns the sign of t·n − 2^52 for a finite t > 0.
+func branch(t float64, n tract.Supp) int { return product(t, n).Cmp(ratSwitch) }
+
+// exactMeetsMin is the exact branch of a minimum: s >= x·(1−ε), s > x−1.
+func exactMeetsMin(s tract.Supp, t float64, n tract.Supp) bool {
 	x := product(t, n)
 	rs := new(big.Rat).SetInt64(int64(s))
 	if rs.Cmp(new(big.Rat).Mul(x, ratOneMinusEps)) < 0 {
@@ -54,14 +54,30 @@ func MeetsMin(s tract.Supp, t float64, n tract.Supp) bool {
 	return rs.Cmp(new(big.Rat).Sub(x, ratOne)) > 0
 }
 
-// MeetsMax reports whether the support s meets the maximum threshold t of
-// the reference support n under the contract above.
+// MeetsMin reports whether the support s meets the minimum support
+// threshold t of the reference support n under the contract above.
+func MeetsMin(s tract.Supp, t float64, n tract.Supp) bool {
+	switch {
+	case !(t > 0):
+		return true
+	case math.IsInf(t, 1):
+		return n <= 0 && s >= 0 // Inf·0 is NaN in C: a minimum of 0
+	case branch(t, n) < 0:
+		return s >= upstreamMin(t, n)
+	}
+	return exactMeetsMin(s, t, n)
+}
+
+// MeetsMax reports whether the support s meets the maximum support
+// threshold t of the reference support n under the contract above.
 func MeetsMax(s tract.Supp, t float64, n tract.Supp) bool {
 	switch {
 	case !(t > 0):
 		return s <= 0
 	case math.IsInf(t, 1):
-		return true
+		return n > 0 || s <= 0
+	case branch(t, n) <= 0:
+		return s <= upstreamMax(t, n)
 	}
 	x := product(t, n)
 	rs := new(big.Rat).SetInt64(int64(s))
@@ -71,16 +87,24 @@ func MeetsMax(s tract.Supp, t float64, n tract.Supp) bool {
 	return rs.Cmp(new(big.Rat).Add(x, ratOne)) < 0
 }
 
-// FracMinSupp returns the smallest support that meets the minimum t of n:
-// max(⌈x·(1−ε)⌉, ⌊x⌋), saturating; 0 for t <= 0, math.MaxInt64 for +Inf
-// and NaN gives 0.
-func FracMinSupp(t float64, n tract.Supp) tract.Supp {
+// MeetsConf reports whether a rule with support s and body support b
+// meets the confidence conf (a fraction) under the contract above: for
+// conf·b < 2^52 upstream's double test (upstreamMeetsConf), else the
+// exact minimum.
+func MeetsConf(s tract.Supp, conf float64, b tract.Supp) bool {
 	switch {
-	case !(t > 0): // also NaN
-		return 0
-	case math.IsInf(t, 1):
-		return math.MaxInt64
+	case !(conf > 0):
+		return true
+	case math.IsInf(conf, 1):
+		return false
+	case branch(conf, b) < 0:
+		return upstreamMeetsConf(s, conf, b)
 	}
+	return exactMeetsMin(s, conf, b)
+}
+
+// exactMin returns max(⌈x·(1−ε)⌉, ⌊x⌋), saturated.
+func exactMin(t float64, n tract.Supp) tract.Supp {
 	x := product(t, n)
 	v := ratCeil(new(big.Rat).Mul(x, ratOneMinusEps))
 	if f := ratFloor(x); f.Cmp(v) > 0 {
@@ -89,15 +113,40 @@ func FracMinSupp(t float64, n tract.Supp) tract.Supp {
 	return saturate(v)
 }
 
-// FracMaxSupp returns the largest support that meets the maximum t of n:
+// FracMinSupp returns the smallest support that meets the minimum support
+// threshold t of n: upstream's double formula for t·n < 2^52, else
+// max(⌈x·(1−ε)⌉, ⌊x⌋), saturating; 0 for t <= 0 and NaN, math.MaxInt64
+// for +Inf (0 for n = 0, as in C).
+func FracMinSupp(t float64, n tract.Supp) tract.Supp {
+	switch {
+	case !(t > 0): // also NaN
+		return 0
+	case math.IsInf(t, 1):
+		if n <= 0 {
+			return 0
+		}
+		return math.MaxInt64
+	case branch(t, n) < 0:
+		return upstreamMin(t, n)
+	}
+	return exactMin(t, n)
+}
+
+// FracMaxSupp returns the largest support that meets the maximum support
+// threshold t of n: upstream's double formula for t·n <= 2^52, else
 // min(⌊x·(1+ε)⌋, ⌈x⌉), saturating; 0 for t <= 0 and NaN, math.MaxInt64
-// for +Inf.
+// for +Inf (0 for n = 0, as in C).
 func FracMaxSupp(t float64, n tract.Supp) tract.Supp {
 	switch {
 	case !(t > 0):
 		return 0
 	case math.IsInf(t, 1):
+		if n <= 0 {
+			return 0
+		}
 		return math.MaxInt64
+	case branch(t, n) <= 0:
+		return upstreamMax(t, n)
 	}
 	x := product(t, n)
 	v := ratFloor(new(big.Rat).Mul(x, ratOnePlusEps))
@@ -105,6 +154,20 @@ func FracMaxSupp(t float64, n tract.Supp) tract.Supp {
 		v = c
 	}
 	return saturate(v)
+}
+
+// ConfMinSupp returns the smallest support that meets the confidence conf
+// for the body support b (MeetsConf).
+func ConfMinSupp(conf float64, b tract.Supp) tract.Supp {
+	switch {
+	case !(conf > 0):
+		return 0
+	case math.IsInf(conf, 1):
+		return math.MaxInt64
+	case branch(conf, b) < 0:
+		return upstreamConfMin(conf, b)
+	}
+	return exactMin(conf, b)
 }
 
 // AbsMinSupp converts an upstream minimum support argument (-s, and each
@@ -135,13 +198,13 @@ func AbsMaxSupp(arg float64, total tract.Supp) tract.Supp {
 
 // RuleSetMinSupp returns the minimum support of body ∪ head under the
 // default (body) support definition: the smallest support that meets the
-// confidence conf (a fraction) for the minimum body support bodyMin. Since
-// that minimum is nondecreasing in the body support, no rule with a body
-// support of at least bodyMin has a smaller support (fpg_data derives
-// ceil(bodyMin*(conf*(1-DBL_EPSILON))) in double arithmetic). Under
-// OrigSupp the set minimum is bodyMin itself.
+// confidence conf (a fraction) for the minimum body support bodyMin
+// (ConfMinSupp). That minimum is nondecreasing in the body support, so no
+// rule with a body support of at least bodyMin has a smaller support
+// (fpg_data derives ceil(bodyMin*(conf*(1-DBL_EPSILON))) in double
+// arithmetic). Under OrigSupp the set minimum is bodyMin itself.
 func RuleSetMinSupp(bodyMin tract.Supp, conf float64) tract.Supp {
-	return FracMinSupp(conf, bodyMin)
+	return ConfMinSupp(conf, bodyMin)
 }
 
 // EffectiveMinSupp returns max(s, 1): the effective absolute minimum

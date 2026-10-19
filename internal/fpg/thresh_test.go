@@ -29,9 +29,9 @@ func upMax(smax float64, w tract.Supp) tract.Supp {
 	return suppOf(math.Floor(smax / 100.0 * float64(w) * (1 + upEps)))
 }
 
-// upSetMin is fpg_data's rule set minimum: ceil(body*(conf*(1-eps))) with
-// conf = -c/100 (and the port's former countThresholds for the library,
-// whose conf was an exact fraction f).
+// upSetMin is fpg_data's rule set minimum: ceil(smin*(conf*(1-eps))) with
+// conf = -c/100 and the double smin (here an absolute body minimum below
+// 2^53, so exact).
 func upSetMin(body tract.Supp, conf float64) tract.Supp {
 	return min(max(suppOf(math.Ceil(float64(body)*(conf*(1-upEps)))), 1), body)
 }
@@ -43,7 +43,8 @@ func upConf(supp, body tract.Supp, conf float64) bool {
 
 // newConf is the contract's confidence test.
 func newConf(supp, body tract.Supp, conf float64) bool {
-	return int64(supp) >= thresh.New(conf).Min(int64(body))
+	f := thresh.New(conf)
+	return f.Meets(int64(supp), int64(body))
 }
 
 // pct parses a decimal percentage like the command line (strtod).
@@ -55,19 +56,78 @@ func pct(p, d int) float64 {
 	return v
 }
 
-// TestThresholdsUnchanged checks that the exact contract gives upstream's
-// results at ordinary weights (W < 2^31): every 2-dp percentage for
-// W <= 300, seeded samples of 3-dp, random and computed (smin·100/total,
-// like difftest's large cases) percentages, the rule set minimum and the
-// confidence test (CLI percentages and library fractions), and the
-// HasCounts path (the library's former countThresholds). For short
-// decimals and fractions k/d this is guaranteed (TestThresholdsDecimalBound);
-// for values with many digits it is a seeded regression sample (see
-// TestLibraryThresholdsUnchanged in the root package for the rare changes
-// of fractions one ulp off a decimal).
-func TestThresholdsUnchanged(t *testing.T) {
+// belowSwitch reports whether x = (p/100)·w, with p/100 a float64
+// division, is below 2^52 (orEqual: at most 2^52), computed with math/big.
+func belowSwitch(p float64, w tract.Supp, orEqual bool) bool {
+	x := new(big.Rat).Mul(new(big.Rat).SetFloat64(p/100), new(big.Rat).SetInt64(int64(w)))
+	c := x.Cmp(new(big.Rat).SetInt64(1 << 52))
+	return c < 0 || orEqual && c == 0
+}
+
+// adversarialPercent draws a CLI percentage from the classes where an
+// exact evaluation would differ from upstream's double rounding
+// (review of PR #30, C1): decimals with 1-3 places, values one or two
+// ulps off a decimal, 100-a, running sums of 0.01, 0.1 and 1, products,
+// computed percentages and random values.
+func adversarialPercent(r *rand.Rand) float64 {
+	switch r.IntN(9) {
+	case 0:
+		return pct(r.IntN(10001), 1+r.IntN(3)) / math.Pow10(r.IntN(2))
+	case 1:
+		p := pct(1+r.IntN(10000), 2)
+		for range 1 + r.IntN(2) {
+			p = math.Nextafter(p, float64(r.IntN(2)*200))
+		}
+		return p
+	case 2:
+		return 100 - pct(r.IntN(10001), 2)
+	case 3:
+		step := []float64{0.01, 0.1, 1, 0.001}[r.IntN(4)]
+		p := 0.0
+		for range 1 + r.IntN(int(min(100/step, 3000))) {
+			p += step
+		}
+		return min(p, 100)
+	case 4:
+		return pct(1+r.IntN(100), 0) * pct(1+r.IntN(100), 2) / 100
+	case 5:
+		return float64(1+r.IntN(1000)) * 0.01 * float64(1+r.IntN(9)) / 9
+	case 6:
+		w := 1 + r.Int64N(1<<31)
+		return float64(1+r.Int64N(w)) * 100 / float64(w)
+	case 7:
+		return r.Float64() * 100
+	}
+	return float64(1+r.IntN(1000)) / float64(1+r.IntN(1000)) * 100
+}
+
+// adversarialWeight draws a total weight for p: small, a multiple of 100,
+// 1000 or 10000 (an integer intended threshold) plus 0..2, or large up to
+// x = 2^52.
+func adversarialWeight(r *rand.Rand, p float64) tract.Supp {
+	switch r.IntN(4) {
+	case 0:
+		return tract.Supp(1 + r.Int64N(5000))
+	case 1:
+		m := []int64{100, 1000, 10000, 100000}[r.IntN(4)]
+		return tract.Supp(m*(1+r.Int64N(1<<20)) + r.Int64N(3))
+	case 2:
+		return tract.Supp(1 + r.Int64N(1<<31))
+	}
+	limit := 0x1p52 / max(p/100, 0x1p-20)
+	return tract.Supp(1 + r.Int64N(int64(min(limit, 0x1p62))))
+}
+
+// TestThresholdsIdenticalBelowSwitch checks that every threshold decision
+// is upstream's (and v0.1.0's) while x = t·N is below the switch of the
+// threshold contract (differences.md N2): the minimum and maximum support
+// (-s, -S), the confidence test and the rule set minimum (-c, CLI and
+// HasCounts paths), over adversarial percentages and weights. Above the
+// switch the exact branch is checked by TestThresholdsHugeWeights and
+// package thresh.
+func TestThresholdsIdenticalBelowSwitch(t *testing.T) {
 	t.Parallel()
-	for k := 1; k <= 10000; k++ { // every 2-dp percentage
+	for k := 1; k <= 10000; k++ { // every 2-dp percentage, small weights
 		p := pct(k, 2)
 		for w := tract.Supp(1); w <= 300; w++ {
 			if a, b := upMin(p, w), minSupp(p, w); a != b {
@@ -79,149 +139,103 @@ func TestThresholdsUnchanged(t *testing.T) {
 		}
 	}
 	r := rand.New(rand.NewPCG(17, 3))
-	for range 200000 {
-		w := tract.Supp(1 + r.Int64N(1<<31-1))
-		var p float64
-		switch r.IntN(3) {
-		case 0: // computed percentage, like difftest's large cases
-			p = float64(1+r.Int64N(int64(w))) * 100 / float64(w)
-		case 1:
-			p = r.Float64() * 100
-		default:
-			p = pct(r.IntN(100001), 3)
-		}
-		if a, b := upMin(p, w), minSupp(p, w); a != b {
-			t.Fatalf("-s%v of %d: upstream %d, contract %d", p, w, a, b)
-		}
-		if a, b := upMax(p, w), maxSupp(p, w); a != b {
-			t.Fatalf("-S%v of %d: upstream %d, contract %d", p, w, a, b)
-		}
-	}
-	// confidence: CLI percentages (conf = c/100) and library fractions
-	confs := []float64{0, 0.1, 0.125, 0.25, 33.3 / 100, 0.5, 0.6, 66.6 / 100, 0.7, 0.8, 0.9, 99.9 / 100, 1}
-	for k := 0; k <= 1000; k += 7 {
-		confs = append(confs, float64(k)/1000, pct(k, 1)/100)
-	}
-	for _, c := range confs {
-		for body := tract.Supp(1); body <= 300; body++ {
-			if a, b := upSetMin(body, c), max(tract.Supp(thresh.New(c).Min(int64(body))), 1); a != b {
-				t.Fatalf("set minimum conf %v body %d: upstream %d, contract %d", c, body, a, b)
-			}
-			for supp := tract.Supp(0); supp <= body; supp++ {
-				if upConf(supp, body, c) != newConf(supp, body, c) {
-					t.Fatalf("conf %v supp %d body %d: upstream %v", c, supp, body, upConf(supp, body, c))
-				}
+	checked, confChecked := 0, 0
+	for range 300000 {
+		p := adversarialPercent(r)
+		w := adversarialWeight(r, p)
+		if belowSwitch(p, w, false) {
+			checked++
+			if a, b := upMin(p, w), minSupp(p, w); a != b {
+				t.Fatalf("-s%v of %d: upstream %d, contract %d", p, w, a, b)
 			}
 		}
-	}
-	for range 200000 {
-		c := []float64{r.Float64(), float64(r.IntN(1001)) / 1000, pct(r.IntN(100001), 3) / 100,
-			float64(1+r.IntN(1000)) / float64(1001+r.IntN(1000))}[r.IntN(4)]
-		body := tract.Supp(1 + r.Int64N(1<<31-1))
-		s := tract.Supp(math.Round(c * float64(body)))
-		for _, supp := range []tract.Supp{s - 1, s, s + 1} {
+		if belowSwitch(p, w, true) {
+			if a, b := upMax(p, w), maxSupp(p, w); a != b {
+				t.Fatalf("-S%v of %d: upstream %d, contract %d", p, w, a, b)
+			}
+		}
+		// confidence c = p/100 <= 1 with the body support w
+		if p > 100 {
+			continue
+		}
+		c, body := p/100, w
+		if !belowSwitch(p, body, false) {
+			continue
+		}
+		confChecked++
+		s := tract.Supp(math.Ceil(float64(body) * (c * (1 - upEps))))
+		for _, supp := range []tract.Supp{s - 2, s - 1, s, s + 1, s + 2} {
 			if supp >= 0 && supp <= body && upConf(supp, body, c) != newConf(supp, body, c) {
-				t.Fatalf("conf %v supp %d body %d: upstream %v", c, supp, body, upConf(supp, body, c))
+				t.Fatalf("-c%v supp %d body %d: upstream %v", p, supp, body, upConf(supp, body, c))
 			}
 		}
-		// HasCounts path (the library's countThresholds)
+		// rule set minimum, CLI notation (absolute -s) and HasCounts
 		cfg := DefaultConfig()
 		cfg.Target, cfg.ConfFrac = report.TargetRules, c
+		if body < 1<<53 {
+			cfg.SMin = -float64(body)
+			if th := computeThresholds(&cfg, body); th.supp != upSetMin(body, c) || th.body != body {
+				t.Fatalf("-s-%d -c%v: %+v, upstream set minimum %d", body, p, th, upSetMin(body, c))
+			}
+		}
 		cfg.HasCounts, cfg.MinCount, cfg.MaxCount = true, body, math.MaxInt64
-		if th := computeThresholds(&cfg, 0); th.supp != upSetMin(body, c) || th.body != body {
-			t.Fatalf("counts body %d conf %v: %+v, upstream set minimum %d", body, c, th, upSetMin(body, c))
+		if th := computeThresholds(&cfg, 0); th.supp != upCountSetMin(body, c) || th.body != body {
+			t.Fatalf("counts body %d conf %v: %+v, v0.1.0 set minimum %d", body, c, th, upCountSetMin(body, c))
 		}
 	}
-}
-
-// TestThresholdsDecimalBound checks the bound of the changes against
-// upstream's double formula (differences.md N2): for a CLI percentage with
-// d decimals p = P/10^d, upstream's rounding can only cross an integer if
-// x = p·W/100 is at least about 2^53/(4.5·10^(d+2)) and P·W lies close to
-// a multiple of 10^(d+2). The generator targets exactly those totals (P·W
-// within ±3 of a multiple). Below the bound results equal upstream; above
-// it every change is the exact decimal answer ⌈P·W/10^(d+2)⌉ (minimum) or
-// ⌊P·W/10^(d+2)⌋ (maximum), which upstream misses.
-func TestThresholdsDecimalBound(t *testing.T) {
-	t.Parallel()
-	r := rand.New(rand.NewPCG(17, 4))
-	changes := 0
-	for d := 0; d <= 3; d++ {
-		m := int64(math.Pow10(d + 2)) // p·W/100 = P·W/m
-		bound := 0x1p53 / (4.5 * float64(m))
-		for range 40000 {
-			P := 1 + r.Int64N(100*int64(math.Pow10(d)))
-			if P%10 == 0 && d > 0 {
-				continue // fewer decimals
-			}
-			p := pct(int(P), d)
-			// W with P·W ≡ off (mod m) and x near 2^e
-			e := 20 + r.IntN(30) // x up to 2^50
-			w0 := int64(math.Ldexp(1, e)) * m / P
-			inv := new(big.Int).ModInverse(big.NewInt(P), big.NewInt(m))
-			if inv == nil {
-				continue // gcd(P, m) > 1: P·W mod m cannot be ±1 for all offsets
-			}
-			off := int64(r.IntN(7) - 3)
-			wr := (off%m + m) % m * inv.Int64() % m
-			w := tract.Supp(w0 - w0%m + wr)
-			if w <= 0 {
-				continue
-			}
-			x := float64(P) * float64(w) / float64(m)
-			pw := new(big.Int).Mul(big.NewInt(P), big.NewInt(int64(w)))
-			q, rem := new(big.Int).QuoRem(pw, big.NewInt(m), new(big.Int))
-			decMin, decMax := tract.Supp(q.Int64()), tract.Supp(q.Int64())
-			if rem.Sign() > 0 {
-				decMin++
-			}
-			gotMin, gotMax := minSupp(p, w), maxSupp(p, w)
-			upLo, upHi := upMin(p, w), upMax(p, w)
-			if gotMin != upLo || gotMax != upHi {
-				changes++
-				if x < bound {
-					t.Fatalf("-s%v of %d (x = 2^%.2f below the bound 2^%.2f): upstream %d/%d, contract %d/%d",
-						p, w, math.Log2(x), math.Log2(bound), upLo, upHi, gotMin, gotMax)
-				}
-				if gotMin != decMin || gotMax != decMax {
-					t.Fatalf("-s%v of %d: contract %d/%d is not the decimal answer %d/%d (upstream %d/%d)",
-						p, w, gotMin, gotMax, decMin, decMax, upLo, upHi)
+	if checked < 200000 || confChecked < 100000 {
+		t.Errorf("only %d / %d cases below the switch", checked, confChecked)
+	}
+	// confidence over all supports for the difftest's percentages
+	confs := []float64{0, 10, 12.5, 25, 33.3, 50, 60, 66.6, 70, 80, 90, 99.9, 100}
+	for _, cp := range confs {
+		c := cp / 100
+		for body := tract.Supp(1); body <= 300; body++ {
+			for supp := tract.Supp(0); supp <= body; supp++ {
+				if upConf(supp, body, c) != newConf(supp, body, c) {
+					t.Fatalf("-c%v supp %d body %d: upstream %v", cp, supp, body, upConf(supp, body, c))
 				}
 			}
 		}
 	}
-	if changes == 0 {
-		t.Error("the generator found no changes; it no longer targets the boundary")
-	}
-	t.Logf("%d changes, all decimal-exact", changes)
 }
 
-// TestThresholdsPinnedChanges pins two changes against upstream below
-// 2^52 (found by the review of the design, issue #17): upstream's double
-// rounding gives a maximum one above the exact decimal answer.
-func TestThresholdsPinnedChanges(t *testing.T) {
+// upCountSetMin is v0.1.0's countThresholds set minimum for the exact
+// body minimum (a float64 rounded down, as there).
+func upCountSetMin(body tract.Supp, conf float64) tract.Supp {
+	x := float64(body)
+	if x >= 0x1p63 || tract.Supp(x) > body {
+		x = math.Nextafter(x, 0)
+	}
+	x *= conf * (1 - upEps)
+	return min(max(suppOf(math.Ceil(x)), 1), body)
+}
+
+// TestThresholdsPinnedUnchanged pins two cases where an exact evaluation
+// would differ from upstream's double rounding below 2^52 (found by the
+// design review of issue #17): the contract keeps upstream's results.
+func TestThresholdsPinnedUnchanged(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		p                float64
-		w                tract.Supp
-		upMin, upMax     tract.Supp
-		wantMin, wantMax tract.Supp
+		p        float64
+		w        tract.Supp
+		min, max tract.Supp
 	}{
-		// 3.091 % of 833815673989 is 25773242482.999989 (decimal)
-		{3.091, 833815673989, 25773242483, 25773242483, 25773242483, 25773242482},
-		// 16.01 % of 1290957281599 is 206682260783.99990 (decimal)
-		{16.01, 1290957281599, 206682260784, 206682260784, 206682260784, 206682260783},
+		// 3.091 % of 833815673989 is 25773242482.99999 (decimal)
+		{3.091, 833815673989, 25773242483, 25773242483},
+		// 16.01 % of 1290957281599 is 206682260783.9999 (decimal)
+		{16.01, 1290957281599, 206682260784, 206682260784},
 	}
 	for _, tt := range tests {
-		if upMin(tt.p, tt.w) != tt.upMin || upMax(tt.p, tt.w) != tt.upMax {
+		if upMin(tt.p, tt.w) != tt.min || upMax(tt.p, tt.w) != tt.max {
 			t.Errorf("-s%v of %d: upstream %d/%d, expected %d/%d", tt.p, tt.w,
-				upMin(tt.p, tt.w), upMax(tt.p, tt.w), tt.upMin, tt.upMax)
+				upMin(tt.p, tt.w), upMax(tt.p, tt.w), tt.min, tt.max)
 		}
-		if got, want := minSupp(tt.p, tt.w), tt.wantMin; got != want {
-			t.Errorf("-s%v of %d: minimum %d, expected %d", tt.p, tt.w, got, want)
+		if got := minSupp(tt.p, tt.w); got != tt.min {
+			t.Errorf("-s%v of %d: minimum %d, expected %d", tt.p, tt.w, got, tt.min)
 		}
-		if got, want := maxSupp(tt.p, tt.w), tt.wantMax; got != want {
-			t.Errorf("-S%v of %d: maximum %d, expected %d", tt.p, tt.w, got, want)
+		if got := maxSupp(tt.p, tt.w); got != tt.max {
+			t.Errorf("-S%v of %d: maximum %d, expected %d", tt.p, tt.w, got, tt.max)
 		}
 	}
 }
@@ -252,7 +266,7 @@ func TestThresholdsHugeWeights(t *testing.T) {
 		c.Target, c.ConfFrac = report.TargetRules, tt.conf
 		c.SMin, c.SMax = tt.smin, tt.smax
 		th := computeThresholds(&c, tt.w)
-		wantSupp := max(tract.Supp(thresh.New(tt.conf).Min(int64(tt.body))), 1)
+		wantSupp := max(tract.Supp(thresh.New(tt.conf).RuleSetMin(int64(tt.body))), 1)
 		if th.body != tt.body || th.supp != wantSupp || th.smax != tt.smaxWant {
 			t.Errorf("%s: %+v, expected body %d supp %d smax %d", tt.name, th, tt.body, wantSupp, tt.smaxWant)
 		}

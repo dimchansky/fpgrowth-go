@@ -1,19 +1,23 @@
 package thresh
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand/v2"
 	"testing"
 )
 
-// The reference evaluates the contract with math/big: x = t·n exactly,
-// min = max(⌈x(1−ε)⌉, ⌊x⌋), max = min(⌊x(1+ε)⌋, ⌈x⌉), saturated.
+// The reference evaluates the hybrid contract independently: the branch
+// by the exact x = t·n (math/big), upstream's double formulas (restated
+// here from fpg_data, fpg_report and istree) below the switch, and the
+// exact capped formulas with math/big above it.
 
 var (
 	refOneMinus = new(big.Rat).SetFrac(big.NewInt(1<<52-1), big.NewInt(1<<52))
 	refOnePlus  = new(big.Rat).SetFrac(big.NewInt(1<<52+1), big.NewInt(1<<52))
 	refMaxInt64 = big.NewInt(math.MaxInt64)
+	refSwitch   = new(big.Rat).SetInt64(1 << 52)
 )
 
 func refFloor(r *big.Rat) *big.Int {
@@ -42,45 +46,105 @@ func refSat(x *big.Int) int64 {
 	return x.Int64()
 }
 
-func refBig(t float64, n int64) (lo, hi int64) {
+// refSatF is the port's saturating float-to-support conversion.
+func refSatF(v float64) int64 {
+	switch {
+	case math.IsNaN(v) || v <= 0:
+		return 0
+	case v >= 0x1p63:
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
+// refRes is the reference result for (t, n).
+type refRes struct {
+	min, max, confMin int64
+	below, belowMax   bool    // branch: x < 2^52, x <= 2^52
+	confZ             float64 // double branch: RN(RN(n)·RN(t·(1−ε)))
+}
+
+func refBig(t float64, n int64) refRes {
+	n = max(n, 0)
+	const e = 0x1p-52
+	var r refRes
+	var x *big.Rat
 	switch {
 	case !(t > 0):
-		return 0, 0
+		x = new(big.Rat)
 	case math.IsInf(t, 1):
-		return math.MaxInt64, math.MaxInt64
+		x = nil
+	default:
+		x = new(big.Rat).Mul(new(big.Rat).SetFloat64(t), new(big.Rat).SetInt64(n))
 	}
-	x := new(big.Rat).Mul(new(big.Rat).SetFloat64(t), new(big.Rat).SetInt64(max(n, 0)))
-	minV := refCeil(new(big.Rat).Mul(x, refOneMinus))
-	if f := refFloor(x); f.Cmp(minV) > 0 {
-		minV = f
+	if x == nil { // +Inf: x = +Inf unless n = 0 (Inf·0 is NaN in C: 0)
+		if n == 0 {
+			return refRes{below: true, belowMax: true, confZ: math.NaN()}
+		}
+		return refRes{min: math.MaxInt64, max: math.MaxInt64, confMin: math.MaxInt64}
 	}
-	maxV := refFloor(new(big.Rat).Mul(x, refOnePlus))
-	if c := refCeil(x); c.Cmp(maxV) < 0 {
-		maxV = c
+	c := x.Cmp(refSwitch)
+	r.below, r.belowMax = c < 0, c <= 0
+	tf := max(t, 0)
+	r.confZ = float64(n) * (tf * (1 - e))
+	exMin := refCeil(new(big.Rat).Mul(x, refOneMinus))
+	if f := refFloor(x); f.Cmp(exMin) > 0 {
+		exMin = f
 	}
-	return refSat(minV), refSat(maxV)
+	exMax := refFloor(new(big.Rat).Mul(x, refOnePlus))
+	if cc := refCeil(x); cc.Cmp(exMax) < 0 {
+		exMax = cc
+	}
+	if r.below {
+		r.min = refSatF(math.Ceil(tf * float64(n) * (1 - e)))
+		r.confMin = refSatF(math.Ceil(r.confZ))
+	} else {
+		r.min, r.confMin = refSat(exMin), refSat(exMin)
+	}
+	if r.belowMax {
+		r.max = refSatF(math.Floor(tf * float64(n) * (1 + e)))
+	} else {
+		r.max = refSat(exMax)
+	}
+	return r
+}
+
+// refMeets is the reference confidence decision.
+func refMeets(r refRes, s int64) bool {
+	if r.below {
+		return float64(s) >= r.confZ
+	}
+	return s >= r.confMin
 }
 
 func check(t *testing.T, tv float64, n int64) {
 	t.Helper()
 	f := New(tv)
-	wantMin, wantMax := refBig(tv, n)
-	if got := f.Min(n); got != wantMin {
-		t.Fatalf("New(%v).Min(%d) = %d, want %d", tv, n, got, wantMin)
+	r := refBig(tv, n)
+	if got := f.Min(n); got != r.min {
+		t.Fatalf("New(%v).Min(%d) = %d, want %d", tv, n, got, r.min)
 	}
-	if got := f.Max(n); got != wantMax {
-		t.Fatalf("New(%v).Max(%d) = %d, want %d", tv, n, got, wantMax)
+	if got := f.Max(n); got != r.max {
+		t.Fatalf("New(%v).Max(%d) = %d, want %d", tv, n, got, r.max)
 	}
-	// Meets near the boundary and at the ends
-	for _, s := range []int64{0, 1, wantMin - 2, wantMin - 1, wantMin, wantMin + 1, n - 1, n} {
+	if got := f.ConfMin(n); got != r.confMin {
+		t.Fatalf("New(%v).ConfMin(%d) = %d, want %d", tv, n, got, r.confMin)
+	}
+	// Meets and Quick near the boundary and at the ends; ConfMin is the
+	// smallest support that meets the confidence
+	for _, s := range []int64{0, 1, r.confMin - 2, r.confMin - 1, r.confMin, r.confMin + 1, n - 1, n} {
 		if s < 0 || s > max(n, 0) {
 			continue
 		}
-		if got := f.Meets(s, n); got != (s >= wantMin) {
-			t.Fatalf("New(%v).Meets(%d, %d) = %v, minimum %d", tv, s, n, got, wantMin)
+		want := refMeets(r, s)
+		if got := f.Meets(s, n); got != want {
+			t.Fatalf("New(%v).Meets(%d, %d) = %v, want %v", tv, s, n, got, want)
 		}
-		if meets, sure := f.Quick(s, n); sure && meets != (s >= wantMin) {
-			t.Fatalf("New(%v).Quick(%d, %d) = %v (sure), minimum %d", tv, s, n, meets, wantMin)
+		if want != (s >= r.confMin) && n > 0 && !math.IsInf(tv, 1) {
+			t.Fatalf("New(%v): ConfMin(%d) = %d is not the smallest support meeting it (s=%d)", tv, n, r.confMin, s)
+		}
+		if meets, sure := f.Quick(s, n); sure && meets != want {
+			t.Fatalf("New(%v).Quick(%d, %d) = %v (sure), want %v", tv, s, n, meets, want)
 		}
 	}
 }
@@ -136,6 +200,10 @@ func TestAgainstBig(t *testing.T) {
 	}
 }
 
+// pct3091 is a variable so that pct3091/100 is a run-time float64
+// division, as on the command line.
+var pct3091 = 3.091
+
 // TestPinned checks values stated in the documentation.
 func TestPinned(t *testing.T) {
 	t.Parallel()
@@ -159,8 +227,16 @@ func TestPinned(t *testing.T) {
 		{"negative zero", math.Copysign(0, -1), 5, 0, 0},
 		{"negative", -3, 5, 0, 0},
 		{"infinity", math.Inf(1), 5, math.MaxInt64, math.MaxInt64},
-		{"infinity of 0", math.Inf(1), 0, math.MaxInt64, math.MaxInt64},
+		{"infinity of 0 (C: Inf·0 is NaN, 0)", math.Inf(1), 0, 0, 0},
 		{"tiny", 5e-324, math.MaxInt64, 1, 0},
+		{"1 of 2^52-1 keeps upstream's tolerance", 1, 1<<52 - 1, 1<<52 - 2, 1 << 52},
+		{"1 of 2^52 is exact (minimum), upstream's maximum", 1, 1 << 52, 1 << 52, 1<<52 + 1},
+		{"1 of 2^52+1 is exact", 1, 1<<52 + 1, 1<<52 + 1, 1<<52 + 1},
+		// the reason maxima switch only above 2^52: RN(2^55-1) = 2^55
+		{"1/8 of 2^55-1 (upstream)", 0.125, 1<<55 - 1, 1<<52 - 1, 1<<52 + 1},
+		{"1/8 of 2^55 (x = 2^52: upstream's maximum)", 0.125, 1 << 55, 1 << 52, 1<<52 + 1},
+		{"1/8 of 2^55+8", 0.125, 1<<55 + 8, 1<<52 + 1, 1<<52 + 1},
+		{"-S3.091 of 833815673989: upstream's maximum below 2^52", pct3091 / 100, 833815673989, 25773242483, 25773242483},
 	}
 	for _, tt := range tests {
 		f := New(tt.t)
@@ -203,6 +279,63 @@ func TestMonotone(t *testing.T) {
 				t.Fatalf("t=%v: not monotone at n=%d", tv, n)
 			}
 			prevMin, prevMax = lo, hi
+		}
+	}
+}
+
+// TestMonotoneAcrossSwitch checks the monotonicity argument of the
+// package documentation where it matters, at x = t·n near 2^52: Min, Max
+// and ConfMin are nondecreasing in n (fixed t) and in t (fixed n), and
+// Min <= Max+1 (every support meets the minimum or the maximum).
+func TestMonotoneAcrossSwitch(t *testing.T) {
+	t.Parallel()
+	r := rand.New(rand.NewPCG(17, 8))
+	type val struct{ lo, hi, conf int64 }
+	get := func(f Frac, n int64) val { return val{f.Min(n), f.Max(n), f.ConfMin(n)} }
+	checkStep := func(what string, prev, cur val) {
+		t.Helper()
+		if cur.lo < prev.lo || cur.hi < prev.hi || cur.conf < prev.conf {
+			t.Fatalf("%s: not monotone: %+v then %+v", what, prev, cur)
+		}
+		if cur.lo > cur.hi+1 {
+			t.Fatalf("%s: minimum %d above maximum %d + 1", what, cur.lo, cur.hi)
+		}
+	}
+	for i := range 300 {
+		// fixed t, n across 2^52/t
+		var tv float64
+		switch i % 4 {
+		case 0:
+			tv = r.Float64()
+		case 1:
+			tv = math.Nextafter(float64(1+r.IntN(100))/100, float64(r.IntN(2)))
+		case 2:
+			tv = 1 + r.Float64()*1000
+		default:
+			tv = math.Ldexp(1+r.Float64(), -r.IntN(10)) // t in [2^-9, 2)
+		}
+		f := New(tv)
+		n0 := int64(0x1p52 / tv)
+		prev := get(f, max(n0-2000, 0))
+		for n := max(n0-1999, 1); n <= n0+2000; n++ {
+			cur := get(f, n)
+			checkStep(fmt.Sprintf("t=%v n=%d", tv, n), prev, cur)
+			prev = cur
+		}
+	}
+	for range 300 {
+		// fixed n >= 2^52, t across 2^52/n by single ulps
+		n := int64(1)<<52 + r.Int64N(math.MaxInt64-1<<52)
+		tv := 0x1p52 / float64(n)
+		for range 2000 {
+			tv = math.Nextafter(tv, 0)
+		}
+		prev := get(New(tv), n)
+		for range 4000 {
+			tv = math.Nextafter(tv, 2)
+			cur := get(New(tv), n)
+			checkStep(fmt.Sprintf("t=%v n=%d", tv, n), prev, cur)
+			prev = cur
 		}
 	}
 }

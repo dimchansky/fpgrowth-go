@@ -72,12 +72,14 @@ type RuleOptions[T comparable] struct {
 	// Options.MaxSupport).
 	MaxSupport Support
 	// MinConfidence is the minimum confidence in [0, 1]; 0 means no
-	// confidence filter. With c = BodySupport·MinConfidence (exact, with
-	// the float64 value of MinConfidence), a rule passes iff
-	// Support >= c·(1-2^-52) and Support > c-1: the minimum of Fraction
-	// with the body support in place of the total weight. The tolerance
-	// is below one unit of support, so MinConfidence 1 admits only rules
-	// with Support == BodySupport, for every weight.
+	// confidence filter. It is used as the fraction c = p/100 of the
+	// percentage p with p/100 == MinConfidence (or, where no float64 has
+	// that property, the neighbor on the permissive side), as in v0.1.0.
+	// While x = c·BodySupport < 2^52 a rule passes iff
+	// Support >= BodySupport·(c·(1-2^-52)) in double arithmetic
+	// (upstream's test, unchanged); from 2^52 on iff Support >= ⌊x⌋
+	// exactly, so MinConfidence 1 admits only rules with
+	// Support == BodySupport at every weight.
 	MinConfidence float64
 	// MinSize and MaxSize limit the number of items of a rule, body and
 	// head together; 0 means 1 respectively no limit. Rules of size 1 have
@@ -189,7 +191,7 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 	cfg := fpg.DefaultConfig()
 	cfg.Target = report.TargetRules
 	cfg.ZMin, cfg.ZMax = zmin, zmax
-	cfg.ConfFrac = o.MinConfidence
+	cfg.ConfFrac = percentOf(o.MinConfidence, +1) / 100
 	cfg.Algo = o.Algorithm.internal()
 	o.Tuning.apply(&cfg)
 	if o.OriginalSupport {

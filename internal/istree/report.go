@@ -353,15 +353,17 @@ func (t *Tree) r4set(rep *report.Reporter, ni int32, index int32) error {
 // Deviation from upstream (differences.md N2): upstream tests
 // supp < body*conf*(1-DBL_EPSILON) in double arithmetic, which admits
 // rules with a confidence below 1 for -c100 once the body support exceeds
-// about 2^52.
+// about 2^52. The test is kept for conf·body < 2^52 and exact above
+// (thresh.Frac.Meets).
 func (t *Tree) rule(rep *report.Reporter, head tract.Item, supp, body, base tract.Supp) error {
 	if body < t.body {
 		return nil
 	}
-	// Quick (inlined) decides all but the rules near the boundary.
+	// Quick (inlined) is upstream's double test for body supports below
+	// 2^52; Meets decides the rest.
 	meets, sure := t.conf.Quick(int64(supp), int64(body))
 	if !sure {
-		meets = int64(supp) >= t.conf.Min(int64(body))
+		meets = t.conf.Meets(int64(supp), int64(body))
 	}
 	if !meets {
 		return nil

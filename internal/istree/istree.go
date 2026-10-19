@@ -85,11 +85,11 @@ type Params struct {
 	// raised to the effective MinSupp.
 	MinBody tract.Supp
 	// MinConf is the minimum rule confidence as a fraction in [0, 1]. A
-	// rule passes if its support meets the minimum MinConf of its body
-	// support under the threshold contract of package thresh: upstream's
-	// 1-DBL_EPSILON tolerance, evaluated exactly and capped below one unit
-	// (deviation for differences.md N2), so MinConf 1 admits only rules
-	// whose support equals the body support.
+	// rule passes under the threshold contract of package thresh
+	// (thresh.Frac.Meets): upstream's test supp >= body*(conf*(1-
+	// DBL_EPSILON)) in double arithmetic while x = MinConf·body < 2^52,
+	// above that supp >= ⌊x⌋ exactly (deviation for differences.md N2),
+	// so MinConf 1 admits only rules whose support equals the body support.
 	MinConf float64
 	// MaxSupp is the maximum rule support (-S) for rules, applied to the
 	// body support, or with OrigSupp to the support of body and head

@@ -42,9 +42,9 @@ type RuleParams struct {
 	// MinSupp and MaxSupp apply to the support of body ∪ head.
 	OrigSupp bool
 	// MinConf is the minimum confidence as a fraction (-c/100). A rule is
-	// accepted if its support meets the minimum MinConf of its body
-	// support under the threshold contract (MeetsMin): with x =
-	// body·MinConf exactly, supp >= x·(1-DBL_EPSILON) and supp > x-1.
+	// accepted if it meets the confidence under the threshold contract
+	// (MeetsConf): upstream's double test while x = body·MinConf < 2^52,
+	// else supp >= x·(1-DBL_EPSILON) and supp > x-1 exactly.
 	MinConf float64
 	// MinSize and MaxSize bound the number of items of a rule, counting
 	// body and head (-m, -n). NoMaxSize means no limit.
@@ -157,7 +157,7 @@ func (r Rule) String() string {
 //     s >= max(RuleSetMinSupp(MinSupp, conf), 1) (implied by the
 //     confidence test, applied for fidelity); with OrigSupp s >= smin and
 //     s <= MaxSupp;
-//  3. MeetsMin(s, conf, b): s meets the minimum conf of b (threshold
+//  3. MeetsConf(s, conf, b): the rule meets the confidence (threshold
 //     contract);
 //  4. MinSize <= |S| <= MaxSize;
 //  5. appearances: no item of S is AppearNone, h is AppearHead or
@@ -178,7 +178,7 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 	if !p.OrigSupp {
 		setMin = EffectiveMinSupp(RuleSetMinSupp(p.MinSupp, p.MinConf))
 	}
-	// meets caches MeetsMin(s, p.MinConf, b) (big.Rat arithmetic).
+	// meets caches MeetsConf(s, p.MinConf, b) (big.Rat arithmetic).
 	meets := map[[2]tract.Supp]bool{}
 
 	// Appearance masks over the universe.
@@ -227,7 +227,7 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 			}
 			ok, seen := meets[[2]tract.Supp{s, b}]
 			if !seen {
-				ok = MeetsMin(s, p.MinConf, b)
+				ok = MeetsConf(s, p.MinConf, b)
 				meets[[2]tract.Supp{s, b}] = ok
 			}
 			if !ok {
