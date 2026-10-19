@@ -7,6 +7,7 @@ import (
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -247,14 +248,31 @@ type Support struct {
 func Count(n int64) Support { return Support{kind: supportCount, count: n} }
 
 // Fraction returns a support of f times the total transaction weight W,
-// 0 < f <= 1. As a minimum it is the absolute support ceil(f·W·(1-ε)), as
-// a maximum floor(f·W·(1+ε)), with ε = 2^-52: like upstream's percentage
-// thresholds, this tolerates the representation error of decimal
-// fractions, so Fraction(0.3) of W = 10 is exactly 3. Fraction(k/100)
-// gives exactly the thresholds of the command line options -sk and -Sk.
-// The tolerance is relative: for a total weight beyond 2^53 it is more
-// than one (Fraction(1) of W = 2^60+1 is a minimum of W-256); use Count
-// for exact bounds.
+// 0 < f <= 1. Let x = f·W, exactly, with f's float64 value, and
+// ε = 2^-52. While x < 2^52 (for a maximum: x <= 2^52) the threshold is
+// upstream's double formula, exactly as in v0.1.0 and in the command line
+// program: as a minimum ceil(f·W·(1-ε)), as a maximum floor(f·W·(1+ε)),
+// every product rounded to float64. Its tolerance absorbs the
+// representation error of decimal fractions, so Fraction(0.3) of W = 10
+// is exactly 3. With its roundings it can be a full unit off from about
+// x = 2^51.6, which is kept for compatibility; from 2^52 on the tolerance
+// alone is at least one unit of support (it used to admit sets just
+// outside the bound), so the formula is evaluated exactly with the
+// tolerance capped below one unit: the
+// minimum is ⌊x⌋ and the maximum ⌈x⌉. Fraction(1) is therefore exactly W
+// from 2^52 on (below, the minimum keeps upstream's ceil(W·(1-ε)), which
+// is W too), and a larger fraction never gives a smaller bound.
+//
+// Fraction(float64(k)/100) for an integer k gives exactly the thresholds
+// of the command line options -sk and -Sk, for every W; for a decimal p
+// this holds for Fraction(p/100) when p/100 is a run-time float64
+// division, like the command line's (a constant expression such as
+// Fraction(33.3/100) is rounded once from the exact quotient and can
+// differ from it in the last bit).
+//
+// Beyond x = 2^53, f is only as precise as its float64 value:
+// Fraction(0.1) of W = 10·2^59 is a minimum of 2^59+32, since
+// float64(0.1) is slightly above 1/10. Use Count for exact bounds.
 func Fraction(f float64) Support { return Support{kind: supportFraction, frac: f} }
 
 // IsZero reports whether s is the zero value (not set).
@@ -288,13 +306,21 @@ func (s Support) validate(field string) error {
 
 // checkRange rejects a maximum support below the minimum one when both
 // are of the same kind; a Count minimum below 1 acts as 1. Fractions are
-// rejected only if the range is empty for every total weight W after the
-// tolerant conversion (minAbs, maxAbs): f·W·(1-ε) of the minimum above
-// g·W·(1+ε) of the maximum, with a margin of a few ε for the rounding of
-// that arithmetic, so Fraction(0.30000000000000004) to Fraction(0.3) is
-// still valid (both are 3 of W = 10). Mixed kinds (a Count and a
-// Fraction) can only be compared once the total weight is known and are
-// not checked: such a range may report nothing.
+// rejected only if the range is empty for every total weight W. In both
+// branches of the threshold contract (see Fraction) a minimum f admits
+// only supports s >= f·W·(1-ε)·(1-3u) and a maximum g only
+// s <= g·W·(1+ε)·(1+3u), with u = 2^-53 for the three roundings of the
+// double branch (the exact branch is tighter). The test below gives
+// g·(1+4ε)·(1-u) < f·(1-4ε)·(1+u), and to first order
+// (1-4ε)(1+u)/((1+4ε)(1-u)) = 1-7ε < 1-5ε = (1-ε)(1-3u)/((1+ε)(1+3u))
+// (ε = 2u; the second-order terms are below 2^-100), so
+// g·(1+ε)·(1+3u) < f·(1-ε)·(1-3u): the range is empty for every W. The
+// test therefore never rejects a range that can be non-empty; it may
+// accept empty ones within a few ε, which then report nothing.
+// Fraction(0.30000000000000004) to Fraction(0.3) is valid (both are 3 of
+// W = 10). Mixed kinds (a Count and a Fraction) can only be compared once
+// the total weight is known and are not checked: such a range may report
+// nothing.
 func checkRange(minSupp, maxSupp Support) error {
 	switch {
 	case minSupp.kind == supportCount && maxSupp.kind == supportCount && maxSupp.count < max(minSupp.count, 1):
@@ -306,44 +332,32 @@ func checkRange(minSupp, maxSupp Support) error {
 	return nil
 }
 
-// dblEpsilon is C's DBL_EPSILON, the tolerance of upstream's threshold
-// conversions.
+// dblEpsilon is C's DBL_EPSILON, the relative tolerance of the threshold
+// contract (see Fraction).
 const dblEpsilon = 0x1p-52
 
 // minAbs converts a minimum support to an absolute support for the total
-// weight w (upstream fpg_data and setbdr arithmetic for fractions).
+// weight w (the threshold contract of Fraction, package thresh).
 func (s Support) minAbs(w int64) int64 {
 	switch s.kind {
 	case supportCount:
 		return s.count
 	case supportFraction:
-		return suppFromFloat(math.Ceil(s.frac * float64(w) * (1 - dblEpsilon)))
+		return thresh.New(s.frac).Min(w)
 	}
 	return 0
 }
 
 // maxAbs converts a maximum support to an absolute support for the total
-// weight w (fpg_report arithmetic for fractions); the zero value gives
-// math.MaxInt64 (no limit).
+// weight w (see Fraction); the zero value gives math.MaxInt64 (no limit).
 func (s Support) maxAbs(w int64) int64 {
 	switch s.kind {
 	case supportCount:
 		return s.count
 	case supportFraction:
-		return suppFromFloat(math.Floor(s.frac * float64(w) * (1 + dblEpsilon)))
+		return thresh.New(s.frac).Max(w)
 	}
 	return math.MaxInt64
-}
-
-// suppFromFloat converts an integral float64 to int64, saturating.
-func suppFromFloat(x float64) int64 {
-	switch {
-	case !(x > 0):
-		return 0
-	case x >= 0x1p63:
-		return math.MaxInt64
-	}
-	return int64(x)
 }
 
 // percentOf converts a fraction to the percentage p that the internal
@@ -390,8 +404,9 @@ type Options[T comparable] struct {
 	// MaxSupport is the maximum support of a reported item set; the zero
 	// value means no limit. If MinSupport and MaxSupport are both Count
 	// or both Fraction, MaxSupport must not be below MinSupport (a Count
-	// minimum below 1 counts as 1; fractions are compared with the
-	// tolerance of Fraction); a Count and a Fraction are not compared.
+	// minimum below 1 counts as 1; two fractions are rejected only if the
+	// range is empty for every total weight, see Fraction); a Count and a
+	// Fraction are not compared.
 	MaxSupport Support
 	// MinSize is the minimum number of items of a reported set; 0 means 1.
 	// The empty set is reported only with IncludeEmpty.

@@ -4,30 +4,35 @@ import (
 	"math"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
-// dblEpsilon is C's DBL_EPSILON (2^-52).
-const dblEpsilon = 0x1p-52
-
-// minSuppValue computes fpg_data's absolute minimum support before
-// rounding: -smin if smin < 0, else (smin/100)*w*(1-DBL_EPSILON), in
-// upstream's evaluation order (left to right; no additions, so no fused
-// multiply-add can change the result).
-func minSuppValue(smin float64, w tract.Supp) float64 {
+// minSupp converts fpg_data's minimum support argument: -smin if
+// smin < 0 (rounded up), else the minimum of the fraction smin/100 of w
+// under the threshold contract of package thresh.
+//
+// Deviation from upstream (differences.md N2, issue #17): fpg_data
+// computes ceil((smin/100)*w*(1-DBL_EPSILON)) in double arithmetic, whose
+// relative tolerance alone exceeds one unit of support from 2^52 on (with
+// the roundings, from about 2^51.6). Here
+// that formula is kept where x = smin/100·w < 2^52 (identical results)
+// and evaluated exactly, with the tolerance capped below one unit, above.
+func minSupp(smin float64, w tract.Supp) tract.Supp {
 	if smin < 0 {
-		return -smin
+		return suppOf(math.Ceil(-smin))
 	}
-	return smin / 100.0 * float64(w) * (1 - dblEpsilon)
+	return tract.Supp(thresh.New(smin / 100.0).Min(int64(w)))
 }
 
-// maxSuppValue computes fpg_report's absolute maximum support before
-// flooring: -smax if smax < 0, else (smax/100)*w*(1+DBL_EPSILON).
-func maxSuppValue(smax float64, w tract.Supp) float64 {
+// maxSupp converts fpg_report's maximum support argument: -smax if
+// smax < 0 (rounded down), else the maximum of the fraction smax/100 of
+// w under the threshold contract (deviation N2, as minSupp).
+func maxSupp(smax float64, w tract.Supp) tract.Supp {
 	if smax < 0 {
-		return -smax
+		return suppOf(math.Floor(-smax))
 	}
-	return smax / 100.0 * float64(w) * (1 + dblEpsilon)
+	return tract.Supp(thresh.New(smax / 100.0).Max(int64(w)))
 }
 
 // suppOf converts an integral floating-point support to tract.Supp.
@@ -59,44 +64,30 @@ type thresholds struct {
 // fpg_report for the total transaction weight w.
 func computeThresholds(c *Config, w tract.Supp) thresholds {
 	if c.HasCounts {
-		return countThresholds(c)
+		return derive(c, c.MinCount, c.MaxCount)
 	}
-	smin := math.Ceil(minSuppValue(c.SMin, w))
-	var t thresholds
-	t.body = suppOf(smin)
-	if c.Target == report.TargetRules && c.Mode&ModeOrigSupp == 0 {
-		smin *= c.Conf / 100.0 * (1 - dblEpsilon)
-	}
-	t.supp = suppOf(math.Ceil(smin))
-	// Deviation from upstream (fpgrowth-core.md B2): fpg_data does not
-	// clamp, so -s0 gives a minimum support of 0 and the miners
-	// dereference empty node lists or report support-0 sets. The
-	// effective minimum support (and body support) is at least 1.
-	t.supp = max(t.supp, 1)
-	t.body = max(t.body, 1)
-	t.smax = suppOf(math.Floor(maxSuppValue(c.SMax, w)))
-	return t
+	return derive(c, minSupp(c.SMin, w), maxSupp(c.SMax, w))
 }
 
-// countThresholds derives the thresholds from the exact absolute supports
-// of Config.HasCounts: the same rules as computeThresholds, without the
-// float notation. For rules with the body support definition, the
-// minimum set support is the body minimum times the confidence (with
-// upstream's 1-DBL_EPSILON tolerance), computed from the body minimum
-// rounded down to a float64 and capped by the body minimum, so it never
-// exceeds the exact product.
-func countThresholds(c *Config) thresholds {
+// derive completes the thresholds from the absolute minimum and maximum
+// support. For rules with the body support definition, the minimum set
+// support is the smallest support that meets the confidence ConfFrac for
+// the minimum body support (fpg_data's ceil(smin*(conf*(1-DBL_EPSILON))),
+// under the threshold contract: thresh.Frac.RuleSetMin). That minimum is
+// nondecreasing in the body support, so no rule can have a smaller
+// support.
+//
+// Deviation from upstream (fpgrowth-core.md B2): fpg_data does not clamp,
+// so -s0 gives a minimum support of 0 and the miners dereference empty
+// node lists or report support-0 sets. The effective minimum support (and
+// body support) is at least 1.
+func derive(c *Config, minimum, maximum tract.Supp) thresholds {
 	var t thresholds
-	t.body = max(c.MinCount, 1)
+	t.body = max(minimum, 1)
 	t.supp = t.body
 	if c.Target == report.TargetRules && c.Mode&ModeOrigSupp == 0 {
-		x := float64(t.body)
-		if x >= 0x1p63 || tract.Supp(x) > t.body {
-			x = math.Nextafter(x, 0)
-		}
-		x *= c.Conf / 100.0 * (1 - dblEpsilon)
-		t.supp = min(max(suppOf(math.Ceil(x)), 1), t.body)
+		t.supp = min(max(tract.Supp(thresh.New(c.ConfFrac).RuleSetMin(int64(t.body))), 1), t.body)
 	}
-	t.smax = c.MaxCount
+	t.smax = maximum
 	return t
 }

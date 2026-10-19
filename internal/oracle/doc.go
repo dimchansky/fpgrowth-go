@@ -130,8 +130,12 @@
 //
 // # Helpers
 //
-// AbsMinSupp, AbsMaxSupp, RuleSetMinSupp and AbsBorder replicate
-// upstream's threshold conversions. Generate produces deterministic random
+// AbsMinSupp, AbsMaxSupp, RuleSetMinSupp and AbsBorder convert upstream's
+// threshold arguments under the threshold contract of docs/differences.md
+// (N2): upstream's double formulas (upstream.go) where x = t·n < 2^52,
+// the exact formula with math/big, capped below one unit, above;
+// FracMinSupp, FracMaxSupp, ConfMinSupp, MeetsMin, MeetsMax and MeetsConf
+// state it for fractions. Generate produces deterministic random
 // datasets and WriteTable serializes them in upstream's default input
 // format. DiffSets and DiffRules compare results order-independently and
 // describe the first differences.

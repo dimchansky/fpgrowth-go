@@ -427,7 +427,7 @@ func BenchmarkSuiteConsume(b *testing.B) {
 	b.Run("dense/s=10/c=90/n=4/rules/internal-nosink", func(b *testing.B) {
 		cfg := fpg.DefaultConfig()
 		cfg.Target = report.TargetRules
-		cfg.SMin, cfg.Conf, cfg.ZMax = 10, 90, 4
+		cfg.SMin, cfg.ConfFrac, cfg.ZMax = 10, 0.9, 4
 		scan := suiteScan(txs)
 		suiteLoop(b, "rules", func() uint64 {
 			rep, err := fpg.Mine(context.Background(), cfg, tract.NewItemBase[string](), scan, nil)

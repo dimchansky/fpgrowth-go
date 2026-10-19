@@ -351,11 +351,11 @@ func TestThresholds(t *testing.T) {
 			t.Fatalf("smax %v w %d: smax %d, want %d", smax, w, th.smax, want)
 		}
 		c.Target = report.TargetRules
-		c.Conf = float64(r.IntN(101))
+		c.ConfFrac = float64(r.IntN(101)) / 100
 		th = computeThresholds(&c, w)
 		body := oracle.AbsMinSupp(smin, w)
-		if want := oracle.EffectiveMinSupp(oracle.RuleSetMinSupp(body, c.Conf/100)); th.supp != want {
-			t.Fatalf("rules smin %v conf %v w %d: supp %d, want %d", smin, c.Conf, w, th.supp, want)
+		if want := oracle.EffectiveMinSupp(oracle.RuleSetMinSupp(body, c.ConfFrac)); th.supp != want {
+			t.Fatalf("rules smin %v conf %v w %d: supp %d, want %d", smin, c.ConfFrac, w, th.supp, want)
 		}
 		if th.body != oracle.EffectiveMinSupp(body) {
 			t.Fatalf("rules smin %v w %d: body %d, want %d", smin, w, th.body, body)
@@ -794,7 +794,7 @@ func checkFuzzRules(t *testing.T, c propCase, r *fuzzBytes) {
 	cfg.Target = report.TargetRules
 	cfg.SMin = c.smin
 	cfg.SMax = []float64{100, 100, 60, -3, -1, 0}[r.next()%6]
-	cfg.Conf = []float64{0, 30, 50, 80, 100}[r.next()%5]
+	cfg.ConfFrac = []float64{0, 0.3, 0.5, 0.8, 1}[r.next()%5]
 	cfg.ZMin = r.next() % 3
 	cfg.ZMax = []int{MaxSize, 1, 2, 3}[r.next()%4]
 	cfg.Sort = c.sort
@@ -816,7 +816,7 @@ func checkFuzzRules(t *testing.T, c propCase, r *fuzzBytes) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(cfg.SMin, db.Total())), cfg.Conf/100)
+	p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(cfg.SMin, db.Total())), cfg.ConfFrac)
 	var app *appSpec
 	if flags&4 != 0 {
 		app = &appSpec{def: tract.Appearance(r.next() % 4)}
@@ -903,13 +903,13 @@ func TestCountThresholds(t *testing.T) {
 			c := DefaultConfig()
 			if rules {
 				c.Target = report.TargetRules
-				c.Conf = float64(r.IntN(101))
+				c.ConfFrac = float64(r.IntN(101)) / 100
 			}
 			c.SMin, c.SMax = -float64(n), -float64(x)
 			want := computeThresholds(&c, w)
 			c.HasCounts, c.MinCount, c.MaxCount = true, n, x
 			if got := computeThresholds(&c, w); got != want {
-				t.Fatalf("rules=%v n %d x %d conf %v: counts %+v, float %+v", rules, n, x, c.Conf, got, want)
+				t.Fatalf("rules=%v n %d x %d conf %v: counts %+v, float %+v", rules, n, x, c.ConfFrac, got, want)
 			}
 		}
 	}
@@ -919,12 +919,12 @@ func TestCountThresholds(t *testing.T) {
 		if th := computeThresholds(&c, n); th.supp != n || th.body != n || th.smax != n {
 			t.Errorf("count %d: %+v", n, th)
 		}
-		c.Target, c.Conf = report.TargetRules, 100
+		c.Target, c.ConfFrac = report.TargetRules, 1
 		th := computeThresholds(&c, n)
 		// the set minimum is a lower bound of the support of a rule with
-		// body support >= n and confidence 1: n itself, minus the float
-		// tolerance
-		if th.body != n || th.supp > n || float64(th.supp) < float64(n)*(1-0x1p-50) || th.smax != n {
+		// body support >= n and confidence 1: n itself (exact under the
+		// threshold contract, N2)
+		if th.body != n || th.supp != n || th.smax != n {
 			t.Errorf("rules count %d: %+v", n, th)
 		}
 	}

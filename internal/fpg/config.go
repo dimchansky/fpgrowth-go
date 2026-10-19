@@ -101,6 +101,9 @@ type Config struct {
 	Target report.Target
 	// SMin is the minimum support: a percentage of the total transaction
 	// weight if >= 0, else an absolute support (its negation). At most 100.
+	// A percentage p is the fraction p/100 (a float64 division, like
+	// upstream), converted exactly by the threshold contract of package
+	// thresh.
 	SMin float64
 	// SMax is the maximum support, in the same notation as SMin.
 	SMax float64
@@ -115,8 +118,10 @@ type Config struct {
 	// MaxCount is the absolute maximum support if HasCounts is set
 	// (math.MaxInt64: no limit).
 	MaxCount tract.Supp
-	// Conf is the minimum confidence of rules in percent, in [0, 100].
-	Conf float64
+	// ConfFrac is the minimum confidence of rules as a fraction in [0, 1]
+	// (upstream's fpg->conf = -c/100). A rule passes if its support meets
+	// the minimum ConfFrac of its body support (package thresh).
+	ConfFrac float64
 	// ZMin and ZMax are the minimum and maximum item set (rule) size;
 	// ZMax >= MaxSize means no limit. Both must be >= 0.
 	ZMin, ZMax int
@@ -158,20 +163,20 @@ type Config struct {
 // mode, 16-items machine for 16 items, -q2.
 func DefaultConfig() Config {
 	return Config{
-		Target: report.TargetAll,
-		SMin:   10,
-		SMax:   100,
-		Conf:   80,
-		ZMin:   1,
-		ZMax:   MaxSize,
-		Eval:   EvalNone,
-		Agg:    AggNone,
-		Thresh: 10,
-		Algo:   AlgoComplex,
-		Mode:   ModeDefault,
-		Pack:   16,
-		Sort:   2,
-		Prune:  NoPrune,
+		Target:   report.TargetAll,
+		SMin:     10,
+		SMax:     100,
+		ConfFrac: 0.8,
+		ZMin:     1,
+		ZMax:     MaxSize,
+		Eval:     EvalNone,
+		Agg:      AggNone,
+		Thresh:   10,
+		Algo:     AlgoComplex,
+		Mode:     ModeDefault,
+		Pack:     16,
+		Sort:     2,
+		Prune:    NoPrune,
 	}
 }
 
@@ -205,8 +210,8 @@ func (c *Config) validate() error {
 		return bad("invalid maximum support %g", c.SMax)
 	case c.HasCounts && (c.MinCount < 0 || c.MaxCount < 0):
 		return bad("invalid support counts %d, %d", c.MinCount, c.MaxCount)
-	case !(c.Conf >= 0 && c.Conf <= 100):
-		return bad("invalid minimum confidence %g", c.Conf)
+	case !(c.ConfFrac >= 0 && c.ConfFrac <= 1):
+		return bad("invalid minimum confidence %g", c.ConfFrac)
 	case c.ZMin < 0:
 		return bad("invalid minimum item set size %d", c.ZMin)
 	case c.ZMax < 0:
@@ -250,7 +255,7 @@ func (c *Config) normalize() {
 		c.Target = report.TargetAll
 	}
 	if c.Target != report.TargetRules {
-		c.Conf = 100 // neutral confidence
+		c.ConfFrac = 1 // neutral confidence
 	} else if c.Eval == EvalLogRatio {
 		// Deviation from upstream (rules-eval.md B1): fpgrowth maps -eb to
 		// its item set measure for every target, so rules are not

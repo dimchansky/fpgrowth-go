@@ -14,6 +14,7 @@ import (
 	"github.com/dimchansky/fpgrowth-go/internal/isrout"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/tabread"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -27,9 +28,6 @@ type env struct {
 	// empty means os.TempDir().
 	tempDir string
 }
-
-// dblEpsilon is C's DBL_EPSILON.
-const dblEpsilon = 0x1p-52
 
 // run executes the program like upstream's main and returns the exit
 // status. Diagnostics go to e.stderr; item sets go to the output file or
@@ -238,16 +236,17 @@ func (r *runner) mine() *cliError {
 }
 
 // borderSupp is setbdr's conversion of a -F value to an absolute support:
-// ceil(v/100*w*(1-DBL_EPSILON)) for v >= 0, ceil(-v) otherwise, with the
-// integer conversion saturating (upstream: undefined beyond int).
+// ceil(-v) for v < 0 (saturating; upstream: undefined beyond int), else
+// the minimum of the fraction v/100 of w under the threshold contract of
+// package thresh: upstream's ceil(v/100*w*(1-DBL_EPSILON)) while
+// v/100·w < 2^52, exact above (deviation N2 in docs/differences.md).
 func borderSupp(v float64, w tract.Supp) tract.Supp {
-	s := -v
-	if v >= 0 {
-		s = v / 100.0 * float64(w) * (1 - dblEpsilon)
+	if v >= 0 { // also -0, which upstream treats as a percentage of 0
+		return tract.Supp(thresh.New(v / 100.0).Min(int64(w)))
 	}
-	s = math.Ceil(s)
+	s := math.Ceil(-v)
 	switch {
-	case !(s > 0):
+	case !(s > 0): // NaN
 		return 0
 	case s >= 0x1p63:
 		return math.MaxInt64

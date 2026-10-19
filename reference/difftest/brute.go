@@ -321,6 +321,14 @@ func (db *bfDB) rules(p bfRuleParams) []bfRule {
 
 // absMinSupp converts a -s (or -F) argument like fpg_data and setbdr:
 // negative values are absolute, others percentages of the total weight.
+//
+// absMinSupp, absMaxSupp, ruleSetMinSupp and the confidence test of
+// bfDB.rules use C's double formulas. The port follows the threshold
+// contract of docs/differences.md (N2): exactly these formulas while
+// x = t·total < 2^52, an exact evaluation above. The difftest's totals
+// are far below 2^52 (weights up to 2^20, totals below 2^31), so the two
+// agree on every generated case; a mode with larger totals would have
+// to apply the contract's exact branch here.
 func absMinSupp(arg float64, total int64) int64 {
 	if arg < 0 {
 		return suppFromFloat(math.Ceil(-arg))

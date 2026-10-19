@@ -95,7 +95,7 @@ func (m *Miner[T]) mineTree(ctx context.Context) error {
 		Appear:   appear,
 		MinSupp:  m.th.supp,
 		MinBody:  m.th.body,
-		MinConf:  c.Conf / 100.0,
+		MinConf:  c.ConfFrac,
 		MaxSupp:  maxSupp,
 		OrigSupp: c.Mode&ModeOrigSupp != 0,
 	})

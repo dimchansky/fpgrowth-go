@@ -168,8 +168,10 @@ above). See
 
 **Thresholds**: minimum and maximum support, absolute (`Count`, exact over
 the whole `int64` range, bounds inclusive) or relative to the total
-transaction weight (`Fraction`, converted with upstream's arithmetic, so
-`Fraction(k/100)` equals `-sk`); minimum and maximum size;
+transaction weight (`Fraction`, converted with upstream's formula, and
+exactly once threshold × weight reaches 2^52, so `Fraction(1)` is the
+total weight and `Fraction(k/100)` equals `-sk` at every weight); minimum
+and maximum size;
 the empty set (`IncludeEmpty`, `-m0`); a per-size support border
 (`Border`, `-F`); minimum rule confidence (`MinConfidence`, `-c`).
 
@@ -351,7 +353,8 @@ evaluation only select which sets of the target are reported.
 
 `MinSupport` applies to the support of the rule body unless
 `OriginalSupport` is set. `MinConfidence` is a fraction; its zero value
-means no confidence filter (the CLI default is 80 %).
+means no confidence filter (the CLI default is 80 %), and 1 admits only
+rules whose support equals the body support.
 
 ```go
 ctx := context.Background()
@@ -819,7 +822,7 @@ the same kind: for two `Count`s, a maximum below the minimum, where a
 minimum below 1 counts as 1 (so `MaxSupport: Count(0)` with a `Count`
 minimum is an error; with a `Fraction` minimum it is accepted and
 nothing is reported); for two `Fraction`s, only a range that is empty
-for every total weight after upstream's tolerant conversion (fractions a
+for every total weight under the conversion of `Fraction` (fractions a
 few ulps apart are accepted). Ranges of mixed kinds are not checked in
 advance.
 `SpoolCSV` and `SpoolTable` reject an invalid format before they copy any
@@ -1155,8 +1158,12 @@ plus two upstream crashes that it avoids and five latent defects
   (products up to 2^53), the certainty factor wherever base/(base−head)
   <= 2^10 (beyond, an exact form is used), the information, the G-test and the Fisher
   tests above a total weight of 170 differ in the last bits on ordinary
-  data, and all are accurate for weights up to 2^63. Numeric limits for
-  very large weights are N2 and N3 (see [Limitations](#limitations)).
+  data, and all are accurate for weights up to 2^63. Relative support and
+  confidence thresholds keep upstream's double formula while threshold ×
+  weight is below 2^52 (no change there) and are exact, with the
+  tolerance below one unit of support, above it (N2; upstream admitted
+  results outside the bound there). The numeric limit for very large
+  weights is N3 (see [Limitations](#limitations)).
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
   write errors are reported; no crash with supports above about 2·10^8
@@ -1190,13 +1197,14 @@ plus two upstream crashes that it avoids and five latent defects
   on dense data with a small size limit, but 2.2–3.2× slower on large
   sparse data and up to 2.6× slower for dense maximal sets of exactly the
   maximum size.
-- Numeric limits for very large weights (`docs/differences.md`, N2 and
-  N3; the former limit N1 of the statistical measures, audit ALG-1, was
-  fixed by issue #16): above about 2^52 the
-  support and confidence thresholds admit results just outside the bound;
-  CLI absolute thresholds above 2^53 are rounded like upstream's doubles
-  (the library's `Count` is exact). For any measure, a value exactly on
-  the evaluation threshold may fall on either side (F-1).
+- Numeric limits for very large weights (`docs/differences.md`, N3; the
+  former limits N1 of the statistical measures, audit ALG-1, and N2 of
+  the relative thresholds, audit ALG-2, were fixed by issues #16 and
+  #17): CLI absolute thresholds above 2^53 are rounded like upstream's
+  doubles (the library's `Count` is exact). Beyond f·W = 2^53 a
+  `Fraction` is only as precise as its float64 value. For any measure, a
+  value exactly on the evaluation threshold may fall on either side
+  (F-1).
 - Association rules have exactly one item in the head.
 - Results come in upstream's order; the library does not sort them. The
   order depends on the data, the options and the algorithm variant; it is
@@ -1248,9 +1256,11 @@ every measure with it on all tables with a total weight up to 20,
 boundary margins, random weighted tables up to 2^24 and a grid of large
 tables up to 2^63; the tolerances are the documented error bounds of the
 measures, so these comparisons check the accuracy claims directly. The
-remaining known numerical defect for large total weights (ALG-2,
-`docs/differences.md` N2) is kept in an expected-failure table that fails
-when an entry starts to pass. `FPG_REF_CASES=<k>` runs the
+oracle also evaluates the support and confidence thresholds
+independently (`docs/differences.md` N2: upstream's formulas below 2^52,
+exact rationals above), and the comparisons include databases with total
+weights up to 2^62.
+`FPG_REF_CASES=<k>` runs the
 root package's evaluated oracle comparisons on k random datasets each. `FPG_MEASURE_CASES=<k> go test ./internal/ruleval`
 runs the extended sweep (all tables up to a total weight of 60, k random
 tables up to 2^24, and k up to 2^62).

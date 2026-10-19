@@ -345,11 +345,27 @@ func (t *Tree) r4set(rep *report.Reporter, ni int32, index int32) error {
 }
 
 // rule checks the rule body -> head of the current set (support supp) and
-// reports it if it qualifies: minimum body support, confidence with the
-// 1-DBL_EPSILON tolerance, maximum support and the evaluation threshold
-// (reject-if-less, so NaN passes like upstream).
+// reports it if it qualifies: minimum body support, confidence (the
+// minimum MinConf of the body support, see Params.MinConf), maximum
+// support and the evaluation threshold (reject-if-less, so NaN passes
+// like upstream).
+//
+// Deviation from upstream (differences.md N2): upstream tests
+// supp < body*conf*(1-DBL_EPSILON) in double arithmetic, which admits
+// rules with a confidence below 1 for -c100 once the body support exceeds
+// about 2^52. The test is kept for conf·body < 2^52 and exact above
+// (thresh.Frac.Meets).
 func (t *Tree) rule(rep *report.Reporter, head tract.Item, supp, body, base tract.Supp) error {
-	if body < t.body || float64(supp) < float64(body)*t.conf {
+	if body < t.body {
+		return nil
+	}
+	// Quick (inlined) is upstream's double test for body supports below
+	// 2^52; Meets decides the rest.
+	meets, sure := t.conf.Quick(int64(supp), int64(body))
+	if !sure {
+		meets = t.conf.Meets(int64(supp), int64(body))
+	}
+	if !meets {
 		return nil
 	}
 	// Deviation from upstream (bug B8, rules-eval.md §3.1): upstream's

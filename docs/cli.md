@@ -184,11 +184,11 @@ in percent are fractions in the library.
 | `-tr` | `RuleOptions` with `MineRules` / `Rules` / `CollectRules` |
 | `-m#` | `MinSize`; `-m0`: `Options.IncludeEmpty` |
 | `-n#` | `MaxSize` (0 means no limit in the library) |
-| `-s#` (positive) | `MinSupport: Fraction(s/100)` (`Fraction(k/100)` gives exactly the threshold of `-sk`) |
+| `-s#` (positive) | `MinSupport: Fraction(s/100)`; both follow the threshold contract (`differences.md`), and `Fraction(float64(k)/100)` gives exactly the threshold of `-sk` at every weight (for a decimal `s`, when `s/100` is a run-time float64 division like the CLI's) |
 | `-s-#` (negative) | `MinSupport: Count(n)` (exact for every `int64`; the CLI's float notation is exact up to 2^53) |
 | `-S#` | `MaxSupport`, same conversion; the zero value means no limit |
 | `-o` | `RuleOptions.OriginalSupport` |
-| `-c#` | `RuleOptions.MinConfidence = c/100` (library default 0: no confidence filter; CLI default 80) |
+| `-c#` | `RuleOptions.MinConfidence = c/100` (the same threshold contract; library default 0: no confidence filter; CLI default 80) |
 | `-F#:#..` | `Options.Border` (`Fraction` for positive, `Count` for negative values) |
 | `-e#` | `Evaluation.Measure` (the letter of each `Measure` is in its doc comment); `-eb`: `LogSupportRatio` for item sets, `Imbalance` for rules; `-ex`: `Evaluation` nil |
 | `-a#` | `Evaluation.Aggregate`: `x` `AggregateFirst`, `m` `AggregateMin`, `n` `AggregateMax`, `a` `AggregateAverage` |
@@ -270,9 +270,19 @@ The full list with evidence and tests is in
   and the Fisher tests above a total weight of 170 can differ from
   upstream in the last digits. The Fisher tests take time proportional to
   the square root of the total weight in the worst case.
-- **Numeric limits** (N2, N3): above about 2^52 `-s`, `-S` and `-c`
-  admit results just outside the bound; absolute thresholds (`-s-<n>`,
-  `-S-<n>`) above 2^53 are rounded, as upstream parses them as doubles.
+- **Relative thresholds** (N2): `-s`, `-S`, `-F` and `-c` keep
+  upstream's double formulas, with identical results, while x =
+  percentage/100 × weight (or confidence × body support) is below 2^52.
+  From 2^52 on (maxima: above 2^52), where upstream's relative tolerance
+  alone is at least one unit of support and admitted results up to
+  W·2^-52 outside the bound, the bound is exact (just below 2^52, from
+  about 2^51.6, upstream's formula can already be a full unit off; it is
+  kept there): ⌊x⌋ for `-s`, `-F` and `-c`, ⌈x⌉ for
+  `-S`. `-c100` then admits only rules whose support equals the body
+  support, and `-s100` is the total weight (the threshold contract in
+  `differences.md`).
+- **Numeric limits** (N3): absolute thresholds (`-s-<n>`, `-S-<n>`)
+  above 2^53 are rounded, as upstream parses them as doubles.
 - **Closed standard output** (C10): when the caller closes standard
   output (`>&-`), the Go runtime opens `/dev/null` in its place, so the
   program exits 0 where upstream reports "write error on file <stdout>"

@@ -273,7 +273,7 @@ func TestMinerConfig(t *testing.T) {
 	}
 	c := o.minerConfig()
 	want := fpg.Config{
-		Target: report.TargetMaximal, SMin: -3, SMax: 70, Conf: 40, ZMin: 2, ZMax: 4,
+		Target: report.TargetMaximal, SMin: -3, SMax: 70, ConfFrac: 0.4, ZMin: 2, ZMax: 4,
 		Eval: int(ruleval.Confidence), InvalidateBelowExpected: true, Agg: fpg.AggMin, Thresh: 30,
 		Algo: fpg.AlgoSingle, Mode: fpg.ModeOrigSupp, Pack: 0, Sort: -2, Prune: -1,
 	}

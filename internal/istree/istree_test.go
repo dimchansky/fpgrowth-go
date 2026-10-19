@@ -11,6 +11,7 @@ import (
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -379,11 +380,11 @@ func parseTxs(s string) []oracle.Transaction {
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name               string
-		smin, body         tract.Supp
-		expSmin, expBody   tract.Supp
-		smax, expSmax      tract.Supp
-		conf, expConfLower float64
+		name             string
+		smin, body       tract.Supp
+		expSmin, expBody tract.Supp
+		smax, expSmax    tract.Supp
+		conf             float64
 	}{
 		{name: "zero minimum", smin: 0, body: 0, expSmin: 1, expBody: 1, expSmax: report.MaxSupp, conf: 0.8},
 		{name: "body below set minimum", smin: 3, body: 2, expSmin: 3, expBody: 3, smax: 7, expSmax: 7, conf: 1},
@@ -395,7 +396,7 @@ func TestNew(t *testing.T) {
 			if tr.smin != tt.expSmin || tr.body != tt.expBody || tr.smax != tt.expSmax {
 				t.Errorf("smin, body, smax = %d, %d, %d; want %d, %d, %d", tr.smin, tr.body, tr.smax, tt.expSmin, tt.expBody, tt.expSmax)
 			}
-			if tr.conf != tt.conf*(1-0x1p-52) || (tt.conf > 0 && tr.conf >= tt.conf) {
+			if tr.conf != thresh.New(tt.conf) {
 				t.Errorf("conf = %v for %v", tr.conf, tt.conf)
 			}
 			if tr.NumItems() != 2 || tr.Height() != 1 || tr.Depth() != 1 {

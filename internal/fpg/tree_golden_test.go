@@ -105,7 +105,7 @@ func parseTreeOpts(opts string) (treeOpts, error) {
 			case 'S':
 				c.SMax = v
 			case 'c':
-				c.Conf = v
+				c.ConfFrac = v / 100
 			case 'd':
 				c.Thresh = v
 			case 'm':
@@ -220,7 +220,7 @@ func treeOracleDiff(t *testing.T, d *goldenData, o treeOpts, r treeRun) string {
 	c := o.cfg
 	total := db.Total()
 	if c.Target == report.TargetRules {
-		p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(c.SMin, total)), c.Conf/100)
+		p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(c.SMin, total)), c.ConfFrac)
 		p.OrigSupp = c.Mode&ModeOrigSupp != 0
 		p.MaxSupp = oracle.AbsMaxSupp(c.SMax, total)
 		p.MinSize = c.ZMin

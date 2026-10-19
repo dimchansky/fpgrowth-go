@@ -20,8 +20,8 @@ The release workflow publishes the section whose heading matches the tag
   every evaluation value against it, so a wrong measure formula now fails
   `go test ./...` without the C-derived fixtures (audit TST-3, #15). The
   known numerical defects for large total weights (ALG-1, ALG-2, ALG-6)
-  are recorded in expected-failure tables (ALG-1 and ALG-6 are fixed
-  since, see below). No library or CLI behavior changes.
+  are recorded in expected-failure tables (all three are fixed since, see
+  below, and the tables are gone). No library or CLI behavior changes.
 
 ### Changed
 
@@ -45,8 +45,30 @@ The release workflow publishes the section whose heading matches the tag
   returns 0 at once when an upper bound of its p-value is below the
   smallest float64 (strong associations at large totals), without
   resolving near-ties.
+- Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
+  `-s`, `-S`, `-F`, `-c`) follow a threshold contract
+  (`docs/differences.md` N2 and "Threshold contract", #17). Behavior
+  change only for large weights: where x = threshold × total weight (or
+  confidence × body support) is below 2^52, every decision is unchanged
+  (upstream's and v0.1.0's double formula, bit for bit, for every
+  fraction, percentage and `MinConfidence` value). From 2^52 on the bound
+  is exact, ⌊x⌋ for a minimum or the confidence and ⌈x⌉ for a maximum,
+  instead of upstream's value, which could be up to x·2^-52 more
+  permissive (see Fixed); maxima switch above 2^52.
 
 ### Fixed
+
+- Support and confidence thresholds are exact at large total weights
+  (audit ALG-2, #17; `docs/differences.md` N2, a known limitation of
+  v0.1.0): above about 2^52 the relative tolerance admitted sets and rules
+  up to W·2^-52 outside the bound (512 for W = 2^61), and
+  `MinConfidence: 1` / `-c100` admitted rules with a confidence below 1.
+  `-w -s50` on `a 2305843009213693752`, `b 2305843009213694152` no longer
+  reports `a` (49.999999999999992895 %), `-tr -w -s0 -c100 -m2` on
+  `x y 4611686018427387000`, `x 1000` no longer reports `y <- x`, and
+  `Fraction(1)` of a total weight W is exactly W (it was W−257 for
+  W = 2^60+1, not W−256 as the `Fraction` documentation said). Results
+  for x below 2^52 do not change.
 
 - The statistical evaluation measures are accurate for every total
   transaction weight up to 2^63−1 (audit ALG-1 and ALG-6, #16;
