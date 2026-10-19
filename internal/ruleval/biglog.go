@@ -40,18 +40,23 @@ var bigConsts = sync.OnceValue(func() [2]*big.Float {
 
 func newBig() *big.Float { return new(big.Float).SetPrec(bigLogPrec) }
 
-// atanhSeries returns atanh(z) = Σ z^(2k+1)/(2k+1) for |z| <= 1/3.
+// atanhSeries returns atanh(z) = Σ z^(2k+1)/(2k+1) for |z| <= 1/3. The
+// loop keeps its operands apart from the results (ping-pong buffers), so
+// that math/big does not allocate temporaries for aliased arguments.
 func atanhSeries(z *big.Float) *big.Float {
 	z2 := newBig().Mul(z, z)
-	p, sum := newBig().Set(z), newBig().Set(z)
-	q := newBig()
+	p, p2 := newBig().Set(z), newBig()
+	sum, sum2 := newBig().Set(z), newBig()
+	q, kf := newBig(), newBig()
 	for k := int64(3); ; k += 2 {
-		p.Mul(p, z2)
-		q.Quo(p, q.SetInt64(k))
+		p2.Mul(p, z2)
+		p, p2 = p2, p
+		q.Quo(p, kf.SetInt64(k))
 		if q.Sign() == 0 || q.MantExp(nil) < sum.MantExp(nil)-bigLogPrec-4 {
 			return sum
 		}
-		sum.Add(sum, q)
+		sum2.Add(sum, q)
+		sum, sum2 = sum2, sum
 	}
 }
 
@@ -98,6 +103,15 @@ var stirBern = [15][2]int64{
 	{77683, 5796}, {-236364091, 1506960}, {657931, 300}, {-3392780147, 93960}, {1723168255201, 2492028},
 }
 
+// stirCoef holds the stirBern coefficients as bigLogPrec-bit values.
+var stirCoef = sync.OnceValue(func() [len(stirBern)]*big.Float {
+	var c [len(stirBern)]*big.Float
+	for i, cb := range stirBern {
+		c[i] = newBig().Quo(newBig().SetInt64(cb[0]), newBig().SetInt64(cb[1]))
+	}
+	return c
+})
+
 // bigLnFact returns ln m! at bigLogPrec bits for m >= 0.
 func bigLnFact(m tract.Supp) *big.Float {
 	c := bigConsts()
@@ -117,13 +131,14 @@ func bigLnFact(m tract.Supp) *big.Float {
 	r.Add(r, halfLn2Pi)
 	inv := newBig().Quo(newBig().SetInt64(1), x)
 	inv2 := newBig().Mul(inv, inv)
-	pw := newBig().Set(inv)
-	t := newBig()
-	for _, cb := range stirBern {
-		t.Mul(pw, newBig().SetInt64(cb[0]))
-		t.Quo(t, newBig().SetInt64(cb[1]))
-		r.Add(r, t)
-		pw.Mul(pw, inv2)
+	pw, pw2 := newBig().Set(inv), newBig()
+	t, r2 := newBig(), newBig()
+	for _, ck := range stirCoef() {
+		t.Mul(pw, ck)
+		r2.Add(r, t)
+		r, r2 = r2, r
+		pw2.Mul(pw, inv2)
+		pw, pw2 = pw2, pw
 	}
 	return r
 }

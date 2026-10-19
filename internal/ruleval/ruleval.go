@@ -281,8 +281,12 @@ func (m Measure) AbortFunc() AbortFunc {
 
 // Eval evaluates measure m for a rule with the given rule support, body
 // support, head support and total weight. It panics if m is not valid. It
-// does not allocate, except in the rare tie resolution of FisherProb and
-// FisherInfo (see there).
+// does not allocate, except when FisherProb or FisherInfo must resolve a
+// near-tie of two tables exactly (big integers, or 320-bit logarithms for
+// FisherProb tables more than 1024 apart). That happens only for tables
+// whose computed probabilities (information) agree within their rounding
+// error bound, costs at most a few milliseconds per evaluation, and is
+// skipped for FisherProb when its p-value certainly underflows to 0.
 func Eval(m Measure, supp, body, head, base tract.Supp) float64 {
 	return m.info().fn(supp, body, head, base)
 }

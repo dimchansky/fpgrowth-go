@@ -41,7 +41,10 @@ The release workflow publishes the section whose heading matches the tag
   min(body, head)+1 tables: a few hundred tables for ordinary data
   (`BenchmarkEval/FisherProb`, total 1000: 2.43 µs → 0.51 µs; dense rule
   mining with FisherProb: 20 s → 0.3 s), and at a total weight of 10^8
-  with balanced margins about 0.4 ms instead of seconds.
+  with balanced margins about 0.4 ms instead of seconds. FisherProb
+  returns 0 at once when an upper bound of its p-value is below the
+  smallest float64 (strong associations at large totals), without
+  resolving near-ties.
 
 ### Fixed
 

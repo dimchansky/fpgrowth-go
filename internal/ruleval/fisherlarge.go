@@ -292,6 +292,26 @@ func lastTrue(lo, hi tract.Supp, st *stepper, pred func(tract.Supp) bool) (tract
 	return hi, nil
 }
 
+// lnHalfMinFloat is below ln(2^-1075) = -745.1332, the logarithm of half
+// the smallest positive (subnormal) float64: every value below 2^-1075
+// rounds to 0.
+const lnHalfMinFloat = -745.2
+
+// probUnderflows reports whether the FisherProb p-value certainly rounds
+// to 0 in float64, given the computed lnP(supp) = ls and S(supp) = ss.
+// The p-value sums P(x) over tables with P(x) <= P(supp) (and near-ties
+// counted as ties agree with P(supp) within a relative 2^-200), so it is
+// at most (body+1)·P(supp)·(1+2^-200) for the body+1 tables of the
+// normalized table, and ln P(supp) <= ls + lnPErr(ss). If that bound is
+// below lnHalfMinFloat, the exact p-value is below 2^-1075 and its
+// correctly rounded value is 0 whatever the region is, so no tie decision
+// (cmpWeight, cmpWeightBig) can change the result. Strongly associated
+// tables at large totals hit this case, and the shortcut keeps them at
+// the cost of one lnP (review of #16, P-6).
+func (t *hyperTable) probUnderflows(ls, ss float64) bool {
+	return ls+lnPErr(ss)+math.Log(float64(t.ft.body)+1)+1e-15 < lnHalfMinFloat
+}
+
 // fetProbLarge is FisherProb for base > maxFact: the tables with
 // P(x) <= P(supp). On the observed table's side of the mode these are
 // all tables from supp outwards (P is monotone there); on the other side
@@ -301,6 +321,9 @@ func fetProbLarge(supp, body, head, base tract.Supp, abort func() error) (float6
 	st := stepper{abort: abort}
 	s, b := t.ft.supp, t.ft.body
 	ls, ss := t.lnP(s)
+	if t.probUnderflows(ls, ss) {
+		return 0, nil
+	}
 	le := func(x tract.Supp) bool { return t.probAtMost(x, ls, ss) }
 	if s <= t.mode {
 		c, err := firstTrue(s+1, b, &st, le)

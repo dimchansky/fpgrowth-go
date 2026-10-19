@@ -426,3 +426,74 @@ func TestFisherLongWalk(t *testing.T) {
 		}
 	}
 }
+
+// TestFisherProbUnderflow checks the underflow shortcut of FisherProb
+// (review of #16, P-6): strongly associated tables at large totals, whose
+// p-value underflows to 0, are evaluated without the near-tie machinery,
+// in microseconds and without allocations (not parallel: AllocsPerRun).
+func TestFisherProbUnderflow(t *testing.T) {
+	for _, n := range []tract.Supp{1e15, 1e16, 1e18, 9e18} {
+		for _, f := range []float64{0.05, 0.2, 0.24} {
+			s, b, h := tract.Supp(f*float64(n)), n/2, n/2+1
+			ht := newHyperTable(s, b, h, n)
+			ls, ss := ht.lnP(ht.ft.supp)
+			if !ht.probUnderflows(ls, ss) {
+				t.Errorf("n=%d s=%d: shortcut not taken (ln P(supp) = %v)", n, s, ls)
+			}
+			if v := Eval(FisherProb, s, b, h, n); v != 0 {
+				t.Errorf("n=%d s=%d: FisherProb = %v, want 0", n, s, v)
+			}
+			if a := testing.AllocsPerRun(10, func() { Eval(FisherProb, s, b, h, n) }); a != 0 {
+				t.Errorf("n=%d s=%d: %v allocations", n, s, a)
+			}
+		}
+	}
+}
+
+// TestFisherProbUnderflowCutoff checks that the shortcut fires only when
+// the exact p-value rounds to 0: tables whose observed probability is
+// around e^-745 (b·ln(h/n) from -760 to -730 with supp = body), compared
+// with the exact reference. A table for which the shortcut fires must
+// have the exact value 0 in float64, and every value must match.
+func TestFisherProbUnderflowCutoff(t *testing.T) {
+	t.Parallel()
+	ref, _ := oracle.RefByLetter('f')
+	r := rand.New(rand.NewPCG(16, 6))
+	count := 60
+	if testing.Short() || raceEnabled {
+		count = 15
+	}
+	fired, positive := 0, 0
+	for range count {
+		b := int64(200 + r.IntN(300))
+		n := int64(1e9) + r.Int64N(int64(1e18))
+		l := -760 + 30*r.Float64()
+		h := int64(float64(n) * math.Exp(l/float64(b)))
+		if h <= b || h >= n-b {
+			continue
+		}
+		s := b
+		want, err := ref.Eval(tract.Supp(s), tract.Supp(b), tract.Supp(h), tract.Supp(n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ht := newHyperTable(tract.Supp(s), tract.Supp(b), tract.Supp(h), tract.Supp(n))
+		ls, ss := ht.lnP(ht.ft.supp)
+		if ht.probUnderflows(ls, ss) {
+			fired++
+			if want.V != 0 {
+				t.Errorf("shortcut for s=%d b=%d h=%d n=%d, exact p-value %v", s, b, h, n, want)
+			}
+		}
+		if want.V > 0 {
+			positive++
+		}
+		if got := Eval(FisherProb, tract.Supp(s), tract.Supp(b), tract.Supp(h), tract.Supp(n)); !want.Matches(got) {
+			t.Errorf("FisherProb(%d, %d, %d, %d) = %v, reference %v", s, b, h, n, got, want)
+		}
+	}
+	t.Logf("shortcut fired %d times, %d tables with a positive p-value", fired, positive)
+	if fired == 0 || positive == 0 {
+		t.Error("the sweep does not straddle the cutoff")
+	}
+}
