@@ -248,7 +248,8 @@ func itemOrder(t *testing.T, txs []oracle.Transaction, opt Options[string]) []st
 }
 
 // TestOracleEvaluatedItemsets compares item sets filtered by a rule
-// measure with the oracle, including the values.
+// measure with the oracle, including the values: with the implementation's
+// measure function and with the independent reference measure.
 func TestOracleEvaluatedItemsets(t *testing.T) {
 	t.Parallel()
 	r := rand.New(rand.NewPCG(31, 32))
@@ -270,6 +271,8 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		if tg.target == TargetFrequent && r.IntN(4) == 0 {
 			zero := 0
 			ev.PruneSize = &zero // backward pruning: the evaluation filter only
+		} else if r.IntN(5) == 0 {
+			ev.Filter, ev.Threshold = false, 0 // values only
 		}
 		opt := c.options(tg.target, v.algo, v.tun)
 		opt.Evaluation = ev
@@ -296,7 +299,7 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		p.Eval = &oracle.SetEval{
 			Measure: oracle.Measure{
 				Func: oracle.MeasureFunc(rm.Func()), Dir: oracle.Direction(rm.Dir()),
-				Threshold: ev.Threshold, InvalidateBelowExpected: ev.InvalidateBelowExpected,
+				Threshold: refMeasure(t, ev).Threshold, InvalidateBelowExpected: ev.InvalidateBelowExpected,
 			},
 			Agg:   oracle.Aggregation(ev.Aggregate),
 			Order: itemOrder(t, c.txs, opt),
@@ -307,6 +310,13 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		}
 		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{}); d != "" {
 			t.Fatalf("seed %d %s/%s eval %+v:\n%s", seed, tg.name, v.name, *ev, d)
+		}
+		p.Eval = &oracle.SetEval{Measure: *refMeasure(t, ev), Agg: oracle.Aggregation(ev.Aggregate), Order: p.Eval.Order}
+		if want, err = db.Mine(p); err != nil {
+			t.Fatal(err)
+		}
+		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{}); d != "" {
+			t.Fatalf("seed %d %s/%s eval %+v: reference measure:\n%s", seed, tg.name, v.name, *ev, d)
 		}
 	}
 }
@@ -1635,6 +1645,15 @@ func FuzzMineItemsets(f *testing.F) {
 		}
 		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{IgnoreEval: evalMode != 3}); d != "" {
 			t.Fatalf("%s/%s %+v eval %+v:\n%s", tg.name, v.name, opt, opt.Evaluation, d)
+		}
+		if e := opt.Evaluation; e != nil {
+			p.Eval = &oracle.SetEval{Measure: *refMeasure(t, e), Agg: oracle.Aggregation(e.Aggregate), Order: itemOrder(t, txs, opt)}
+			if want, err = db.Mine(p); err != nil {
+				t.Fatal(err)
+			}
+			if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{}); d != "" {
+				t.Fatalf("%s/%s %+v eval %+v: reference measure:\n%s", tg.name, v.name, opt, *e, d)
+			}
 		}
 	})
 }

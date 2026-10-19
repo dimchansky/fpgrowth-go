@@ -134,6 +134,28 @@ func oracleMeasure(cfg Config) *oracle.Measure {
 	}
 }
 
+// refMeasure returns the oracle form of the measure selected by cfg with
+// the independent reference measure of the same letter (issue #15), or
+// nil.
+func refMeasure(t *testing.T, cfg Config) *oracle.Measure {
+	t.Helper()
+	n := cfg
+	n.normalize()
+	if !isRuleEval(n.Eval) {
+		return nil
+	}
+	ref, ok := oracle.RefByLetter(ruleval.Measure(n.Eval).Letter())
+	if !ok {
+		t.Fatalf("no reference measure for -e code %d", n.Eval)
+	}
+	return &oracle.Measure{
+		Ref:                     ref,
+		Dir:                     ref.Dir,
+		Threshold:               n.Thresh / 100,
+		InvalidateBelowExpected: n.InvalidateBelowExpected,
+	}
+}
+
 // randEval draws an -e code: none, -eb (EvalLogRatio) or any rule measure.
 func randEval(r *rand.Rand) int {
 	switch r.IntN(6) {
@@ -151,7 +173,9 @@ var treeThresholds = []float64{-100, 0, 1, 10, 50, 90, 100, 150, 1000}
 // TestTreeRulesOracle compares the association rules of every -A letter
 // with the brute-force definition on random data, with random supports,
 // confidence, sizes, -o, -S (B8 fixed), appearances (B3 fixed), every
-// measure including 'b' (R1: imbalance ratio) and -i.
+// measure including 'b' (R1: imbalance ratio) and -i. The rules are
+// compared with the implementation's measure functions (bit-identical) and
+// with the independent reference measures (within their tolerances).
 func TestTreeRulesOracle(t *testing.T) {
 	t.Parallel()
 	r := rand.New(rand.NewPCG(7, 11))
@@ -212,6 +236,12 @@ func TestTreeRulesOracle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		var wantRef []oracle.Rule
+		if p.Eval = refMeasure(t, cfg); p.Eval != nil {
+			if wantRef, err = db.Rules(p); err != nil {
+				t.Fatal(err)
+			}
+		}
 		rules += len(want)
 		for _, v := range treeVariants {
 			vc := cfg
@@ -230,6 +260,11 @@ func TestTreeRulesOracle(t *testing.T) {
 				if d := oracle.DiffRules(want, sink.rules, oracle.DiffOptions{}); d != "" {
 					t.Fatalf("seed %d %s config %+v app %+v:\n%s", seed, v.name, vc, app, d)
 				}
+				if wantRef != nil {
+					if d := oracle.DiffRules(wantRef, sink.rules, oracle.DiffOptions{}); d != "" {
+						t.Fatalf("seed %d %s config %+v app %+v: reference measure:\n%s", seed, v.name, vc, app, d)
+					}
+				}
 			}
 		}
 	}
@@ -238,7 +273,8 @@ func TestTreeRulesOracle(t *testing.T) {
 
 // TestTreeSetsOracle compares item sets evaluated with a rule measure
 // (all targets, -A letters, aggregation modes, -i, -S) with the
-// brute-force definition.
+// brute-force definition, with the implementation's measure functions and
+// with the reference measures.
 func TestTreeSetsOracle(t *testing.T) {
 	t.Parallel()
 	r := rand.New(rand.NewPCG(13, 17))
@@ -299,6 +335,13 @@ func TestTreeSetsOracle(t *testing.T) {
 			sets += len(want)
 			if d := oracle.DiffSets(want, sink.sets, oracle.DiffOptions{}); d != "" {
 				t.Fatalf("seed %d %s/%s config %+v codes %v:\n%s", seed, tg.name, v.name, vc, order, d)
+			}
+			pe.Eval = &oracle.SetEval{Measure: *refMeasure(t, vc), Agg: oracle.Aggregation(vc.Agg), Order: order}
+			if want, err = db.Mine(pe); err != nil {
+				t.Fatal(err)
+			}
+			if d := oracle.DiffSets(want, sink.sets, oracle.DiffOptions{}); d != "" {
+				t.Fatalf("seed %d %s/%s config %+v codes %v: reference measure:\n%s", seed, tg.name, v.name, vc, order, d)
 			}
 		}
 	}

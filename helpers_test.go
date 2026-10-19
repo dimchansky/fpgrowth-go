@@ -395,6 +395,27 @@ func toOracleRules(rules []Rule[string]) []oracle.Rule {
 	return out
 }
 
+// refMeasure returns the oracle form of e with the independent reference
+// measure of the same name (internal/oracle, issue #15): values carry
+// tolerances, results at the threshold are optional and -i is exact.
+// Without Filter the threshold accepts every value. It fails if the
+// reference's direction differs from Measure.HigherIsBetter.
+func refMeasure(t testing.TB, e *Evaluation) *oracle.Measure {
+	t.Helper()
+	ref, ok := oracle.RefByName(e.Measure.String())
+	if !ok {
+		t.Fatalf("no reference measure %v", e.Measure)
+	}
+	if (ref.Dir > 0) != e.Measure.HigherIsBetter() {
+		t.Fatalf("%v: direction %d, HigherIsBetter %v", e.Measure, ref.Dir, e.Measure.HigherIsBetter())
+	}
+	thr := e.Threshold
+	if !e.Filter {
+		thr = math.Inf(-int(ref.Dir)) // every value passes
+	}
+	return &oracle.Measure{Ref: ref, Dir: ref.Dir, Threshold: thr, InvalidateBelowExpected: e.InvalidateBelowExpected}
+}
+
 // numCases returns n, or n/5 with -short or -race.
 func numCases(n int) int {
 	if testing.Short() || raceEnabled {

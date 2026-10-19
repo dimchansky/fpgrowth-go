@@ -38,6 +38,27 @@ func oracleMeasure(e Eval) *oracle.Measure {
 	}
 }
 
+// refMeasure converts an evaluation to the oracle's form with the
+// independent reference measure of the same letter (issue #15): values
+// carry tolerances, rules and sets at the threshold are optional, and -i
+// is decided exactly.
+func refMeasure(t *testing.T, e Eval) *oracle.Measure {
+	t.Helper()
+	if e.Measure == ruleval.None {
+		return nil
+	}
+	ref, ok := oracle.RefByLetter(e.Measure.Letter())
+	if !ok {
+		t.Fatalf("no reference for %v", e.Measure)
+	}
+	return &oracle.Measure{
+		Ref:                     ref,
+		Dir:                     ref.Dir,
+		Threshold:               e.Threshold,
+		InvalidateBelowExpected: e.Invalidate,
+	}
+}
+
 func oracleAppear(a tract.Appearance) oracle.Appearance {
 	switch a {
 	case tract.AppearBody:
@@ -71,8 +92,9 @@ func oracleTarget(tg report.Target) oracle.Target {
 	}
 }
 
-// oracleRules computes the expected rules of c.
-func oracleRules(t *testing.T, d *dataset, c ruleConfig) []oracle.Rule {
+// oracleRules computes the expected rules of c, with the implementation's
+// measure function or (ref) with the reference measure.
+func oracleRules(t *testing.T, d *dataset, c ruleConfig, ref bool) []oracle.Rule {
 	t.Helper()
 	p := oracle.NewRuleParams(c.bodyMin, c.conf)
 	p.OrigSupp = c.orig
@@ -87,6 +109,9 @@ func oracleRules(t *testing.T, d *dataset, c ruleConfig) []oracle.Rule {
 		}
 	}
 	p.Eval = oracleMeasure(c.eval)
+	if ref {
+		p.Eval = refMeasure(t, c.eval)
+	}
 	want, err := d.db.Rules(p)
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +167,10 @@ func itemNames(txs []oracle.Transaction) []string {
 // TestReport_RulesOracle compares the reported rules (head, body, all three
 // supports and the measure value) with the brute-force definition,
 // including appearances (B3 fixed), -o, -S (B8 fixed), confidence, size
-// limits, every ruleval measure (Imbalance for 'b', B1) and -i.
+// limits, every ruleval measure (Imbalance for 'b', B1) and -i: once with
+// the implementation's measure functions (bit-identical values and
+// threshold decisions) and once with the independent reference measures
+// (values within their tolerances, so that a formula error fails).
 func TestReport_RulesOracle(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
 	n := 600
@@ -158,7 +186,7 @@ func TestReport_RulesOracle(t *testing.T) {
 		if len(d.names) == 0 {
 			continue
 		}
-		want := oracleRules(t, d, c)
+		want := oracleRules(t, d, c, false)
 		total += len(want)
 		if c.eval.Measure != ruleval.None {
 			evaluated += len(want)
@@ -167,11 +195,19 @@ func TestReport_RulesOracle(t *testing.T) {
 		if diff := oracle.DiffRules(want, got.rules, oracle.DiffOptions{}); diff != "" {
 			t.Fatalf("seed %d config %+v:\n%s", seed, c, diff)
 		}
+		if c.eval.Measure != ruleval.None {
+			ref := oracleRules(t, d, c, true)
+			if diff := oracle.DiffRules(ref, got.rules, oracle.DiffOptions{}); diff != "" {
+				t.Fatalf("seed %d config %+v: reference measure:\n%s", seed, c, diff)
+			}
+		}
 	}
 }
 
 // TestReport_SetsOracle compares item sets evaluated with a rule measure
-// (all targets, aggregation modes, -i) with the brute-force definition.
+// (all targets, aggregation modes, -i) with the brute-force definition,
+// with the implementation's measure functions and with the reference
+// measures.
 func TestReport_SetsOracle(t *testing.T) {
 	r := rand.New(rand.NewPCG(3, 4))
 	targets := []report.Target{report.TargetAll, report.TargetClosed, report.TargetMaximal, report.TargetGenerators}
@@ -219,6 +255,15 @@ func TestReport_SetsOracle(t *testing.T) {
 		total += len(want)
 		if diff := oracle.DiffSets(want, got.sets, oracle.DiffOptions{}); diff != "" {
 			t.Fatalf("seed %d config %+v codes %v:\n%s", seed, c, d.names, diff)
+		}
+		if m := refMeasure(t, c.eval); m != nil {
+			p.Eval = &oracle.SetEval{Measure: *m, Agg: oracle.Aggregation(c.eval.Agg), Order: d.names}
+			if want, err = d.db.Mine(p); err != nil {
+				t.Fatal(err)
+			}
+			if diff := oracle.DiffSets(want, got.sets, oracle.DiffOptions{}); diff != "" {
+				t.Fatalf("seed %d config %+v codes %v: reference measure:\n%s", seed, c, d.names, diff)
+			}
 		}
 	}
 }
@@ -274,7 +319,7 @@ func TestReport_HeadOnlyB3(t *testing.T) {
 			t.Errorf("appearance violated by %v", ru)
 		}
 	}
-	if diff := oracle.DiffRules(oracleRules(t, d, c), got.rules, oracle.DiffOptions{}); diff != "" {
+	if diff := oracle.DiffRules(oracleRules(t, d, c, false), got.rules, oracle.DiffOptions{}); diff != "" {
 		t.Error(diff)
 	}
 }
@@ -294,7 +339,7 @@ func TestReport_MaxSuppB8(t *testing.T) {
 			t.Errorf("rule %v exceeds -S on the body support", ru)
 		}
 	}
-	if diff := oracle.DiffRules(oracleRules(t, d, c), got.rules, oracle.DiffOptions{}); diff != "" {
+	if diff := oracle.DiffRules(oracleRules(t, d, c, false), got.rules, oracle.DiffOptions{}); diff != "" {
 		t.Error(diff)
 	}
 	c.orig = true
@@ -309,7 +354,7 @@ func TestReport_MaxSuppB8(t *testing.T) {
 	if !sawLargeBody {
 		t.Error("with -o the body support must not be bounded")
 	}
-	if diff := oracle.DiffRules(oracleRules(t, d, c), got.rules, oracle.DiffOptions{}); diff != "" {
+	if diff := oracle.DiffRules(oracleRules(t, d, c, false), got.rules, oracle.DiffOptions{}); diff != "" {
 		t.Error(diff)
 	}
 }
@@ -330,7 +375,7 @@ func TestReport_ImbalanceB1(t *testing.T) {
 			t.Errorf("%v: eval %v, want %v >= 0.3", ru, ru.Eval, want)
 		}
 	}
-	if diff := oracle.DiffRules(oracleRules(t, d, c), got.rules, oracle.DiffOptions{}); diff != "" {
+	if diff := oracle.DiffRules(oracleRules(t, d, c, false), got.rules, oracle.DiffOptions{}); diff != "" {
 		t.Error(diff)
 	}
 }

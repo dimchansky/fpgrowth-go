@@ -569,6 +569,64 @@ func TestLogRatio(t *testing.T) {
 	}
 }
 
+// TestLogRatioOracle compares the -eb evaluation (values and filter) of
+// every target and variant with the oracle's independent reference
+// (oracle.LogRatioEval, issue #15).
+func TestLogRatioOracle(t *testing.T) {
+	t.Parallel()
+	r := rand.New(rand.NewPCG(15, 26))
+	cases := 300
+	if testing.Short() {
+		cases = 60
+	}
+	thresholds := []float64{-1000, -50, 0, 10, 50, 100, 300}
+	runs := 0
+	for seed := range uint64(cases) {
+		c, err := genCase(seed+12000, 8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db, err := oracle.New(c.txs, oracle.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tg := targets[r.IntN(len(targets))]
+		v := variants[r.IntN(len(variants))]
+		cfg := c.config(v, tg.target)
+		cfg.Eval = EvalLogRatio
+		cfg.Thresh = thresholds[r.IntN(len(thresholds))]
+		noFilter := r.IntN(4) == 0
+		cfg.EvalNoFilter = noFilter
+		total := db.Total()
+		p := oracle.NewSetParams(tg.oracle, oracle.AbsMinSupp(cfg.SMin, total))
+		p.MaxSupp = oracle.AbsMaxSupp(cfg.SMax, total)
+		p.MinSize = cfg.ZMin
+		if cfg.ZMax < MaxSize {
+			p.MaxSize = cfg.ZMax
+		}
+		p.LogRatio = &oracle.LogRatioEval{Threshold: cfg.Thresh / 100}
+		if noFilter {
+			p.LogRatio.Threshold = math.Inf(-1)
+		}
+		want, err := db.Mine(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := run(scanOf(c.txs), cfg, runOpts{})
+		runs++
+		if errors.Is(err, ErrNoItems) {
+			continue // the unevaluated sets are checked by TestOracle
+		}
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+		if d := oracle.DiffSets(want, res.sink.sets, oracle.DiffOptions{}); d != "" {
+			t.Fatalf("seed %d %s/%s %s -eb -d%g:\n%s", seed, tg.name, v.name, describe(cfg), cfg.Thresh, d)
+		}
+	}
+	t.Logf("%d runs", runs)
+}
+
 // evalSink records the evaluation of every reported item set by its
 // collectSink line ("names [supp]").
 type evalSink struct {
