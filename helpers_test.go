@@ -228,14 +228,9 @@ func cliConfig(target report.Target, algo Algorithm, tun Tuning, smin, smax floa
 	return c
 }
 
-// cliBorder is the command line program's -F conversion (setbdr).
-func cliBorder(v float64, w tract.Supp) tract.Supp {
-	s := -v
-	if v >= 0 {
-		s = v / 100.0 * float64(w) * (1 - 0x1p-52)
-	}
-	return tract.Supp(math.Ceil(s))
-}
+// cliBorder is the command line program's -F conversion (setbdr under
+// the threshold contract), computed by the oracle.
+func cliBorder(v float64, w tract.Supp) tract.Supp { return oracle.AbsMinSupp(v, w) }
 
 // scanOf returns an internal scan over txs.
 func scanOf(txs []oracle.Transaction) tract.ScanFunc[string] {

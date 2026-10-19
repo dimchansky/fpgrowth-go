@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/big"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
+	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
 func intPtr(n int) *int { return &n }
@@ -245,7 +249,7 @@ func TestPlanMapping(t *testing.T) {
 	}
 	rp.setThresholds(&Stats{TotalWeight: 10})
 	if rp.cfg.Target != report.TargetRules || !rp.cfg.HasCounts || rp.cfg.MinCount != 7 || rp.cfg.MaxCount != 5 ||
-		rp.cfg.Conf/100 != 0.8 || rp.cfg.EvalNoFilter ||
+		rp.cfg.ConfFrac != 0.8 || rp.cfg.EvalNoFilter ||
 		rp.cfg.Mode&fpg.ModeOrigSupp == 0 || rp.cfg.ZMin != 1 || rp.cfg.ZMax != fpg.MaxSize {
 		t.Errorf("rule config %+v", rp.cfg)
 	}
@@ -307,8 +311,10 @@ func TestSupportSaturation(t *testing.T) {
 	if got := (Support{}).maxAbs(5); got != math.MaxInt64 {
 		t.Errorf("unset maximum %d", got)
 	}
-	if suppFromFloat(math.NaN()) != 0 || suppFromFloat(1e300) != math.MaxInt64 || suppFromFloat(-3) != 0 {
-		t.Error("suppFromFloat saturation")
+	for _, w := range []int64{1<<52 + 1, 1<<60 + 1, math.MaxInt64} {
+		if got := Fraction(1).minAbs(w); got != w {
+			t.Errorf("Fraction(1).minAbs(%d) = %d", w, got)
+		}
 	}
 }
 
@@ -374,5 +380,160 @@ func TestStringers(t *testing.T) {
 	}
 	if !Lift.HigherIsBetter() || Chi2PValue.HigherIsBetter() || !LogSupportRatio.HigherIsBetter() || Measure(0).HigherIsBetter() {
 		t.Error("HigherIsBetter")
+	}
+}
+
+// TestLibraryThresholdsUnchanged compares the threshold contract (issue
+// #17, N2) with the library's former double arithmetic at ordinary
+// weights (W < 2^31): Fraction converted with ceil(f·W·(1-ε)) and
+// floor(f·W·(1+ε)), MinConfidence mapped through percentOf and tested as
+// !(supp < body·(p/100·(1-ε))). Short decimals and fractions k/d with
+// d <= 1000 cannot change there (the double rounding would have to cross
+// an integer within about 4.5·2^-53·x of x, which needs x >= about
+// 2^53/(4.5·d)). Fractions with many digits (random values, one ulp off a
+// decimal) can change in rare cases, and then the new result is the exact
+// one for the shortest decimal of f (what fmt prints): such a change
+// corrects the double rounding.
+func TestLibraryThresholdsUnchanged(t *testing.T) {
+	t.Parallel()
+	const eps = 0x1p-52
+	oldMin := func(f float64, w int64) int64 { return int64(math.Ceil(f * float64(w) * (1 - eps))) }
+	oldMax := func(f float64, w int64) int64 { return int64(math.Floor(f * float64(w) * (1 + eps))) }
+	oldConf := func(supp, body int64, f float64) bool {
+		c := percentOf(f, +1) / 100
+		return !(float64(supp) < float64(body)*(c*(1-eps)))
+	}
+	newConf := func(supp, body int64, f float64) bool { return supp >= Fraction(f).minAbs(body) }
+	// decimal returns ⌈dec·w⌉ and ⌊dec·w⌋ for the shortest decimal dec of f.
+	decimal := func(f float64, w int64) (lo, hi int64) {
+		d, _ := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
+		x := new(big.Rat).Mul(d, new(big.Rat).SetInt64(w))
+		q, m := new(big.Int).QuoRem(x.Num(), x.Denom(), new(big.Int))
+		lo, hi = q.Int64(), q.Int64()
+		if m.Sign() > 0 {
+			lo++
+		}
+		return lo, hi
+	}
+	r := rand.New(rand.NewPCG(17, 5))
+	changes, randomChanges := 0, 0
+	for range 300000 {
+		var f float64
+		guaranteed := true
+		switch r.IntN(4) {
+		case 0:
+			f, guaranteed = r.Float64(), false
+		case 1:
+			f = float64(1+r.IntN(100000)) / 100000
+		case 2:
+			d := 1 + r.IntN(1000)
+			f = float64(1+r.IntN(d)) / float64(d)
+		default:
+			f, guaranteed = math.Nextafter(float64(1+r.IntN(100))/100, float64(r.IntN(2))), false
+		}
+		if f == 0 {
+			continue
+		}
+		w := 1 + r.Int64N(1<<31-1)
+		lo, hi := Fraction(f).minAbs(w), Fraction(f).maxAbs(w)
+		if a, b := oldMin(f, w), oldMax(f, w); a != lo || b != hi {
+			changes++
+			if f != math.Nextafter(math.Round(f*100)/100, f) {
+				randomChanges++ // not one ulp off a 2-dp decimal
+			}
+			if dlo, dhi := decimal(f, w); guaranteed || lo != dlo || hi != dhi {
+				t.Fatalf("Fraction(%v) of %d: was %d..%d, now %d..%d (shortest decimal: %d..%d)", f, w, a, b, lo, hi, dlo, dhi)
+			}
+		}
+		if !guaranteed {
+			continue
+		}
+		body := w
+		s := int64(math.Round(f * float64(body)))
+		for _, supp := range []int64{s - 1, s, s + 1} {
+			if supp >= 0 && supp <= body && oldConf(supp, body, f) != newConf(supp, body, f) {
+				t.Fatalf("MinConfidence %v supp %d body %d: was %v", f, supp, body, oldConf(supp, body, f))
+			}
+		}
+	}
+	t.Logf("%d changes (%d not one ulp off a 2-dp decimal), all exact for the shortest decimal", changes, randomChanges)
+	for k := 0; k <= 1000; k++ {
+		f := float64(k) / 1000
+		for body := int64(1); body <= 200; body++ {
+			for supp := int64(0); supp <= body; supp++ {
+				if oldConf(supp, body, f) != newConf(supp, body, f) {
+					t.Fatalf("MinConfidence %v supp %d body %d: was %v", f, supp, body, oldConf(supp, body, f))
+				}
+			}
+		}
+	}
+}
+
+// TestFractionMatchesCLI checks Fraction(k/100) against the command line's
+// -sk and -Sk (the oracle's independent conversion of the percentage, a
+// float64 division by 100) over the whole int64 range.
+func TestFractionMatchesCLI(t *testing.T) {
+	t.Parallel()
+	r := rand.New(rand.NewPCG(17, 6))
+	for range 20000 {
+		k := 1 + r.IntN(100)
+		w := r.Int64N(math.MaxInt64)
+		if r.IntN(2) == 0 {
+			w = math.MaxInt64 - r.Int64N(1<<20)
+		}
+		f := float64(k) / 100
+		if a, b := Fraction(f).minAbs(w), int64(oracle.AbsMinSupp(float64(k), tract.Supp(w))); a != b {
+			t.Fatalf("Fraction(%v).minAbs(%d) = %d, -s%d %d", f, w, a, k, b)
+		}
+		if a, b := Fraction(f).maxAbs(w), int64(oracle.AbsMaxSupp(float64(k), tract.Supp(w))); a != b {
+			t.Fatalf("Fraction(%v).maxAbs(%d) = %d, -S%d %d", f, w, a, k, b)
+		}
+	}
+}
+
+// TestCheckRangeSound checks that checkRange never rejects a pair of
+// fractions whose range is non-empty for some total weight: for every
+// rejected pair, minAbs > maxAbs for all W up to 2000 and random large W.
+func TestCheckRangeSound(t *testing.T) {
+	t.Parallel()
+	r := rand.New(rand.NewPCG(17, 7))
+	rejected := 0
+	for range 20000 {
+		f := r.Float64()
+		if f == 0 {
+			continue
+		}
+		g := f
+		for range r.IntN(12) {
+			g = math.Nextafter(g, 0)
+		}
+		if g == 0 {
+			continue
+		}
+		if checkRange(Fraction(f), Fraction(g)) == nil {
+			continue
+		}
+		rejected++
+		for w := int64(1); w <= 2000; w++ {
+			if max(Fraction(f).minAbs(w), 1) <= Fraction(g).maxAbs(w) {
+				t.Fatalf("rejected %v..%v, but W=%d admits [%d, %d]", f, g, w, Fraction(f).minAbs(w), Fraction(g).maxAbs(w))
+			}
+		}
+		for range 200 {
+			w := 1 + r.Int64N(math.MaxInt64-1)
+			if max(Fraction(f).minAbs(w), 1) <= Fraction(g).maxAbs(w) {
+				t.Fatalf("rejected %v..%v, but W=%d admits [%d, %d]", f, g, w, Fraction(f).minAbs(w), Fraction(g).maxAbs(w))
+			}
+		}
+	}
+	if rejected == 0 {
+		t.Error("no pair rejected")
+	}
+	// within the tolerance: accepted and non-empty for W = 10
+	if err := checkRange(Fraction(math.Nextafter(0.3, 1)), Fraction(0.3)); err != nil {
+		t.Error(err)
+	}
+	if Fraction(math.Nextafter(0.3, 1)).minAbs(10) != 3 || Fraction(0.3).maxAbs(10) != 3 {
+		t.Error("0.30000000000000004..0.3 of 10 is not 3..3")
 	}
 }

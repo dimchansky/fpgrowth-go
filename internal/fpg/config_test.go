@@ -19,9 +19,9 @@ func TestConfigValidate(t *testing.T) {
 		{"smin above 100", func(c *Config) { c.SMin = 100.5 }},
 		{"smin NaN", func(c *Config) { c.SMin = math.NaN() }},
 		{"smax NaN", func(c *Config) { c.SMax = math.NaN() }},
-		{"conf below 0", func(c *Config) { c.Conf = -1 }},
-		{"conf above 100", func(c *Config) { c.Conf = 101 }},
-		{"conf NaN", func(c *Config) { c.Conf = math.NaN() }},
+		{"conf below 0", func(c *Config) { c.ConfFrac = -1 }},
+		{"conf above 1", func(c *Config) { c.ConfFrac = 1.01 }},
+		{"conf NaN", func(c *Config) { c.ConfFrac = math.NaN() }},
 		{"zmin negative", func(c *Config) { c.ZMin = -1 }},
 		{"zmax negative", func(c *Config) { c.ZMax = -1 }},
 		{"eval negative", func(c *Config) { c.Eval = -1 }},
@@ -101,8 +101,8 @@ func TestConfigNormalize(t *testing.T) {
 				int(got.Target), got.Algo, int(got.Mode), got.Pack,
 				int(tt.wantTarget), tt.wantAlgo, int(tt.wantMode), tt.wantPack)
 		}
-		if tt.wantTarget != report.TargetRules && got.Conf != 100 {
-			t.Errorf("%s: confidence %g, want 100", tt.name, got.Conf)
+		if tt.wantTarget != report.TargetRules && got.ConfFrac != 1 {
+			t.Errorf("%s: confidence %g, want 1", tt.name, got.ConfFrac)
 		}
 	}
 	for a, s := range map[Algorithm]string{AlgoSimple: "s", AlgoComplex: "c", AlgoSingle: "d",

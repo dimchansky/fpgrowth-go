@@ -7,6 +7,7 @@ import (
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
+	"github.com/dimchansky/fpgrowth-go/internal/thresh"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -20,9 +21,6 @@ func count(s tract.Supp) tract.Supp { return s &^ skip }
 
 // isSkip is upstream's IS2SKIP().
 func isSkip(s tract.Supp) bool { return s < 0 }
-
-// confEps is upstream's 1-DBL_EPSILON.
-const confEps = 1 - 0x1p-52
 
 // ErrTooLarge is returned by AddChildren when the tree would need more
 // nodes, counters, identifier map entries or child slots than its int32
@@ -86,8 +84,12 @@ type Params struct {
 	// MinBody is the minimum support of a rule body (fpg->body); it is
 	// raised to the effective MinSupp.
 	MinBody tract.Supp
-	// MinConf is the minimum rule confidence as a fraction; it is
-	// multiplied by 1-DBL_EPSILON like upstream.
+	// MinConf is the minimum rule confidence as a fraction in [0, 1]. A
+	// rule passes if its support meets the minimum MinConf of its body
+	// support under the threshold contract of package thresh: upstream's
+	// 1-DBL_EPSILON tolerance, evaluated exactly and capped below one unit
+	// (deviation for differences.md N2), so MinConf 1 admits only rules
+	// whose support equals the body support.
 	MinConf float64
 	// MaxSupp is the maximum rule support (-S) for rules, applied to the
 	// body support, or with OrigSupp to the support of body and head
@@ -114,7 +116,7 @@ type Tree struct {
 	wgt    tract.Supp // total weight, possibly with the skip flag
 	smin   tract.Supp
 	body   tract.Supp
-	conf   float64
+	conf   thresh.Frac // minimum confidence (Params.MinConf)
 	smax   tract.Supp
 	isOrig bool
 
@@ -194,7 +196,7 @@ func New(p Params) *Tree {
 		app:  p.Appear,
 		wgt:  p.Total,
 		smin: max(p.MinSupp, 1),
-		conf: p.MinConf * confEps,
+		conf: thresh.New(p.MinConf),
 		smax: p.MaxSupp,
 		// upstream allocates lvls, buf and map with n+1 entries
 		lvls:   make([][]int32, 0, n+1),

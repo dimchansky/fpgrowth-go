@@ -142,7 +142,7 @@ func BenchmarkMineRules(b *testing.B) {
 	src := d.source()
 	cfg := fpg.DefaultConfig()
 	cfg.Target = report.TargetRules
-	cfg.SMin, cfg.Conf = -100, 50
+	cfg.SMin, cfg.ConfFrac = -100, 0.5
 	opt := RuleOptions[string]{MinSupport: Count(100), MinConfidence: 0.5}
 	b.Run("internal", func(b *testing.B) {
 		b.ReportAllocs()
@@ -187,7 +187,7 @@ func TestAllocsPerResult(t *testing.T) {
 	src := d.source()
 	cfg := fpg.DefaultConfig()
 	cfg.Target = report.TargetRules
-	cfg.SMin, cfg.Conf = -100, 50
+	cfg.SMin, cfg.ConfFrac = -100, 0.5
 	var n int
 	internal := testing.AllocsPerRun(3, func() {
 		var err error

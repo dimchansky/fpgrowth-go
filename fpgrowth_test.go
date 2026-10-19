@@ -1282,7 +1282,8 @@ func TestCancelTreePhases(t *testing.T) {
 
 // TestExactCountThresholds checks absolute thresholds beyond 2^53, where
 // float64 cannot represent every support: Count bounds are exact and
-// inclusive, Fraction(1) includes the total weight.
+// inclusive, and Fraction(1) is exactly the total weight (threshold
+// contract, N2; before issue #17 its relative tolerance admitted w-1).
 func TestExactCountThresholds(t *testing.T) {
 	t.Parallel()
 	for _, w := range []int64{1<<53 + 1, 1<<60 + 1, math.MaxInt64} {
@@ -1304,8 +1305,9 @@ func TestExactCountThresholds(t *testing.T) {
 			{"max count w", Count(1), Count(w), []string{ab, a, b}},
 			{"min and max count w", Count(w), Count(w), []string{a}},
 			{"max fraction 1", Count(w), Fraction(1), []string{a}},
-			// the relative tolerance of Fraction exceeds 1 beyond 2^53
-			{"min fraction 1", Fraction(1), Count(w), []string{ab, a, b}},
+			// the tolerance of Fraction is below one unit at every weight
+			{"min fraction 1", Fraction(1), Count(w), []string{a}},
+			{"min fraction 1, max fraction 1", Fraction(1), Fraction(1), []string{a}},
 		}
 		for _, tt := range tests {
 			if tt.name == "min count w+1" && w == math.MaxInt64 {
@@ -1326,7 +1328,7 @@ func TestExactCountThresholds(t *testing.T) {
 				if !slices.Equal(got, tt.expected) {
 					t.Errorf("got %q, expected %q (stats %+v)", got, tt.expected, sum.Stats)
 				}
-				if tt.min == Fraction(1) && (sum.MinSupport > w || sum.MinSupport < w-w>>50) {
+				if tt.min == Fraction(1) && sum.MinSupport != w {
 					t.Errorf("Fraction(1) resolved to %d of %d", sum.MinSupport, w)
 				}
 			})

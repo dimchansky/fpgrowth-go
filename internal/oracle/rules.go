@@ -42,8 +42,9 @@ type RuleParams struct {
 	// MinSupp and MaxSupp apply to the support of body ∪ head.
 	OrigSupp bool
 	// MinConf is the minimum confidence as a fraction (-c/100). A rule is
-	// rejected if float64(supp) < float64(body)*(MinConf*(1-DBL_EPSILON)),
-	// i.e. it is accepted with >= and a tolerance of one relative epsilon.
+	// accepted if its support meets the minimum MinConf of its body
+	// support under the threshold contract (MeetsMin): with x =
+	// body·MinConf exactly, supp >= x·(1-DBL_EPSILON) and supp > x-1.
 	MinConf float64
 	// MinSize and MaxSize bound the number of items of a rule, counting
 	// body and head (-m, -n). NoMaxSize means no limit.
@@ -156,7 +157,8 @@ func (r Rule) String() string {
 //     s >= max(RuleSetMinSupp(MinSupp, conf), 1) (implied by the
 //     confidence test, applied for fidelity); with OrigSupp s >= smin and
 //     s <= MaxSupp;
-//  3. not float64(s) < float64(b)*(conf*(1-DBL_EPSILON));
+//  3. MeetsMin(s, conf, b): s meets the minimum conf of b (threshold
+//     contract);
 //  4. MinSize <= |S| <= MaxSize;
 //  5. appearances: no item of S is AppearNone, h is AppearHead or
 //     AppearBoth, and no item of B is AppearHead (so a set with two
@@ -176,7 +178,8 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 	if !p.OrigSupp {
 		setMin = EffectiveMinSupp(RuleSetMinSupp(p.MinSupp, p.MinConf))
 	}
-	confAdj := p.MinConf * (1 - dblEpsilon)
+	// meets caches MeetsMin(s, p.MinConf, b) (big.Rat arithmetic).
+	meets := map[[2]tract.Supp]bool{}
 
 	// Appearance masks over the universe.
 	var noneMask, headOnly, bodyOnly uint64
@@ -222,7 +225,12 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 			} else if b < smin || b > p.MaxSupp {
 				continue
 			}
-			if float64(s) < float64(b)*confAdj {
+			ok, seen := meets[[2]tract.Supp{s, b}]
+			if !seen {
+				ok = MeetsMin(s, p.MinConf, b)
+				meets[[2]tract.Supp{s, b}] = ok
+			}
+			if !ok {
 				continue
 			}
 			h := db.supp[bit]

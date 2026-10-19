@@ -129,3 +129,52 @@ func TestAbsBorder(t *testing.T) {
 		})
 	}
 }
+
+// TestFracThresholds checks the threshold contract at huge weights and its
+// two forms against each other: FracMinSupp is the smallest support that
+// MeetsMin accepts, FracMaxSupp the largest that MeetsMax accepts.
+func TestFracThresholds(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		t        float64
+		n        tract.Supp
+		min, max tract.Supp
+	}{
+		{"half of 2^62 is exact", 0.5, 1 << 62, 1 << 61, 1 << 61},
+		{"1 of 2^60+1 is exact", 1, 1<<60 + 1, 1<<60 + 1, 1<<60 + 1},
+		{"1 of MaxInt64", 1, math.MaxInt64, math.MaxInt64, math.MaxInt64},
+		{"0.1 of 10·2^59", 0.1, 10 << 59, 1<<59 + 32, 1<<59 + 32},
+		{"0.25 of 10", 0.25, 10, 3, 2},
+		{"nextafter(0.3) of 10", math.Nextafter(0.3, 1), 10, 3, 3},
+		{"2 of MaxInt64 saturates", 2, math.MaxInt64, math.MaxInt64, math.MaxInt64},
+		{"zero", 0, 10, 0, 0},
+		{"infinity", math.Inf(1), 10, math.MaxInt64, math.MaxInt64},
+	}
+	for _, tt := range tests {
+		if got := FracMinSupp(tt.t, tt.n); got != tt.min {
+			t.Errorf("%s: FracMinSupp = %d, want %d", tt.name, got, tt.min)
+		}
+		if got := FracMaxSupp(tt.t, tt.n); got != tt.max {
+			t.Errorf("%s: FracMaxSupp = %d, want %d", tt.name, got, tt.max)
+		}
+	}
+	for _, f := range []float64{0.1, 0.3, 0.5, 0.8, 1, math.Nextafter(0.6, 0), 1.0 / 3} {
+		for _, n := range []tract.Supp{1, 7, 10, 1000, 1<<52 + 3, 1<<61 + 5, math.MaxInt64 - 2} {
+			lo, hi := FracMinSupp(f, n), FracMaxSupp(f, n)
+			if !MeetsMin(lo, f, n) || (lo > 0 && MeetsMin(lo-1, f, n)) {
+				t.Errorf("FracMinSupp(%v, %d) = %d is not the smallest accepted support", f, n, lo)
+			}
+			if !MeetsMax(hi, f, n) || MeetsMax(hi+1, f, n) {
+				t.Errorf("FracMaxSupp(%v, %d) = %d is not the largest accepted support", f, n, hi)
+			}
+		}
+	}
+	if !MeetsMin(0, 0, 5) || MeetsMin(5, math.Inf(1), 5) || MeetsMax(1, 0, 5) || !MeetsMax(5, math.Inf(1), 5) {
+		t.Error("MeetsMin/MeetsMax at 0 and +Inf")
+	}
+	// -c100 at the ALG-2 reproduction: confidence < 1 is rejected
+	if RuleSetMinSupp(4611686018427388000, 1) != 4611686018427388000 || MeetsMin(4611686018427387000, 1, 4611686018427388000) {
+		t.Error("confidence 1 is not exact")
+	}
+}

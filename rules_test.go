@@ -46,7 +46,7 @@ func TestRulesEquivalenceCLI(t *testing.T) {
 			zmax = opt.MaxSize
 		}
 		cfg := cliConfig(report.TargetRules, v.algo, opt.Tuning, c.smin, c.smax, opt.MinSize, zmax)
-		cfg.Conf = conf
+		cfg.ConfFrac = conf / 100
 		if opt.OriginalSupport {
 			cfg.Mode |= fpg.ModeOrigSupp
 		}
@@ -208,7 +208,7 @@ func TestRulesAppearanceEquivalence(t *testing.T) {
 			}
 		}
 		cfg := cliConfig(report.TargetRules, AlgorithmAuto, Tuning{}, c.smin, c.smax, 1, fpg.MaxSize)
-		cfg.Conf = 50
+		cfg.ConfFrac = 0.5
 		want, _, werr := runInternal(t, c.txs, cfg, nil, func(ib *tract.ItemBase[string]) error {
 			ib.SetDefaultAppearance(def.internal())
 			for _, it := range names {

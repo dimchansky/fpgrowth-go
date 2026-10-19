@@ -413,7 +413,8 @@ func (o *options) isRules() bool { return o.target == 'r' }
 func (o *options) minerConfig() fpg.Config {
 	c := fpg.DefaultConfig()
 	c.Target, _ = targetOf(o.target)
-	c.SMin, c.SMax, c.Conf = o.smin, o.smax, o.conf
+	c.SMin, c.SMax = o.smin, o.smax
+	c.ConfFrac = o.conf / 100.0 // fpg->conf = conf/100.0
 	c.ZMin, c.ZMax = int(o.zmin), int(o.zmax)
 	c.Eval, _ = evalOf(o.eval)
 	c.InvalidateBelowExpected = o.invBxs

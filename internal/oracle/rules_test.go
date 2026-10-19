@@ -332,7 +332,7 @@ func checkRules(t *testing.T, db *DB, p RuleParams) {
 			t.Fatalf("%+v: %v: supports want %d/%d/%d", p, r, s, b, h)
 		case s < 1 || s > b || s > h:
 			t.Fatalf("%+v: %v: inconsistent supports", p, r)
-		case r.Conf < 0 || r.Conf > 1 || float64(s) < float64(b)*(p.MinConf*(1-dblEpsilon)):
+		case r.Conf < 0 || r.Conf > 1 || !MeetsMin(s, p.MinConf, b):
 			t.Fatalf("%+v: %v: confidence %v", p, r, r.Conf)
 		case !p.OrigSupp && b < p.MinSupp, p.OrigSupp && s < p.MinSupp:
 			t.Fatalf("%+v: %v: below minimum support", p, r)

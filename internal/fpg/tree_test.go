@@ -193,7 +193,7 @@ func TestTreeRulesOracle(t *testing.T) {
 		cfg.Target = report.TargetRules
 		cfg.SMin = c.smin
 		cfg.SMax = []float64{100, 100, 60, -3, -1, 0}[r.IntN(6)]
-		cfg.Conf = []float64{0, 30, 50, 80, 100}[r.IntN(5)]
+		cfg.ConfFrac = []float64{0, 0.3, 0.5, 0.8, 1}[r.IntN(5)]
 		cfg.ZMin = r.IntN(3)
 		cfg.ZMax = []int{MaxSize, 1, 2, 3}[r.IntN(4)]
 		cfg.Sort = c.sort
@@ -211,7 +211,7 @@ func TestTreeRulesOracle(t *testing.T) {
 			t.Fatal(err)
 		}
 		var app *appSpec
-		p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(cfg.SMin, db.Total())), cfg.Conf/100)
+		p := oracle.NewRuleParams(oracle.EffectiveMinSupp(oracle.AbsMinSupp(cfg.SMin, db.Total())), cfg.ConfFrac)
 		if r.IntN(3) == 0 {
 			app = &appSpec{def: tract.Appearance(r.IntN(4))}
 			p.DefaultAppear = oracleAppear(app.def)
@@ -364,7 +364,7 @@ func TestTreeVariantOrder(t *testing.T) {
 			base := DefaultConfig()
 			base.Target = tg
 			base.SMin = -1
-			base.Conf = 0
+			base.ConfFrac = 0
 			base.Eval = int(ruleval.Lift)
 			base.Thresh = 0
 			var ref []string
@@ -520,7 +520,7 @@ func TestTreeMaxSupp(t *testing.T) {
 	txs := txsOf(t, "a b\na b\na b\na\nb\n", false)
 	cfg := DefaultConfig()
 	cfg.Target = report.TargetRules
-	cfg.SMin, cfg.Conf = -1, 0
+	cfg.SMin, cfg.ConfFrac = -1, 0
 	for _, tc := range []struct {
 		smax float64
 		want int
@@ -702,7 +702,7 @@ func TestTreeCancelPhases(t *testing.T) {
 	txs := midDataset(t, 3000)
 	configs := map[string]Config{}
 	rules := DefaultConfig()
-	rules.Target, rules.SMin, rules.Conf = report.TargetRules, -60, 0
+	rules.Target, rules.SMin, rules.ConfFrac = report.TargetRules, -60, 0
 	configs["rules"] = rules
 	sets := DefaultConfig()
 	sets.Target, sets.SMin, sets.Eval, sets.Thresh, sets.Prune = report.TargetClosed, -60, int(ruleval.Lift), 0, 0

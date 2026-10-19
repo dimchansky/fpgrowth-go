@@ -93,18 +93,6 @@ func TestOracleLogSupportRatio(t *testing.T) {
 	}
 }
 
-// knownAPIFailure is a known numerical defect reproduced through the
-// public API (docs/audit/algorithms.md): ALG-2 (relative (1-ε) threshold
-// tolerances beyond 2^52, N2, issue #17). Each check returns "" if the
-// result is the exact (definition-based) one and a description of the
-// deviation otherwise. TestKnownAPIFailures requires every entry to
-// deviate: an entry that passes must be removed by the fix. (The ALG-1
-// entries of issue #15 became the regression tests of TestALG1API.)
-type knownAPIFailure struct {
-	id, name string
-	check    func(t *testing.T) string
-}
-
 // ruleValues mines the rules of size 2 with confidence 0 and returns the
 // value of rule head <- body for each of the given measures (Filter off,
 // so nothing is filtered).
@@ -246,22 +234,31 @@ func TestALG1API(t *testing.T) {
 	}
 }
 
-var knownAPIFailures = []knownAPIFailure{
-	{"ALG-2", "-s50 admits a set with relative support 49.999999999999992895 %", func(t *testing.T) string {
-		// W = 2^62; exact minimum support ceil(W/2) = 2^61 > supp(a)
+// TestALG2API checks the reproductions of audit ALG-2 (issue #17, N2):
+// upstream's relative (1-ε) threshold tolerance exceeded one unit of
+// support beyond a total weight of about 2^52. They were known failures
+// before the threshold contract.
+func TestALG2API(t *testing.T) {
+	t.Parallel()
+	t.Run("-s50 rejects 49.999999999999992895 %", func(t *testing.T) {
+		t.Parallel()
+		// W = 2^62; the minimum support is exactly W/2 = 2^61 > supp(a)
 		txs := []oracle.Transaction{tx(2305843009213693752, "a"), tx(2305843009213694152, "b")}
-		sets, _, err := CollectItemsets(context.Background(), sourceOf(txs), Options[string]{MinSupport: Fraction(0.5)})
+		sets, sum, err := CollectItemsets(context.Background(), sourceOf(txs), Options[string]{MinSupport: Fraction(0.5)})
 		if err != nil {
 			t.Fatal(err)
 		}
+		if sum.MinSupport != 1<<61 {
+			t.Errorf("MinSupport %d, expected 2^61", sum.MinSupport)
+		}
 		for _, s := range sets {
 			if slices.Equal(s.Items, []string{"a"}) {
-				return "{a} reported with support 2305843009213693752 < 2^61"
+				t.Errorf("{a} reported with support %d < 2^61", s.Support)
 			}
 		}
-		return ""
-	}},
-	{"ALG-2", "MinConfidence 1 admits a rule with confidence < 1", func(t *testing.T) string {
+	})
+	t.Run("MinConfidence 1 rejects confidence < 1", func(t *testing.T) {
+		t.Parallel()
 		txs := []oracle.Transaction{tx(4611686018427387000, "x", "y"), tx(1000, "x")}
 		rules, _, err := CollectRules(context.Background(), sourceOf(txs),
 			RuleOptions[string]{MinSupport: Count(1), MinConfidence: 1, MinSize: 2})
@@ -269,25 +266,83 @@ var knownAPIFailures = []knownAPIFailure{
 			t.Fatal(err)
 		}
 		for _, r := range rules {
-			if r.Support < r.BodySupport { // confidence < 1 exactly
-				return "rule " + r.Head + " <- " + strings.Join(r.Body, " ") + " reported with confidence < 1"
+			if r.Support < r.BodySupport {
+				t.Errorf("rule %s <- %s reported with confidence < 1", r.Head, strings.Join(r.Body, " "))
 			}
 		}
-		return ""
-	}},
+		if len(rules) != 1 || rules[0].Head != "x" {
+			t.Errorf("rules %+v, expected only x <- y", rules)
+		}
+	})
 }
 
-// TestKnownAPIFailures checks that every known defect of knownAPIFailures
-// still deviates from the exact result. The suite reports them and keeps
-// running.
-func TestKnownAPIFailures(t *testing.T) {
+// TestALG2HugeWeights is the audit's apicheck case class (203 of 1,994
+// rule cases with huge weights accepted rules with MinConfidence 1 and a
+// confidence below 1): random databases with weights up to 2^60, mined
+// with random Fraction and MinConfidence thresholds, compared with the
+// oracle's independent big.Rat evaluation of the threshold contract; with
+// MinConfidence 1 every rule must have Support == BodySupport.
+func TestALG2HugeWeights(t *testing.T) {
 	t.Parallel()
-	for _, kf := range knownAPIFailures {
-		dev := kf.check(t)
-		if dev == "" {
-			t.Errorf("known failure %s %q no longer deviates: remove it from knownAPIFailures", kf.id, kf.name)
-			continue
+	r := rand.New(rand.NewPCG(17, 2))
+	items := []string{"a", "b", "c", "d", "e"}
+	fracs := []float64{0.1, 0.25, 0.3, 0.5, 0.7, 1, math.Nextafter(0.5, 0), math.Nextafter(0.5, 1)}
+	confs := []float64{0, 0.5, 0.8, 0.9, 1, math.Nextafter(1, 0)}
+	for range numCases(300) {
+		var txs []oracle.Transaction
+		n := 2 + r.IntN(6)
+		for range n {
+			var t []string
+			for _, it := range items {
+				if r.IntN(2) == 0 {
+					t = append(t, it)
+				}
+			}
+			w := int64(1) << 60 / int64(n)
+			switch r.IntN(3) {
+			case 0:
+				w -= r.Int64N(1000)
+			case 1:
+				w = 1 + r.Int64N(1000)
+			}
+			txs = append(txs, tx(w, t...))
 		}
-		t.Logf("known failure %s %q: %s", kf.id, kf.name, dev)
+		db, err := oracle.New(txs, oracle.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		total := db.Total()
+		f := fracs[r.IntN(len(fracs))]
+		c := confs[r.IntN(len(confs))]
+		rules, _, err := CollectRules(context.Background(), sourceOf(txs),
+			RuleOptions[string]{MinSupport: Fraction(f), MinConfidence: c})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := db.Rules(oracle.NewRuleParams(oracle.FracMinSupp(f, total), c))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := oracle.DiffRules(want, toOracleRules(rules), oracle.DiffOptions{IgnoreEval: true}); d != "" {
+			t.Fatalf("Fraction(%v) MinConfidence %v total %d:\n%s", f, c, total, d)
+		}
+		if c == 1 {
+			for _, rl := range rules {
+				if rl.Support != rl.BodySupport {
+					t.Fatalf("MinConfidence 1: %+v", rl)
+				}
+			}
+		}
+		sets, _, err := CollectItemsets(context.Background(), sourceOf(txs), Options[string]{MinSupport: Fraction(f)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantSets, err := db.Mine(oracle.NewSetParams(oracle.Frequent, oracle.FracMinSupp(f, total)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := oracle.DiffSets(wantSets, toOracleSets(sets), oracle.DiffOptions{IgnoreEval: true}); d != "" {
+			t.Fatalf("sets Fraction(%v) total %d:\n%s", f, total, d)
+		}
 	}
 }
