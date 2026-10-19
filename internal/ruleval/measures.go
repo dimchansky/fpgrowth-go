@@ -187,24 +187,37 @@ func reImport(supp, body, head, base tract.Supp) float64 {
 //
 // Deviation from upstream (ALG-1): upstream's formula divides the rounded
 // difference conf-p by 1-p, which amplifies its absolute rounding error
-// of a few ulps by base/(base-head); once base-head is below about
-// base·2^-53, p rounds to 1 and a rule with confidence 1 gets 0 instead
-// of 1. For conf > p and base/(base-head) > certGate the value is
-// computed as D/(body·(base-head)) from the exact D = supp·base -
-// head·body (relative error a few ulps). Everywhere else upstream's
-// formula is kept (bit-identical): its absolute error there is at most
-// about 4·2^-53·certGate + 6·2^-53 < 2^-40 (the conf < p branch divides
-// by p >= 1/2·(conf+p) and stays within a few ulps for every base).
+// of a few ulps by base/(base-head), and the rounding can also flip the
+// sign of conf-p near independence (a table with conf < p, or an exactly
+// independent one, then gets a value up to 1). Once base-head is below
+// about base·2^-53, p rounds to 1 and a rule with confidence 1 gets 0
+// instead of 1. For base/(base-head) > certGate the value is therefore
+// computed from the exact D = supp·base - head·body, whose sign decides
+// the branch: D/(body·(base-head)) for D > 0, D/(body·head) for D < 0
+// (= (conf-p)/p) and exactly 0 for D = 0, each with a relative error of a
+// few ulps. Below the gate upstream's formula is kept (bit-identical): a
+// wrong sign of the rounded conf-p, whose absolute error is at most 3u
+// (u = 2^-53; both quotients are at most 1), costs at most
+// 3u·base/(base-head) <= 3u·certGate on the conf >= p branch, and at most
+// 3u·(conf+p)/p <= 6u on the other, so the absolute error stays below
+// 4·2^-53·certGate + 6·2^-53 < 2^-40.
 func reCert(supp, body, head, base tract.Supp) float64 {
 	if body <= 0 || base <= 0 {
 		return 0
 	}
 	if head < base && base-head < base/certGate {
-		if neg, hi, lo := crossDiff(supp, body, head, base); !neg && hi|lo != 0 {
-			// D <= body·(base-head) exactly, so the quotient is at most
-			// 1 up to rounding; clamp it like the exact value.
-			return min(u128Float(hi, lo)/(float64(body)*float64(base-head)), 1)
+		neg, hi, lo := crossDiff(supp, body, head, base)
+		d := u128Float(hi, lo)
+		switch {
+		case hi|lo == 0:
+			return 0 // independent: conf = p
+		case neg:
+			// |D| <= body·head exactly (supp >= 0): at least -1
+			return max(-d/(float64(body)*float64(head)), -1)
 		}
+		// D <= body·(base-head) exactly, so the quotient is at most 1 up
+		// to rounding; clamp it like the exact value.
+		return min(d/(float64(body)*float64(base-head)), 1)
 	}
 	p := float64(head) / float64(base)
 	n := float64(supp)/float64(body) - p
@@ -218,7 +231,7 @@ func reCert(supp, body, head, base tract.Supp) float64 {
 }
 
 // certGate is the largest base/(base-head) for which reCert keeps
-// upstream's formula when conf > p (see there).
+// upstream's formula (see there).
 const certGate = 1 << 10
 
 // reChi2 ports re_chi2: the chi^2 measure normalized by base,
@@ -397,7 +410,7 @@ func infoNats(supp, body, head, base tract.Supp) float64 {
 		return 0
 	}
 	d := float64(float64(supp)*float64(base)) - float64(float64(head)*float64(body))
-	if (supp|body|head|base)>>26 != 0 { // products beyond 2^52 (crossDiffFloat, by hand)
+	if (supp|body|head|base)>>26 != 0 { // products beyond 2^52
 		d = crossDiffWide(supp, body, head, base)
 	}
 	if d == 0 {

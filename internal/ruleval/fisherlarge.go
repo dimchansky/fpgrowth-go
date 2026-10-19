@@ -32,7 +32,8 @@ import (
 //     p-value has a relative error bound, also tiny ones.
 //   - The ranges of FisherProb and FisherInfo are found by bisection on
 //     the side opposite to the observed table; near-ties are decided
-//     exactly where that is cheap (fisherTieExact).
+//     exactly or at 320 bits with a bounded cost (fisherTieExact,
+//     cmpWeightBig).
 //
 // Values for base <= maxFact (where upstream's log-gamma values are table
 // lookups) are computed as before, bit-identical to upstream's apart from
@@ -48,10 +49,10 @@ const fisherTailRel = 0x1p-60
 
 // fisherTieExact is the largest distance |x - supp| for which FisherProb
 // decides a near-tie of P(x) and P(supp) exactly (cmpWeight, big integers
-// of up to fisherTieExact·63 bits). Beyond it a near-tie counts as a tie
-// (the table is summed), which can only increase the p-value, and only by
-// tables whose log-probability is within the sum of the two lnP error
-// bounds (lnPErr) of the observed one's.
+// of up to fisherTieExact·63 bits). Beyond it the logarithms of the
+// weights are compared at 320 bits (cmpWeightBig, bounded cost); only
+// tables whose probabilities agree within a relative 2^-200 then count
+// as ties (summed, like exact ties).
 const fisherTieExact = 1024
 
 // hyperTable is a normalized table (see fisherTable) for base > maxFact
@@ -220,7 +221,8 @@ func (t *hyperTable) fisherSum(st *stepper, ranges ...[2]tract.Supp) (float64, e
 // probAtMost reports whether P(x) <= P(supp), given lnP(supp) = ls and
 // S(supp) = ss: from the computed log-probabilities when they differ by
 // more than their error bounds, else exactly (equal cells, or cmpWeight
-// for |x - supp| <= fisherTieExact), else true (see fisherTieExact).
+// for |x - supp| <= fisherTieExact), else at 320 bits (cmpWeightBig;
+// true for a tie within 2^-200).
 func (t *hyperTable) probAtMost(x tract.Supp, ls, ss float64) bool {
 	lx, sx := t.lnP(x)
 	tol := lnPErr(sx) + lnPErr(ss)
@@ -234,7 +236,8 @@ func (t *hyperTable) probAtMost(x tract.Supp, ls, ss float64) bool {
 	case max(x-t.ft.supp, t.ft.supp-x) <= fisherTieExact:
 		return t.ft.cmpWeight(x) >= 0
 	}
-	return true
+	c, _ := t.ft.cmpWeightBig(x) // 0 (a tie) when undecided
+	return c >= 0
 }
 
 // infoAtLeast reports whether I(x) >= I(supp), given S(supp) = ss: from

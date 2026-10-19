@@ -54,21 +54,12 @@ func u128Float(hi, lo uint64) float64 {
 	return float64(float64(m) * math.Float64frombits(uint64(1023+s)<<52))
 }
 
-// crossDiffFloat returns D = supp·base - head·body (see crossDiff)
-// correctly rounded to float64. If all four arguments are below 2^26 the
-// products are below 2^52, so upstream's double expression is exact and
-// is used as it is (as fast as upstream's, and trivially bit-identical);
-// otherwise D is computed in integers (crossDiffWide).
-func crossDiffFloat(supp, body, head, base tract.Supp) float64 {
-	if (supp|body|head|base)>>26 == 0 {
-		return float64(float64(supp)*float64(base)) - float64(float64(head)*float64(body))
-	}
-	return crossDiffWide(supp, body, head, base)
-}
-
-// crossDiffWide is crossDiffFloat for large arguments: in int64 if all
-// four are below 2^31 (the products are then below 2^62), else in 128-bit
-// integers. It is kept separate so that crossDiffFloat can be inlined.
+// crossDiffWide returns D = supp·base - head·body (see crossDiff)
+// correctly rounded to float64: in int64 if all four arguments are below
+// 2^31 (the products are then below 2^62), else in 128-bit integers. The
+// measures call it only for arguments of 2^26 and more; below, upstream's
+// double expression is exact and they evaluate it inline (reChi2,
+// reChi2PVal, infoNats), which keeps those paths as fast as upstream's.
 func crossDiffWide(supp, body, head, base tract.Supp) float64 {
 	if (supp|body|head|base)>>31 == 0 {
 		return float64(supp*base - head*body)
