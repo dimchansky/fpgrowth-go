@@ -94,12 +94,12 @@ func TestOracleLogSupportRatio(t *testing.T) {
 }
 
 // knownAPIFailure is a known numerical defect reproduced through the
-// public API (docs/audit/algorithms.md): ALG-1 (statistical measures and
-// -i for large total weights, differences.md N1, issue #16) and ALG-2
-// (relative (1-ε) threshold tolerances beyond 2^52, N2, issue #17). Each
-// check returns "" if the result is the exact (definition-based) one and
-// a description of the deviation otherwise. TestKnownAPIFailures requires
-// every entry to deviate: an entry that passes must be removed by the fix.
+// public API (docs/audit/algorithms.md): ALG-2 (relative (1-ε) threshold
+// tolerances beyond 2^52, N2, issue #17). Each check returns "" if the
+// result is the exact (definition-based) one and a description of the
+// deviation otherwise. TestKnownAPIFailures requires every entry to
+// deviate: an entry that passes must be removed by the fix. (The ALG-1
+// entries of issue #15 became the regression tests of TestALG1API.)
 type knownAPIFailure struct {
 	id, name string
 	check    func(t *testing.T) string
@@ -166,16 +166,12 @@ func tx(w int64, items ...string) oracle.Transaction {
 	return oracle.Transaction{Items: items, Weight: tract.Supp(w)}
 }
 
-// TestALG6Exemption pins the known-defect exemption of the oracle
-// comparisons (oracle.DefectALG6, issue #15 review): on an exactly
-// independent table, InformationPValue is 0.99999996 instead of 1. A
-// strict comparison reports it, a comparison with DiffOptions.Defects
-// counts it. The test fails once the implementation gets it right (then
-// the exemption is no longer needed: remove DefectALG6 from the reference
-// and this test). The fuzz corpus entry
+// TestALG6Regression checks audit ALG-6 (issue #16): the G-test p-value
+// of an exactly independent table is exactly 1 (it was 0.99999996), and
+// the strict comparison with the reference passes. The fuzz corpus entry
 // testdata/fuzz/FuzzMineRules/5fc53b9aa57af1cd is the same case found by
 // fuzzing.
-func TestALG6Exemption(t *testing.T) {
+func TestALG6Regression(t *testing.T) {
 	t.Parallel()
 	// a in 4 of 6, b in 3, a b in 2: s·n = 12 = b·h
 	txs := []oracle.Transaction{tx(2, "a", "b"), tx(2, "a"), tx(1, "b"), tx(1)}
@@ -184,6 +180,14 @@ func TestALG6Exemption(t *testing.T) {
 		RuleOptions[string]{MinSupport: Count(1), MinSize: 2, Evaluation: ev})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no rules")
+	}
+	for _, r := range got {
+		if r.Value != 1 {
+			t.Errorf("rule %s <- %v: InformationPValue %v, want exactly 1", r.Head, r.Body, r.Value)
+		}
 	}
 	db, err := oracle.New(txs, oracle.Options{})
 	if err != nil {
@@ -196,42 +200,53 @@ func TestALG6Exemption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{}); d == "" {
-		t.Fatal("InformationPValue of an exactly independent table matches the reference: ALG-6 appears fixed; remove the DefectALG6 exemption")
-	} else {
-		t.Logf("strict comparison: %s", d)
+	if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{}); d != "" {
+		t.Errorf("strict comparison: %s", d)
 	}
-	defects := map[string]int{}
-	if d := oracle.DiffRules(want, toOracleRules(got), oracle.DiffOptions{Defects: defects}); d != "" {
-		t.Fatalf("with the known-defect exemption: %s", d)
-	}
-	if defects[oracle.DefectALG6] == 0 {
-		t.Errorf("defects counted %v, want %s", defects, oracle.DefectALG6)
+}
+
+// alg1APICase is a regression case of audit ALG-1 (issue #16) through the
+// public API: the audit's CLI reproductions and the -i case of the #15
+// known-failure table. Every measure (and -i) must match the reference
+// within its documented bound.
+type alg1APICase struct {
+	name       string
+	txs        []oracle.Transaction
+	head, body string
+	s, b, h, n int64
+	invalidate bool
+}
+
+var alg1APICases = []alg1APICase{
+	{"chi_big: s=3k-2 b=3k h=9k-2 n=9k, k=1e15 (audit CLI reproduction)",
+		[]oracle.Transaction{tx(2999999999999998, "x", "y"), tx(2, "x"), tx(6000000000000000, "y")},
+		"y", "x", 2999999999999998, 3e15, 8999999999999998, 9e15, false},
+	{"perfect association x y M / q 3 (audit CLI reproduction)",
+		[]oracle.Transaction{tx(9223372036854775800, "x", "y"), tx(3, "q")},
+		"y", "x", 9223372036854775800, 9223372036854775800, 9223372036854775800, 9223372036854775803, false},
+	{"certainty with confidence 1 and prior 1-2/M",
+		[]oracle.Transaction{tx(2, "x", "y"), tx(9223372036854775800-4, "y"), tx(2)},
+		"y", "x", 2, 2, 9223372036854775800 - 2, 9223372036854775800, false},
+	// s = 1e18+1, b = h = 3e18, n = 9e18: s·n > h·b exactly, but
+	// float64(s)·float64(n) == float64(h)·float64(b), so upstream's test
+	// invalidated the rule (value 0 instead of its lift ≈ 1).
+	{"-i: s·n = h·b + 9e18 exceeds 2^53 and float64 rounds it to equality",
+		[]oracle.Transaction{tx(1e18+1, "x", "y"), tx(2e18-1, "x"), tx(2e18-1, "y"), tx(4e18 + 1)},
+		"y", "x", 1e18 + 1, 3e18, 3e18, 9e18, true},
+}
+
+// TestALG1API checks the ALG-1 regression cases (they were known failures
+// in all of n p y t i g z f h m s, and -i, before issue #16).
+func TestALG1API(t *testing.T) {
+	t.Parallel()
+	for _, c := range alg1APICases {
+		if d := measureDeviations(t, c.txs, c.head, c.body, c.s, c.b, c.h, c.n, c.invalidate); d != "" {
+			t.Errorf("%s: %s", c.name, d)
+		}
 	}
 }
 
 var knownAPIFailures = []knownAPIFailure{
-	{"ALG-1", "chi_big: s=3k-2 b=3k h=9k-2 n=9k, k=1e15 (audit CLI reproduction)", func(t *testing.T) string {
-		txs := []oracle.Transaction{tx(2999999999999998, "x", "y"), tx(2, "x"), tx(6000000000000000, "y")}
-		return measureDeviations(t, txs, "y", "x", 2999999999999998, 3e15, 8999999999999998, 9e15, false)
-	}},
-	{"ALG-1", "perfect association x y M / q 3 (audit CLI reproduction)", func(t *testing.T) string {
-		const m = 9223372036854775800
-		txs := []oracle.Transaction{tx(m, "x", "y"), tx(3, "q")}
-		return measureDeviations(t, txs, "y", "x", m, m, m, m+3, false)
-	}},
-	{"ALG-1", "certainty with confidence 1 and prior 1-2/M", func(t *testing.T) string {
-		const m = 9223372036854775800
-		txs := []oracle.Transaction{tx(2, "x", "y"), tx(m-4, "y"), tx(2)}
-		return measureDeviations(t, txs, "y", "x", 2, 2, m-2, m, false)
-	}},
-	{"ALG-1", "-i: s·n = h·b + 9e18 exceeds 2^53 and float64 rounds it to equality", func(t *testing.T) string {
-		// s = 1e18+1, b = h = 3e18, n = 9e18: s·n > h·b exactly, but
-		// float64(s)·float64(n) == float64(h)·float64(b), so the rule is
-		// invalidated (value 0 instead of its lift ≈ 1).
-		txs := []oracle.Transaction{tx(1e18+1, "x", "y"), tx(2e18-1, "x"), tx(2e18-1, "y"), tx(4e18 + 1)}
-		return measureDeviations(t, txs, "y", "x", 1e18+1, 3e18, 3e18, 9e18, true)
-	}},
 	{"ALG-2", "-s50 admits a set with relative support 49.999999999999992895 %", func(t *testing.T) string {
 		// W = 2^62; exact minimum support ceil(W/2) = 2^61 > supp(a)
 		txs := []oracle.Transaction{tx(2305843009213693752, "a"), tx(2305843009213694152, "b")}
@@ -262,35 +277,17 @@ var knownAPIFailures = []knownAPIFailure{
 	}},
 }
 
-// wantKnownAPIDeviations pins the measures that deviate in the ALG-1
-// entries (the letters before ':'), so that a partial fix is noticed.
-var wantKnownAPIDeviations = map[int]string{
-	0: "npytigfhm",
-	1: "znpytigfhms",
-	2: "znpigs",
-	3: "oclvkwunpytig", // the measures whose value differs from their worst value
-}
-
 // TestKnownAPIFailures checks that every known defect of knownAPIFailures
-// still deviates from the exact result (and, for ALG-1, in exactly the
-// listed measures). The suite reports them and keeps running.
+// still deviates from the exact result. The suite reports them and keeps
+// running.
 func TestKnownAPIFailures(t *testing.T) {
 	t.Parallel()
-	for i, kf := range knownAPIFailures {
+	for _, kf := range knownAPIFailures {
 		dev := kf.check(t)
 		if dev == "" {
 			t.Errorf("known failure %s %q no longer deviates: remove it from knownAPIFailures", kf.id, kf.name)
 			continue
 		}
 		t.Logf("known failure %s %q: %s", kf.id, kf.name, dev)
-		if want, ok := wantKnownAPIDeviations[i]; ok {
-			var letters string
-			for _, part := range strings.Split(dev, "; ") {
-				letters += part[:1]
-			}
-			if letters != want {
-				t.Errorf("known failure %s %q: deviating measures %q, listed %q", kf.id, kf.name, letters, want)
-			}
-		}
 	}
 }

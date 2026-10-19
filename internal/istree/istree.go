@@ -153,7 +153,8 @@ const abortEvery = 256
 
 // SetAbort sets a function that the long-running methods Filter, CloMax
 // and Report call every abortEvery steps. Evaluations with a measure whose
-// cost is not constant (the Fisher tests, O(min(body, head)) per rule)
+// cost is not constant (the Fisher tests, about 9 standard deviations of
+// the hypergeometric distribution per side, up to √n/4 each)
 // call it as well, every few thousand summed tables, so that a single
 // evaluation with huge weights can be canceled too. A non-nil result stops the
 // method, which returns it; the tree is then in an unspecified state and

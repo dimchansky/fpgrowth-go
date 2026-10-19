@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/bits"
 	"math/rand/v2"
 	"os"
 	"slices"
@@ -79,16 +78,9 @@ func compare(t *testing.T, rm *oracle.RefMeasure, tb table) compareResult {
 }
 
 // sweep compares all measures on the tables and returns the number of
-// comparisons and the number of mismatches explained by the known defect
-// ALG-6, per measure letter. A mismatch is explained if the reference
-// value names the defect and the deviation lies within its derived bound
-// (oracle.Value.MatchesDefect, oracle.DefectALG6: the implementation's
-// information has an absolute error of a few ulps of ln n, which the
-// G-test p-value amplifies near independence). Every other mismatch is an
-// error.
-func sweep(t *testing.T, tables []table) (checked int, alg6 map[byte]int) {
+// comparisons. Every mismatch is an error.
+func sweep(t *testing.T, tables []table) (checked int) {
 	t.Helper()
-	alg6 = map[byte]int{}
 	bad := 0
 	for _, tb := range tables {
 		for _, rm := range oracle.RefMeasures() {
@@ -97,11 +89,7 @@ func sweep(t *testing.T, tables []table) (checked int, alg6 map[byte]int) {
 				continue
 			}
 			checked++
-			switch {
-			case r.ok:
-			case r.want.KnownDefect == oracle.DefectALG6 && r.want.MatchesDefect(r.got):
-				alg6[rm.Letter]++
-			default:
+			if !r.ok {
 				bad++
 				if bad <= 20 {
 					t.Errorf("%s(%c) %v: got %.17g, reference %v", rm.Name, rm.Letter, tb, r.got, r.want)
@@ -112,7 +100,7 @@ func sweep(t *testing.T, tables []table) (checked int, alg6 map[byte]int) {
 	if bad > 20 {
 		t.Errorf("... %d mismatches in total", bad)
 	}
-	return checked, alg6
+	return checked
 }
 
 // exhaustiveTables returns every valid table with 1 <= n <= nmax,
@@ -205,9 +193,9 @@ func measureCases(t *testing.T) int {
 
 // TestMeasuresMatchReference compares the 25 rule measures with the
 // reference on exhaustive small tables, boundary margins and random
-// weighted tables up to n = 2^24. The only accepted mismatches are ALG-6
-// (exactly independent tables, G-test p-value); the test fails if there
-// are none, so the exemption must be removed when ALG-6 is fixed.
+// weighted tables up to n = 2^24, within the documented error bounds (the
+// reference tolerances). There are no accepted mismatches (ALG-6, the
+// G-test p-value near independence, was fixed by issue #16).
 func TestMeasuresMatchReference(t *testing.T) {
 	t.Parallel()
 	nmax, random := int64(20), 3000
@@ -225,14 +213,8 @@ func TestMeasuresMatchReference(t *testing.T) {
 	for range random {
 		tables = append(tables, randomTable(r, 24))
 	}
-	checked, alg6 := sweep(t, tables)
-	t.Logf("%d tables (%d exhaustive with n <= %d), %d comparisons, ALG-6 mismatches within the bound: g %d, i %d",
-		len(tables), exhaustive, nmax, checked, alg6['g'], alg6['i'])
-	for _, c := range []byte("gi") {
-		if alg6[c] == 0 {
-			t.Errorf("no ALG-6 mismatch of %c left: ALG-6 appears fixed for it; remove its oracle.DefectALG6 bound and known-failure entries", c)
-		}
-	}
+	checked := sweep(t, tables)
+	t.Logf("%d tables (%d exhaustive with n <= %d), %d comparisons", len(tables), exhaustive, nmax, checked)
 }
 
 // largeTable is a named table of the known-failure grid.
@@ -280,100 +262,6 @@ func largeTables() []largeTable {
 	return tables
 }
 
-// knownFailures lists, by table name, the measures that currently differ
-// from the reference on the tables of largeTables. They are the known
-// numerical defects of the implementation:
-//
-//   - ALG-1 (precision loss for large total weights; docs/differences.md
-//     N1; issue #16): p, t (s·n - b·h cancels in float64 beyond 2^53),
-//     n, y (chi² and Yates lose relative precision the same way and
-//     collapse to 0 for the perfect association), z (certainty: h/n
-//     rounds to 1), f h m s (Fisher: log-gamma differences);
-//   - ALG-6 (oracle.DefectALG6; issue #16): i and g, the information's
-//     absolute error of a few ulps of ln n, which the relative comparison
-//     of i sees already at n = 9,000 and the G-test p-value amplifies
-//     near independence (1 - O(1e-7) instead of 1 at exact independence,
-//     the "-0" shapes of [1 2 2 4], [1 3 3 9] and the alg6 tables). For
-//     large n the same error is part of ALG-1.
-//
-// The suite reports them and keeps running. The list is strict in both
-// directions: a listed measure that matches the reference, or an
-// unlisted one that does not, fails TestKnownMeasureFailures, so a fix
-// must remove its entries.
-var knownFailures = map[string]string{
-	"alg1 k=1e+03":                          "i",
-	"alg1 k=1e+06":                          "ig",
-	"alg1 k=1e+09":                          "npytigfm",
-	"alg1 k=1e+12":                          "npytigfhm",
-	"alg1 k=1e+13":                          "npytigfhm",
-	"alg1 k=1e+14":                          "npytigfhm",
-	"alg1 k=1e+15":                          "npytigfhm",
-	"alg1 k=1e+16":                          "npytigfhm",
-	"alg1 k=1e+17":                          "npytigfhm",
-	"alg1 k=1e+18":                          "npytigfhm",
-	"shape [1 2 2 4]·1000000-1":             "ig",
-	"shape [1 2 2 4]·1000000-7":             "ig",
-	"shape [1 3 3 9]·1000000-1":             "ig",
-	"shape [1 3 3 9]·1000000-7":             "ig",
-	"shape [3 5 7 12]·1000000-0":            "i",
-	"shape [3 5 7 12]·1000000-1":            "i",
-	"shape [3 5 7 12]·1000000-7":            "i",
-	"shape [2 4 5 9]·1000000-0":             "i",
-	"shape [2 4 5 9]·1000000-1":             "i",
-	"shape [1 2 2 4]·1000000000-0":          "ig",
-	"shape [1 2 2 4]·1000000000-1":          "ig",
-	"shape [1 2 2 4]·1000000000-7":          "ig",
-	"shape [1 3 3 9]·1000000000-1":          "nyig",
-	"shape [1 3 3 9]·1000000000-7":          "nyig",
-	"shape [3 5 7 12]·1000000000-0":         "i",
-	"shape [3 5 7 12]·1000000000-1":         "i",
-	"shape [3 5 7 12]·1000000000-7":         "i",
-	"shape [2 4 5 9]·1000000000-1":          "i",
-	"shape [2 4 5 9]·1000000000-7":          "i",
-	"shape [1 2 2 4]·1000000000000-1":       "npytig",
-	"shape [1 2 2 4]·1000000000000-7":       "nyig",
-	"shape [1 3 3 9]·1000000000000-1":       "nyig",
-	"shape [1 3 3 9]·1000000000000-7":       "npytig",
-	"shape [3 5 7 12]·1000000000000-0":      "i",
-	"shape [3 5 7 12]·1000000000000-1":      "i",
-	"shape [3 5 7 12]·1000000000000-7":      "i",
-	"shape [2 4 5 9]·1000000000000-1":       "i",
-	"shape [2 4 5 9]·1000000000000-7":       "i",
-	"shape [1 2 2 4]·1000000000000000-1":    "npytig",
-	"shape [1 2 2 4]·1000000000000000-7":    "npytig",
-	"shape [1 3 3 9]·1000000000000000-0":    "ig",
-	"shape [1 3 3 9]·1000000000000000-1":    "nyig",
-	"shape [1 3 3 9]·1000000000000000-7":    "npytig",
-	"shape [3 5 7 12]·1000000000000000-0":   "i",
-	"shape [3 5 7 12]·1000000000000000-1":   "i",
-	"shape [3 5 7 12]·1000000000000000-7":   "i",
-	"shape [2 4 5 9]·1000000000000000-0":    "i",
-	"shape [2 4 5 9]·1000000000000000-1":    "i",
-	"shape [2 4 5 9]·1000000000000000-7":    "i",
-	"shape [1 2 2 4]·1152921504606846976-1": "npytig",
-	"shape [1 2 2 4]·1152921504606846976-7": "npytig",
-	"perfect association":                   "znpytigfhms",
-	"certainty near 1":                      "znpigs",
-	"alg6 numcheck worst":                   "ig",
-	"alg6 small":                            "ig",
-	"alg6 small 2":                          "ig",
-}
-
-// knownFragile lists comparisons of largeTables whose deviation from the
-// reference lies between a quarter and four times the tolerance, so that
-// a last-bit difference of the platform could decide whether they match.
-// TestKnownMeasureFailures accepts them either way but requires them to
-// stay in that band; every other comparison must be clearly decided
-// (below a quarter of the tolerance, or above four times it).
-var knownFragile = map[string]string{
-	"alg1 k=1e+09":                       "h",  // ALG-1 (Fisher), 3.7·tol
-	"shape [2 4 5 9]·1000000000-0":       "i",  // ALG-6, 2.8·tol
-	"shape [1 2 2 4]·1000000000000-7":    "pt", // ALG-1, 0.95·tol
-	"shape [1 3 3 9]·1000000000000-1":    "pt", // ALG-1, 0.95·tol
-	"shape [2 4 5 9]·1000000000000-0":    "i",  // ALG-6, 2.8·tol
-	"shape [1 3 3 9]·1000000000000000-1": "pt", // ALG-1, 2.1·tol
-}
-
 // deviationRatio returns |got - V|/Tol (0 for an exact match, +Inf for a
 // mismatch without tolerance).
 func deviationRatio(r compareResult) float64 {
@@ -386,79 +274,41 @@ func deviationRatio(r compareResult) float64 {
 	return math.Abs(r.got-r.want.V) / r.want.Tol
 }
 
-// TestKnownMeasureFailures compares all measures with the reference on
-// the large-weight grid (up to n = 2^63 - 8) and the ALG-6 tables and
-// checks that exactly the measures of knownFailures differ.
-func TestKnownMeasureFailures(t *testing.T) {
+// TestLargeTablesMatchReference compares all measures with the reference
+// on the large-weight grid (up to n = 2^63 - 8) and the ALG-6 tables.
+// They were the known failures of audit ALG-1 and ALG-6 (issue #15, in
+// n p y t i g z f h m s); since issue #16 every comparison must match
+// within the documented bound, and by a clear margin (below a quarter of
+// the tolerance), so that a last-bit difference of the platform cannot
+// decide the outcome.
+func TestLargeTablesMatchReference(t *testing.T) {
 	t.Parallel()
 	names := map[string]bool{}
-	reported := map[string]int{}
+	worst := map[string]float64{}
 	for _, lt := range largeTables() {
 		if names[lt.name] {
 			t.Fatalf("duplicate table name %q", lt.name)
 		}
 		names[lt.name] = true
-		known, fragile := knownFailures[lt.name], knownFragile[lt.name]
 		for _, rm := range oracle.RefMeasures() {
-			listed := strings.IndexByte(known, rm.Letter) >= 0
-			isFragile := strings.IndexByte(fragile, rm.Letter) >= 0
 			r := compare(t, rm, lt.table)
 			if r.skipped {
-				if listed || isFragile {
-					t.Errorf("%s %v: listed comparison %c is not checked", lt.name, lt.table, rm.Letter)
-				}
 				continue
 			}
 			q := deviationRatio(r)
-			if isFragile {
-				if listed {
-					t.Errorf("%s: %c is listed as fragile and as a known failure", lt.name, rm.Letter)
-				}
-				if !(q > 0.25 && q < 4) {
-					t.Errorf("%s %v: fragile %s(%c) deviates by %.3g·tol: remove it from knownFragile", lt.name, lt.table, rm.Name, rm.Letter, q)
-				}
-				continue
-			}
-			if q > 0.25 && q < 4 {
-				t.Errorf("%s %v: %s(%c) deviates by %.3g·tol, too close to the tolerance to be decided reliably (got %.17g, reference %v)",
-					lt.name, lt.table, rm.Name, rm.Letter, q, r.got, r.want)
-			}
-			id := "ALG-1"
-			if r.want.MatchesDefect(r.got) {
-				id = "ALG-6"
-			}
-			switch {
-			case !r.ok && listed:
-				reported[id]++
-				t.Logf("known failure %s: %s %s(%c) got %.17g, reference %v", id, lt.name, rm.Name, rm.Letter, r.got, r.want)
-			case !r.ok:
-				t.Errorf("%s %v: %s(%c) got %.17g, reference %v (not a known failure)", lt.name, lt.table, rm.Name, rm.Letter, r.got, r.want)
-			case listed:
-				t.Errorf("%s %v: %s(%c) now matches the reference (%v): remove it from knownFailures", lt.name, lt.table, rm.Name, rm.Letter, r.want)
+			worst[string(rm.Letter)] = max(worst[string(rm.Letter)], q)
+			if !r.ok || q > 0.25 {
+				t.Errorf("%s %v: %s(%c) got %.17g, reference %v (%.3g·tol)", lt.name, lt.table, rm.Name, rm.Letter, r.got, r.want, q)
 			}
 		}
 	}
-	for name := range knownFailures {
-		if !names[name] {
-			t.Errorf("knownFailures entry %q names no table", name)
-		}
-	}
-	for name := range knownFragile {
-		if !names[name] {
-			t.Errorf("knownFragile entry %q names no table", name)
-		}
-	}
-	t.Logf("known failures reported: %v", reported)
+	t.Logf("largest deviation per measure, in units of its tolerance: %v", worst)
 }
 
-// alg1Measures are the measures affected by ALG-1 (differences.md N1).
-const alg1Measures = "nptyigzfhms"
-
 // TestMeasuresExtendedLarge runs only with FPG_MEASURE_CASES: random
-// weighted tables with n log-uniform up to 2^62. Mismatches of the ALG-1
-// measures are counted per measure and order of magnitude of n and
-// logged (they are the known limitation N1); a mismatch of any other
-// measure fails.
+// weighted tables with n log-uniform up to 2^62, compared with the
+// reference within the documented bounds. The largest deviation per
+// measure (in units of its tolerance) is logged.
 func TestMeasuresExtendedLarge(t *testing.T) {
 	k := measureCases(t)
 	if k == 0 {
@@ -466,8 +316,8 @@ func TestMeasuresExtendedLarge(t *testing.T) {
 	}
 	t.Parallel()
 	r := rand.New(rand.NewPCG(15, 4))
-	counts := map[string]int{}
-	checked := 0
+	worst := map[byte]float64{}
+	checked, bad := 0, 0
 	for range k {
 		tb := randomTable(r, 62)
 		for _, rm := range oracle.RefMeasures() {
@@ -476,23 +326,22 @@ func TestMeasuresExtendedLarge(t *testing.T) {
 				continue
 			}
 			checked++
-			if res.ok {
-				continue
+			worst[rm.Letter] = max(worst[rm.Letter], deviationRatio(res))
+			if !res.ok {
+				bad++
+				if bad <= 20 {
+					t.Errorf("%s(%c) %v: got %.17g, reference %v", rm.Name, rm.Letter, tb, res.got, res.want)
+				}
 			}
-			if strings.IndexByte(alg1Measures, rm.Letter) < 0 {
-				t.Errorf("%s(%c) %v: got %.17g, reference %v", rm.Name, rm.Letter, tb, res.got, res.want)
-				continue
-			}
-			counts[fmt.Sprintf("%c n<2^%02d", rm.Letter, bits.Len64(uint64(tb.n)))]++
 		}
 	}
-	keys := make([]string, 0, len(counts))
-	for key := range counts {
-		keys = append(keys, key)
+	keys := make([]byte, 0, len(worst))
+	for c := range worst {
+		keys = append(keys, c)
 	}
 	slices.Sort(keys)
-	for _, key := range keys {
-		t.Logf("ALG-1 mismatches %s: %d", key, counts[key])
+	for _, c := range keys {
+		t.Logf("%c: largest deviation %.3g·tol", c, worst[c])
 	}
-	t.Logf("%d random tables, %d comparisons", k, checked)
+	t.Logf("%d random tables, %d comparisons, %d mismatches", k, checked, bad)
 }

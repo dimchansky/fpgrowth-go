@@ -103,13 +103,8 @@ type Set struct {
 	// (Measure.Ref, LogRatio): an implementation's value matches if it is
 	// within EvalTol of Eval. It is 0 otherwise (values must be equal).
 	EvalTol float64
-	// Defect and DefectTol are the reference value's known implementation
-	// defect and its bound (Value.KnownDefect, Value.DefectTol); see
-	// DiffOptions.Defects.
-	Defect    string
-	DefectTol float64
 	// Optional marks a set whose reference value lies within its
-	// tolerance (or known-defect bound) of the threshold, so that an
+	// tolerance of the threshold, so that an
 	// implementation may report it or not (DiffSets accepts both).
 	Optional bool
 }
@@ -187,7 +182,7 @@ func (db *DB) Mine(p SetParams) ([]Set, error) {
 			continue
 		}
 		sets = append(sets, Set{Items: db.set(m), Supp: s, Eval: val.V, EvalTol: val.Tol,
-			Defect: val.KnownDefect, DefectTol: val.DefectTol, Optional: dec == boundary})
+			Optional: dec == boundary})
 	}
 	SortSets(sets)
 	return sets, nil

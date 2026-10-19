@@ -521,9 +521,11 @@ func TestAbortFuncMatches(t *testing.T) {
 	}
 }
 
-// TestAbortFuncStops checks that a failing abort function stops a Fisher
-// evaluation over 5·10^7 tables (seconds without the check) after
-// fisherAbortEvery tables, returning its error and NaN.
+// TestAbortFuncStops checks that a failing abort function stops a long
+// Fisher evaluation after fisherAbortEvery steps, returning its error and
+// NaN. The table is at independence with balanced margins and n = 10^8,
+// so every test sums about 9 standard deviations (σ = 2500) of tables on
+// each side of the mode, more than 3·fisherAbortEvery.
 func TestAbortFuncStops(t *testing.T) {
 	t.Parallel()
 	errStop := errors.New("stop")
@@ -537,7 +539,7 @@ func TestAbortFuncStops(t *testing.T) {
 			return nil
 		}
 		start := time.Now()
-		v, err := m.AbortFunc()(30_000_000, 50_000_000, 50_000_000, 100_000_000, abort)
+		v, err := m.AbortFunc()(25_000_000, 50_000_000, 50_000_000, 100_000_000, abort)
 		if !errors.Is(err, errStop) || !math.IsNaN(v) || calls != 3 {
 			t.Errorf("%v: %v, %v after %d abort calls", m, v, err, calls)
 		}

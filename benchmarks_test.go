@@ -219,9 +219,13 @@ func BenchmarkSuiteVariants(b *testing.B) {
 }
 
 // BenchmarkSuiteRules mines association rules, without and with an
-// evaluation measure (lift, filtered at 1.5).
+// evaluation measure (lift, filtered at 1.5; on dense data also the
+// information, its G-test p-value and Fisher's test, filtered at 0.01).
 func BenchmarkSuiteRules(b *testing.B) {
 	lift := &Evaluation{Measure: Lift, Filter: true, Threshold: 1.5}
+	info := &Evaluation{Measure: Information, Filter: true, Threshold: 0.01}
+	infop := &Evaluation{Measure: InformationPValue, Filter: true, Threshold: 0.01}
+	fisher := &Evaluation{Measure: FisherProb, Filter: true, Threshold: 0.01}
 	cases := []struct {
 		name string
 		data string
@@ -231,6 +235,9 @@ func BenchmarkSuiteRules(b *testing.B) {
 		{"sparse/s=0.05/c=50/lift", "sparse", RuleOptions[string]{MinSupport: pct(0.05), MinConfidence: 0.5, Evaluation: lift}},
 		{"dense/s=10/c=90/n=4", "dense", RuleOptions[string]{MinSupport: pct(10), MinConfidence: 0.9, MaxSize: 4}},
 		{"dense/s=10/c=80/n=4/lift", "dense", RuleOptions[string]{MinSupport: pct(10), MinConfidence: 0.8, MaxSize: 4, Evaluation: lift}},
+		{"dense/s=10/c=80/n=4/info", "dense", RuleOptions[string]{MinSupport: pct(10), MinConfidence: 0.8, MaxSize: 4, Evaluation: info}},
+		{"dense/s=10/c=80/n=4/infop", "dense", RuleOptions[string]{MinSupport: pct(10), MinConfidence: 0.8, MaxSize: 4, Evaluation: infop}},
+		{"dense/s=10/c=80/n=4/fisher", "dense", RuleOptions[string]{MinSupport: pct(10), MinConfidence: 0.8, MaxSize: 4, Evaluation: fisher}},
 	}
 	for _, c := range cases {
 		src := FromSlice(suiteData(b, c.data))

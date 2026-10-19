@@ -2,6 +2,7 @@ package ruleval
 
 import (
 	"math"
+	"math/bits"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
@@ -183,9 +184,27 @@ func reImport(supp, body, head, base tract.Supp) float64 {
 // 0/(1-1) = NaN (bug B5), which its rule filter lets through for any
 // threshold. The confidence does not change at all in this case, so the
 // certainty factor is 0.
+//
+// Deviation from upstream (ALG-1): upstream's formula divides the rounded
+// difference conf-p by 1-p, which amplifies its absolute rounding error
+// of a few ulps by base/(base-head); once base-head is below about
+// base·2^-53, p rounds to 1 and a rule with confidence 1 gets 0 instead
+// of 1. For conf > p and base/(base-head) > certGate the value is
+// computed as D/(body·(base-head)) from the exact D = supp·base -
+// head·body (relative error a few ulps). Everywhere else upstream's
+// formula is kept (bit-identical): its absolute error there is at most
+// about 4·2^-53·certGate + 6·2^-53 < 2^-40 (the conf < p branch divides
+// by p >= 1/2·(conf+p) and stays within a few ulps for every base).
 func reCert(supp, body, head, base tract.Supp) float64 {
 	if body <= 0 || base <= 0 {
 		return 0
+	}
+	if head < base && base-head < base/certGate {
+		if neg, hi, lo := crossDiff(supp, body, head, base); !neg && hi|lo != 0 {
+			// D <= body·(base-head) exactly, so the quotient is at most
+			// 1 up to rounding; clamp it like the exact value.
+			return min(u128Float(hi, lo)/(float64(body)*float64(base-head)), 1)
+		}
 	}
 	p := float64(head) / float64(base)
 	n := float64(supp)/float64(body) - p
@@ -198,19 +217,45 @@ func reCert(supp, body, head, base tract.Supp) float64 {
 	return n / (1 - p)
 }
 
+// certGate is the largest base/(base-head) for which reCert keeps
+// upstream's formula when conf > p (see there).
+const certGate = 1 << 10
+
 // reChi2 ports re_chi2: the chi^2 measure normalized by base,
 // (head*body - supp*base)^2 / (head*(base-head)*body*(base-body)).
+//
+// Deviation from upstream (ALG-1): the difference head*body - supp*base
+// is computed exactly in 128-bit integer arithmetic (crossDiff) and then
+// rounded once, so the relative error of the result is a few ulps for
+// every valid table. Upstream rounds both products to double first,
+// which cancels catastrophically when they exceed 2^53 (a perfect
+// association with weights near 2^63 gets 0). When both products are at
+// most 2^53 they are exact in double and the result is bit-identical to
+// upstream's.
 func reChi2(supp, body, head, base tract.Supp) float64 {
 	if marginsDegenerate(body, head, base) {
 		return 0
 	}
+	// upstream's expression, exact for products up to 2^52; beyond, |D|
+	// in 128 bits (crossDiff and u128Float are inlined, so reChi2 stays a
+	// leaf function)
 	t := float64(float64(head)*float64(body)) - float64(float64(supp)*float64(base))
+	if (supp|body|head|base)>>26 != 0 {
+		_, hi, lo := crossDiff(supp, body, head, base)
+		t = u128Float(hi, lo)
+	}
 	return (t * t) / (float64(head) * float64(base-head) * float64(body) * float64(base-body))
 }
 
 // reChi2PVal ports re_chi2pval: the p-value of the (unnormalized) chi^2
 // statistic base*reChi2 with one degree of freedom.
 func reChi2PVal(supp, body, head, base tract.Supp) float64 {
+	// The common case of reChi2 is repeated here because reChi2 is too
+	// large to be inlined; the expression is the same.
+	if (supp|body|head|base)>>26 == 0 && !marginsDegenerate(body, head, base) {
+		t := float64(float64(head)*float64(body)) - float64(float64(supp)*float64(base))
+		return chi2cdfQ(float64(base)*((t*t)/(float64(head)*float64(base-head)*float64(body)*float64(base-body))), 1)
+	}
 	return chi2cdfQ(float64(base)*reChi2(supp, body, head, base), 1)
 }
 
@@ -223,14 +268,38 @@ func reChi2PVal(supp, body, head, base tract.Supp) float64 {
 // gets a positive value. With the clamp the measure is the usual
 // max(0, |ad-bc| - n/2)^2 form (as in R's chisq.test), never exceeds the
 // uncorrected Chi2 and is 0 for independent tables.
+//
+// Deviation from upstream (ALG-1): the corrected difference is computed
+// exactly as (2|D| - base)/2 in 128-bit integers (see reChi2), so the
+// clamp is decided exactly. The result is bit-identical to upstream's
+// whenever both products are at most 2^53: then |D| and base/2 are exact
+// in double and upstream's subtraction rounds the same exact value.
 func reYates(supp, body, head, base tract.Supp) float64 {
 	if marginsDegenerate(body, head, base) {
 		return 0
 	}
-	t := math.Abs(float64(float64(head)*float64(body))-float64(float64(supp)*float64(base))) -
-		float64(0.5*float64(base))
-	if t < 0 {
-		t = 0
+	var t float64
+	if (supp|body|head|base)>>31 == 0 {
+		// the products and 2|D| are below 2^63
+		d := supp*base - head*body
+		if d < 0 {
+			d = -d
+		}
+		if d2 := 2*d - base; d2 > 0 {
+			t = 0.5 * float64(d2)
+		} else {
+			return 0 // 2|D| <= base: clamped to 0
+		}
+	} else {
+		_, hi, lo := crossDiff(supp, body, head, base)
+		hi, lo = hi<<1|lo>>63, lo<<1 // 2|D| < 2^127
+		var b uint64
+		lo, b = bits.Sub64(lo, uint64(base), 0)
+		hi, b = bits.Sub64(hi, 0, b)
+		if b != 0 || hi|lo == 0 { // 2|D| <= base: clamped to 0
+			return 0
+		}
+		t = 0.5 * u128Float(hi, lo)
 	}
 	return (t * t) / (float64(head) * float64(base-head) * float64(body) * float64(base-body))
 }
@@ -244,16 +313,36 @@ func reYatesPVal(supp, body, head, base tract.Supp) float64 {
 // reInfo ports re_info: the information difference to the prior (the
 // mutual information of body and head) in bits.
 //
-// Deviation from upstream: the result is clamped at 0 (bug B7). Mutual
-// information is never negative, but upstream's sum cancels to values like
-// -3.2e-16 for independent tables. Such values abort upstream's debug build
-// in InfoPValue (GammaQ asserts x >= 0); the release build returns 1 there,
-// which is also what the clamped value gives.
+// Deviation from upstream: the result is never negative (bug B7).
+// Upstream's sum cancels to values like -3.2e-16 for independent tables;
+// such values abort upstream's debug build in InfoPValue (GammaQ asserts
+// x >= 0).
+//
+// Deviation from upstream (ALG-1, ALG-6): upstream computes
+// (ln n + Σ t·ln(t/(r·k))/n)/ln 2, whose terms of size ln n cancel to
+// the result. Its absolute error of a few ulps of ln n makes the relative
+// error unbounded near independence (where the G-test p-value amplifies
+// it) and destroys the value for totals beyond about 10^13. Here the
+// information is computed from infoNats, a sum of non-negative terms with
+// a relative error below 32 ulps for every valid table, and it is exactly
+// 0 for independent tables. The values differ from upstream's in the
+// last bits on ordinary data.
 func reInfo(supp, body, head, base tract.Supp) float64 {
-	return max(infoRaw(supp, body, head, base), 0)
+	return infoNats(supp, body, head, base) / float64(base) / ln2
 }
 
-// infoRaw is re_info without the clamp at 0.
+// reInfoPVal ports re_infopval: the p-value of the G statistic
+// 2*ln(2)*base*reInfo with one degree of freedom. The statistic is
+// computed as 2·infoNats (see reInfo), which is exactly 0, and the
+// p-value exactly 1, for independent tables.
+func reInfoPVal(supp, body, head, base tract.Supp) float64 {
+	return chi2cdfQ(2*infoNats(supp, body, head, base), 1)
+}
+
+// infoRaw is upstream's re_info without the clamp at 0, evaluated in
+// upstream's order. Only the Fisher tests for small totals use it
+// (fetInfo, fisherSmall), where its values merely order the tables and
+// ties are decided exactly.
 func infoRaw(supp, body, head, base tract.Supp) float64 {
 	if marginsDegenerate(body, head, base) {
 		return 0
@@ -278,8 +367,102 @@ func infoRaw(supp, body, head, base tract.Supp) float64 {
 	return (math.Log(float64(base)) + sum/float64(base)) / ln2
 }
 
-// reInfoPVal ports re_infopval: the p-value of the G statistic
-// 2*ln(2)*base*reInfo with one degree of freedom.
-func reInfoPVal(supp, body, head, base tract.Supp) float64 {
-	return chi2cdfQ(2*ln2*float64(base)*reInfo(supp, body, head, base), 1)
+// infoNats returns S = n·I, the mutual information I of body and head in
+// nats times the total weight n = base (half the G statistic), for a
+// valid table; 0 for degenerate margins.
+//
+// With the cells c, their row and column margins r and k and the expected
+// counts E = r·k/n,
+//
+//	S = Σ c·ln(c/E) = Σ E·g(δ),  g(δ) = (1+δ)·ln(1+δ) - δ >= 0,
+//
+// where 1+δ = c/E; the second form adds Σ (E - c) = 0. Every term is
+// non-negative, so the sum does not cancel, and δ = ±D/(r·k) (signs +,
+// -, -, + for the cells supp, body-supp, head-supp and the rest) comes
+// from the exact D (crossDiff) with a relative error of at most 5u
+// (u = 2^-53: the rounding of D, of r·k and of the quotient). infoCell
+// evaluates E·g(δ) as r·k·g(δ) (the sum is divided by n once).
+//
+// Error bound (first order, in u): δ carries 5u, which g amplifies by
+// |δ·g'(δ)/g(δ)| <= 2.1 (10.5u) in the series range and the direct range
+// alike. The series form of g adds at most 9u, the direct form at most
+// 4u·|(1+δ)·ln(1+δ)|/g(δ) + u <= 40u (the cancellation factor is largest,
+// 9.7, at |δ| = 1/4) and the form for δ < -1/2 at most 22u (no
+// cancellation: g >= 0.15 there). The product r·k·g adds 4u, the sum of
+// four non-negative terms 3u and the final division 1.5u, so S has a
+// relative error below 59u (29.5 ulps); InfoPValue's statistic 2·S has
+// the same, and Info adds 1.5u for the division by n·ln 2.
+func infoNats(supp, body, head, base tract.Supp) float64 {
+	if marginsDegenerate(body, head, base) {
+		return 0
+	}
+	d := float64(float64(supp)*float64(base)) - float64(float64(head)*float64(body))
+	if (supp|body|head|base)>>26 != 0 { // products beyond 2^52 (crossDiffFloat, by hand)
+		d = crossDiffWide(supp, body, head, base)
+	}
+	if d == 0 {
+		return 0 // independent: every δ is 0
+	}
+	n := float64(base)
+	b, h, nb, nh := float64(body), float64(head), float64(base-body), float64(base-head)
+	// The four cells, unrolled (a loop over arrays costs about 10 %).
+	sum := infoCell(supp, float64(b*h), d, n) +
+		infoCell(body-supp, float64(b*nh), -d, n) +
+		infoCell(head-supp, float64(nb*h), -d, n) +
+		infoCell(base-head-body+supp, float64(nb*nh), d, n)
+	return sum / n
+}
+
+// infoCell returns r·k·g(δ) for a cell with count c, margin product
+// rk = r·k and deviation d = ±D, δ = d/rk (see infoNats). The result is
+// rounded explicitly so that the caller's sum cannot be fused with it.
+func infoCell(c tract.Supp, rk, d, n float64) float64 {
+	if c == 0 {
+		return rk // g(-1) = 1
+	}
+	inv := 1 / rk
+	delta := float64(d * inv)
+	var g float64
+	switch {
+	case delta < -0.5:
+		// x = 1+δ = c·n/(r·k) in (0, 1/2]: x·ln x + (1-x), where x·ln x
+		// is in [-1/e, 0] and 1-x >= 1/2: nothing cancels.
+		x := float64(float64(float64(c)*n) * inv)
+		g = float64(x*math.Log(x)) + (1 - x)
+	case delta > 0.25 || delta < -0.25:
+		g = float64(float64(1+delta)*math.Log1p(delta)) - delta
+	default:
+		g = gSeries(delta)
+	}
+	return float64(rk * g)
+}
+
+// gSeries returns g(δ) = (1+δ)·ln(1+δ) - δ for |δ| <= 1/4 without
+// cancellation. With v = δ/(2+δ), ln(1+δ) = 2·atanh(v) gives
+//
+//	g(δ) = δ²·(B(v²) + v·C(v²))/(2+δ),
+//	B(w) = Σ_{j>=0} w^j/(2j+1),  C(w) = Σ_{j>=0} w^j/(2j+3).
+//
+// For |δ| <= 1/4, v is in [-1/7, 1/9], so w = v² <= 1/49 and the series
+// truncated after w^8 have a relative error below 2^-55; B + v·C is at
+// least 0.95, so the sum does not cancel. Every product is rounded
+// explicitly (float64) to keep the result independent of FMA
+// contraction.
+func gSeries(delta float64) float64 {
+	t := 1 / (2 + delta)
+	v := float64(delta * t)
+	w := float64(v * v)
+	// Estrin's scheme (shorter dependency chains than Horner's); all
+	// terms are positive, so the rounding errors stay at a few u.
+	w2 := float64(w * w)
+	w4 := float64(w2 * w2)
+	w8 := float64(w4 * w4)
+	b := (1 + float64(1.0/3*w)) + float64(w2*(1.0/5+float64(1.0/7*w))) +
+		float64(w4*((1.0/9+float64(1.0/11*w))+float64(w2*(1.0/13+float64(1.0/15*w))))) +
+		float64(w8*(1.0/17))
+	c := (1.0/3 + float64(1.0/5*w)) + float64(w2*(1.0/7+float64(1.0/9*w))) +
+		float64(w4*((1.0/11+float64(1.0/13*w))+float64(w2*(1.0/15+float64(1.0/17*w))))) +
+		float64(w8*(1.0/19))
+	p := b + float64(v*c)
+	return float64(float64(float64(delta*delta)*p) * t)
 }

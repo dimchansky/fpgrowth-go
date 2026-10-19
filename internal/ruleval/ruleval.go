@@ -31,13 +31,36 @@
 //	           series, cfrac, GammaQ       series, cfrac, gammaQ
 //	chi2.c     chi2cdfQ                    chi2cdfQ
 //
-// The upstream evaluation order is kept operation by operation. Products
-// that feed an addition or subtraction are wrapped in float64(...) so that
-// the Go compiler does not fuse them into FMA instructions; with that, every
+// The upstream evaluation order is kept operation by operation where
+// upstream's arithmetic is exact. Products that feed an addition or
+// subtraction are wrapped in float64(...) so that the Go compiler does not
+// fuse them into FMA instructions (also in the new code); with that, every
 // measure that uses no log/exp is bit-identical to upstream compiled with
-// -ffp-contract=off. The others differ from upstream only by the last-place
-// differences between Go's math package and the platform libm (see
-// testdata and reference/harness/ruleval).
+// -ffp-contract=off, and the others differ from upstream only by the
+// last-place differences between Go's math package and the platform libm
+// (see testdata and reference/harness/ruleval), with the exceptions of
+// ALG-1 below.
+//
+// # Numeric accuracy (audit ALG-1 and ALG-6, docs/differences.md N1)
+//
+// Upstream's statistical measures cancel in double arithmetic: chi² and
+// Yates form supp·base - head·body from rounded products, the information
+// subtracts terms of size ln n, the certainty factor divides by 1 - p and
+// the Fisher tests add log-gamma values of size n·ln n. Here the
+// cross-product difference is exact (exact.go), the information is a sum
+// of non-negative terms (infoNats), the certainty factor uses an exact
+// form near p = 1, and the Fisher tests for base > maxFact use Stirling's
+// formula with an exact deviation and visit only the contributing tables
+// (fisherlarge.go). The bounds hold for every valid table with supports
+// below 2^63: Chi2 and Yates relative 8 ulps; Info relative 32 ulps;
+// Certainty absolute 2^-40; the p-values of chi², Yates and G relative
+// 2^-36·(1+x) for the statistic x; the Fisher tests relative 2^-36 (for
+// base <= maxFact, FisherChi2 and FisherSupport keep upstream's
+// complements, absolute 2^-36). Chi2, Yates, their p-values, the -i test
+// (AboveExpected) and Certainty (outside its exact form) are
+// bit-identical to upstream whenever both products are at most 2^53; the
+// Fisher tests are unchanged for base <= maxFact; Info, InfoPValue and the
+// Fisher tests for base > maxFact differ from upstream in the last bits.
 //
 // # Deviations from upstream
 //
@@ -52,6 +75,7 @@
 //   - B9: The Fisher p-values are clamped to [0, 1].
 //   - B10: Yates' correction is clamped at 0 (Yates, YatesPValue).
 //   - B11: logGamma(170.5) is ln(Gamma(170.5)), not 0.
+//   - ALG-1, ALG-6: see "Numeric accuracy" above.
 package ruleval
 
 import (
@@ -75,7 +99,10 @@ type AbortFunc func(supp, body, head, base tract.Supp, abort func() error) (floa
 
 // abortable holds the AbortFunc of the measures whose cost is not
 // constant: the Fisher tests sum over min(body, head)+1 contingency
-// tables (after normalization), which takes seconds for weights of 10^8.
+// tables (after normalization) for base <= maxFact, and over about 9
+// standard deviations of the hypergeometric distribution on each side of
+// its mode beyond (fisherlarge.go); with balanced margins that is about
+// 1.4 s at a total weight of 1.6·10^15.
 var abortable = [NumMeasures]AbortFunc{
 	FisherProb:    fetProb,
 	FisherChi2:    fetChi2,
@@ -246,8 +273,7 @@ func (m Measure) info() *measureInfo {
 
 // AbortFunc returns the abortable evaluation function of m, or nil if m
 // takes constant time per evaluation (every measure except the Fisher
-// tests, which take O(min(body, head)) time). It panics if m is not
-// valid.
+// tests, see abortable). It panics if m is not valid.
 func (m Measure) AbortFunc() AbortFunc {
 	_ = m.info() // validity check
 	return abortable[m]

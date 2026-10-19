@@ -116,24 +116,6 @@ const (
 // mutual information is >= 0 by construction. R9a: the Fisher p-values
 // lie in [0, 1]; the reference's exact sums do.
 
-// Known implementation defects. A Value may name one (KnownDefect) with
-// a bound on the deviation it explains (DefectTol). Matches ignores them:
-// a value within DefectTol but outside Tol does not match, so the strict
-// tests of the implementation see the defect. Comparisons of mined
-// results (DiffSets, DiffRules with DiffOptions.Defects) count such
-// values per defect instead of reporting them.
-const (
-	// DefectALG6: the implementation computes the information as
-	// (ln n + Σ t·ln(t/(r·k))/n)/ln 2, whose absolute error is a few ulps
-	// of ln n, and the G-test p-value from it. Near independence the
-	// chi²(1) tail amplifies that error (its slope is infinite at 0): the
-	// p-value of an exactly independent table is 1 - O(1e-7) instead of 1
-	// (audit ALG-6), and nearly independent tables are off by relative
-	// 1e-11 to 1e-7 for n from 10^3 to 10^5. Information values near 0
-	// carry the absolute error itself.
-	DefectALG6 = "ALG-6"
-)
-
 // Value is the reference value of a measure for one table.
 type Value struct {
 	// V is the value (see Kind).
@@ -149,18 +131,6 @@ type Value struct {
 	// Conv is the identifier of the convention (one of the Conv*
 	// constants) if Kind is Convention, else "".
 	Conv string
-	// KnownDefect names a known implementation defect (DefectALG6) that
-	// can make an implementation's value deviate from V by up to
-	// DefectTol, or is "".
-	KnownDefect string
-	DefectTol   float64
-}
-
-// MatchesDefect reports whether x deviates from v only within the bound
-// of v's known defect: x does not match v, but |x - V| <= DefectTol.
-func (v Value) MatchesDefect(x float64) bool {
-	return v.KnownDefect != "" && !v.Matches(x) && !math.IsNaN(x) && !math.IsInf(v.V, 0) &&
-		math.Abs(x-v.V) <= v.DefectTol
 }
 
 // Matches reports whether an implementation's value x matches v: x == V,
@@ -320,43 +290,61 @@ func frac(x, y *big.Int) *big.Rat { return new(big.Rat).SetFrac(x, y) }
 
 // Tolerances.
 //
+// The tolerances are the error bounds that the implementation documents
+// (issue #16; docs/differences.md "Numeric contract"), so a comparison
+// with the reference checks the documented accuracy directly. They hold
+// for every valid table up to a total weight of 2^63 - 1. The reference
+// value itself is exact up to its final rounding to float64.
+//
 // ratTau, 2^-44 ≈ 5.7e-14 (256 ulps of float64), is the tolerance unit of
 // the rational measures and the logarithms of rational values. An
 // implementation computes them with a short float64 formula of the four
 // supports (at most a few dozen roundings of relative size 2^-53). Two
 // forms are used:
 //
-//   - relative, ratTau·|v|, for the products and quotients c, l, v, b, k,
-//     u and for chi² and Yates (n, y), whose numerator s·n - b·h is exact
-//     in float64 as long as the products are below 2^53. A relative bound
-//     also catches a collapse to 0 of a small value (ALG-1: at a total
-//     weight of 9e15 the implementation's chi²/n is 27 % off);
+//   - relative, ratTau·|v|, for the products and quotients c, l, v, b, k
+//     and u;
 //   - absolute below 1, ratTau·max(1, |v|), for the differences d, a, q,
-//     e, r, w and for j (z: see certValue), where a float64 evaluation subtracts
-//     quantities of size about 1 (|conf - prior|, |lift - 1|, log2 of a
-//     ratio near 1) and keeps an absolute error of a few ulps.
+//     e, r, w and for j, where a float64 evaluation subtracts quantities
+//     of size about 1 (|conf - prior|, |lift - 1|, log2 of a ratio near
+//     1) and keeps an absolute error of a few ulps.
 //
-// The information (i) is compared relatively, ratTau·|v|; its absolute
-// error from the implementation's formula is the known defect DefectALG6
-// (see there). Measured on every table with n <= 60, the boundary tables
-// and 20,000 random tables up to n = 2^24, the implementation stays below 1 % of
-// these tolerances (the Fisher tests below 4 % of theirs, see fisherTol;
-// the certainty factor, see certValue, reached 40 % of its tolerance on
-// s=13785586 b=13785752 h=13793039 n=13793230, where n/(n−h) is about
-// 72,000, measured in the review of PR #27).
-// Beyond about n = 2^26, or for a prior h/n within about 2^-14 of 1
-// (certainty), a float64 formula can lose more (audit ALG-1,
-// differences.md N1); the reference still returns the exact value with
-// the same tolerance, so the loss shows as a mismatch unless it stays
-// below the absolute ratTau of the second form. A wrong formula changes
-// values by far more: the TST-3 mutant (Kulczynski factor 0.5000001)
-// changes them by 2e-7.
+// The statistical measures have their own, tighter bounds: chi² and
+// Yates (n, y) chiTau relative, the information (i) infoTau relative, the
+// certainty factor (z) certTau absolute, the p-values (p, t, g) pTau
+// scaled by the conditioning of the chi² tail (pValue) and the Fisher
+// tests fisherTau relative (fisherTol). A wrong formula changes values
+// by far more: the TST-3 mutant (Kulczynski factor 0.5000001) changes
+// them by 2e-7.
 const ratTau = 0x1p-44
 
-// pTau, 2^-36, is the tolerance unit of the p-values and Fisher tests,
-// whose evaluation involves an incomplete gamma function or sums of
-// exponentials (see pValue and fisherTol).
+// chiTau, 2^-49 (8 ulps), bounds the relative error of chi² and Yates:
+// the deviation s·n - b·h is exact in 128-bit integers and rounded once,
+// and the quotient adds about ten roundings.
+const chiTau = 0x1p-49
+
+// infoTau, 2^-47 (32 ulps), bounds the relative error of the information
+// (a sum of non-negative terms; differences.md, numeric contract).
+const infoTau = 0x1p-47
+
+// certTau, 2^-40, bounds the absolute error of the certainty factor (a
+// value in [-1, 1]): upstream's formula amplifies its rounding errors by
+// n/(n-h), the implementation uses an exact form beyond n/(n-h) = 2^10.
+const certTau = 0x1p-40
+
+// pTau, 2^-36, is the tolerance unit of the p-values, whose evaluation
+// involves an incomplete gamma function (see pValue).
 const pTau = 0x1p-36
+
+// fisherTau, 2^-36, bounds the relative error of the Fisher tests (see
+// fisherTol).
+const fisherTau = 0x1p-36
+
+// relTau returns the exact value r with the relative tolerance tau·|v|.
+func relTau(r *big.Rat, tau float64) Value {
+	v := ratFloat64(r)
+	return Value{V: v, Tol: tau * math.Abs(v)}
+}
 
 // exactRat returns the exact value r with the tolerance ratTau·max(1, |v|).
 func exactRat(r *big.Rat) Value {
@@ -593,16 +581,11 @@ func refImportance(t *table) (Value, error) {
 	return Value{V: v, Tol: ratTau * max(1, math.Abs(v))}, nil
 }
 
-// certValue returns the exact certainty factor r with the tolerance
-// pTau·max(1, |v|). A float64 evaluation divides the difference of the
-// rounded confidence and prior by 1 - h/n (or h/n), which amplifies their
-// rounding errors by up to n/(n-h): with ratTau the comparison would
-// already fail for priors within 2^-13 of 1 at n < 2^24 (measured in the
-// extended sweep); pTau covers n/(n-h) up to about 2^14 (beyond that the
-// loss is part of audit ALG-1).
+// certValue returns the exact certainty factor r with the absolute
+// tolerance certTau (|r| <= 1).
 func certValue(r *big.Rat) Value {
 	v := ratFloat64(r)
-	return Value{V: v, Tol: pTau * max(1, math.Abs(v))}
+	return Value{V: v, Tol: certTau}
 }
 
 // Certainty factor (Shortliffe and Buchanan; Berzal et al.): with the
@@ -646,7 +629,7 @@ func refChi2(t *table) (Value, error) {
 	if x == nil {
 		return conv(0, ConvUndefined), nil
 	}
-	return relRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
+	return relTau(x.Quo(x, frac(t.bn, big.NewInt(1))), chiTau), nil
 }
 
 // Chi2PValue: P(chi²(1) > X²).
@@ -692,7 +675,7 @@ func refYates(t *table) (Value, error) {
 	if clamped {
 		return conv(0, ConvR9b), nil
 	}
-	return relRat(x.Quo(x, frac(t.bn, big.NewInt(1)))), nil
+	return relTau(x.Quo(x, frac(t.bn, big.NewInt(1))), chiTau), nil
 }
 
 // YatesPValue: P(chi²(1) > X²_Y).
@@ -756,47 +739,22 @@ func (t *table) mutualInfo() *big.Float {
 	return mi
 }
 
-// alg6InfoErr is the bound on the absolute error, in nats, of the
-// implementation's information (ln n + Σ t·ln(t/(r·k))/n): about ten
-// roundings of quantities of size ln n, with a factor of 2 to spare.
-func alg6InfoErr(n int64) float64 {
-	return 16 * 0x1p-52 * max(1, math.Log(float64(n)))
-}
-
-// Information: the mutual information in bits, compared relatively. The
-// implementation's absolute error (alg6InfoErr) is its known defect
-// DefectALG6: near independence, where I is tiny, it dominates.
+// Information: the mutual information in bits, compared relatively
+// (infoTau).
 func refInfo(t *table) (Value, error) {
 	mi := t.mutualInfo()
 	v := float64Of(mi.Quo(mi, ln2Big(infoPrec(t.n))))
-	tol := ratTau * v
-	return Value{V: v, Tol: tol, KnownDefect: DefectALG6, DefectTol: tol + alg6InfoErr(t.n)/math.Ln2}, nil
+	return Value{V: v, Tol: infoTau * v}, nil
 }
 
 // InformationPValue: P(chi²(1) > G) with the G statistic G = 2·n·I (I in
-// nats). G = 0 (independence, degenerate margins) gives exactly 1. The
-// known defect DefectALG6: an absolute error δG = 2·n·alg6InfoErr(n) of
-// the implementation's G becomes a p-value error of at most √(6·δG/π)
-// for G <= 2·δG (the tail is 1 - √(2G/π) + O(G^1.5) near 0) and of at
-// most δG·f(G - δG) otherwise, where f is the chi²(1) density (decreasing
-// in G).
+// nats). G = 0 (independence, degenerate margins) gives exactly 1.
 func refInfoPValue(t *table) (Value, error) {
 	prec := infoPrec(t.n)
 	g := t.mutualInfo()
 	g.Mul(g, newFloat(prec).SetInt64(t.n))
 	g.Mul(g, newFloat(prec).SetInt64(2))
-	x := float64Of(g)
-	v := pValue(x)
-	dg := 2 * float64(t.n) * alg6InfoErr(t.n)
-	var bound float64
-	if x <= 2*dg {
-		bound = math.Sqrt(6 * dg / math.Pi)
-	} else {
-		y := x - dg
-		bound = dg * math.Exp(-y/2) / math.Sqrt(2*math.Pi*y)
-	}
-	v.KnownDefect, v.DefectTol = DefectALG6, v.Tol+bound
-	return v, nil
+	return pValue(float64Of(g)), nil
 }
 
 // Fisher's exact tests.
@@ -891,23 +849,18 @@ func fisher(variant byte, t *table) (Value, error) {
 	return Value{V: v, Tol: fisherTol(variant, t.n, v)}, nil
 }
 
-// fisherTol is the tolerance of a Fisher p-value v for total weight n. A
-// float64 implementation sums probabilities computed as exp of
-// log-gamma differences; their absolute log error grows with ln(n!), so
-// the relative error of a sum is about a few ulps times ln Γ(n+1) (and
-// complement forms 1 - Σ, which upstream uses for h and s, have that error
-// absolutely). The tolerance is pTau·(1 + ln Γ(n+1)) relative (plus the
-// same absolute amount for h and s), capped at 2^-20: an implementation
-// that is off by more than about one part in a million is wrong for any n
-// (a log-space method based on log-gamma differences of small arguments,
-// or exact ratios as here, is far more accurate).
+// fisherTol is the tolerance of a Fisher p-value v for total weight n:
+// fisherTau·v + 2^-1000 (the bound documented by the implementation, which
+// computes ln P(x) from Stirling's formula with an exact deviation for
+// n > 170 and sums the tables directly). For n <= 170 the implementation
+// keeps upstream's algorithm, which computes FisherChi2 and FisherSupport
+// as complements 1 - Σ when that sums fewer tables, so their error is
+// absolute there: fisherTau·(v + 1).
 func fisherTol(variant byte, n int64, v float64) float64 {
-	lg, _ := math.Lgamma(float64(n) + 1)
-	rel := min(pTau*(1+lg), 0x1p-20)
-	if variant == 'h' || variant == 's' {
-		return rel * (v + 1)
+	if n <= 170 && (variant == 'h' || variant == 's') {
+		return fisherTau*(v+1) + 0x1p-1000
 	}
-	return rel * v
+	return fisherTau*v + 0x1p-1000
 }
 
 // cmpInfo compares the mutual information of the tables with supports x

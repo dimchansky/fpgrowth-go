@@ -252,8 +252,6 @@ func itemOrder(t *testing.T, txs []oracle.Transaction, opt Options[string]) []st
 // measure function and with the independent reference measure.
 func TestOracleEvaluatedItemsets(t *testing.T) {
 	t.Parallel()
-	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
-	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(31, 32))
 	thresholds := []float64{-1, 0, 0.01, 0.1, 0.5, 0.9, 1, 1.5, 10}
 	for seed := range uint64(refCases(t, 500)) {
@@ -317,7 +315,7 @@ func TestOracleEvaluatedItemsets(t *testing.T) {
 		if want, err = db.Mine(p); err != nil {
 			t.Fatal(err)
 		}
-		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{Defects: defects}); d != "" {
+		if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{}); d != "" {
 			t.Fatalf("seed %d %s/%s eval %+v: reference measure:\n%s", seed, tg.name, v.name, *ev, d)
 		}
 	}
@@ -879,16 +877,18 @@ func TestCancelAfterLastCheck(t *testing.T) {
 }
 
 // TestCancelFisher cancels mining while a Fisher measure evaluates a rule
-// with huge supports (O(min(body, head)) = 5·10^7 tables per evaluation,
-// seconds each): mining must return context.Canceled promptly, for rules
-// and for item sets evaluated through the item set tree.
+// with huge supports: at independence with balanced margins and a total
+// weight of 1.6·10^15 (σ = 10^7), every evaluation visits about 9σ tables
+// on each side of the mode, about a second: mining must return
+// context.Canceled promptly, for rules and for item sets evaluated
+// through the item set tree.
 func TestCancelFisher(t *testing.T) {
 	t.Parallel()
 	src := FromSlice([]Transaction[string]{
-		{Items: []string{"a", "b"}, Weight: 30_000_000},
-		{Items: []string{"a"}, Weight: 20_000_000},
-		{Items: []string{"b"}, Weight: 20_000_000},
-		{Items: []string{"c"}, Weight: 30_000_000},
+		{Items: []string{"a", "b"}, Weight: 400_000_000_000_000},
+		{Items: []string{"a"}, Weight: 400_000_000_000_000},
+		{Items: []string{"b"}, Weight: 400_000_000_000_000},
+		{Items: []string{"c"}, Weight: 400_000_000_000_000},
 	})
 	measures := []Measure{FisherProb, FisherChi2, FisherInfo, FisherSupport}
 	for _, m := range measures {
@@ -1653,7 +1653,7 @@ func FuzzMineItemsets(f *testing.F) {
 			if want, err = db.Mine(p); err != nil {
 				t.Fatal(err)
 			}
-			if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{Defects: map[string]int{}}); d != "" {
+			if d := oracle.DiffSets(want, toOracleSets(got), oracle.DiffOptions{}); d != "" {
 				t.Fatalf("%s/%s %+v eval %+v: reference measure:\n%s", tg.name, v.name, opt, *e, d)
 			}
 		}

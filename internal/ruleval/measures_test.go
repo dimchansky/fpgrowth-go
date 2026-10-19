@@ -36,18 +36,15 @@ func TestUpstreamBugRegressions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := Eval(tt.m, tt.s, tt.b, tt.h, tt.n)
-			if got != tt.want && !(tt.m == Info && got >= 0 && got < 1e-15) {
+			if got != tt.want {
 				t.Errorf("Eval(%v, %d, %d, %d, %d) = %v, want %v", tt.m, tt.s, tt.b, tt.h, tt.n, got, tt.want)
 			}
 		})
 	}
-	// B7: the G test p-value of the independent table is (close to) 1 and
-	// never has a negative argument.
-	if got := Eval(InfoPValue, 1, 2, 3, 6); got < 1-1e-7 || got > 1 {
-		t.Errorf("InfoPValue(1, 2, 3, 6) = %v, want ~1", got)
-	}
-	if got := infoRaw(1, 2, 3, 6); got > 0 {
-		t.Logf("infoRaw(1, 2, 3, 6) = %v (positive here, so the clamp is not exercised by it)", got)
+	// B7 and ALG-6: the information of the independent table is exactly 0
+	// and the G test p-value exactly 1 (upstream: -3.2e-16 and 0.99999996).
+	if got := Eval(InfoPValue, 1, 2, 3, 6); got != 1 {
+		t.Errorf("InfoPValue(1, 2, 3, 6) = %v, want 1", got)
 	}
 	for _, tb := range [][4]tract.Supp{{1, 2, 3, 6}, {2, 4, 5, 10}, {3, 6, 5, 10}, {1319510, 3112642, 2356964, 5559933}} {
 		if v := Eval(Info, tb[0], tb[1], tb[2], tb[3]); v < 0 {
@@ -119,7 +116,7 @@ func TestSymmetry(t *testing.T) {
 	t.Parallel()
 	bitwise := []Measure{Lift, LiftDiff, LiftQuotient, Imbalance, Kulczynski, KulczynskiDiff,
 		FisherProb, FisherChi2, FisherInfo, FisherSupport}
-	close := []Measure{Chi2, Chi2PValue, Yates, YatesPValue, Info}
+	close := []Measure{Chi2, Chi2PValue, Yates, YatesPValue, Info, InfoPValue}
 	forEachValidTable(18, func(s, b, h, n tract.Supp) {
 		for _, m := range bitwise {
 			if x, y := Eval(m, s, b, h, n), Eval(m, s, h, b, n); x != y && !(math.IsNaN(x) && math.IsNaN(y)) {
@@ -130,14 +127,6 @@ func TestSymmetry(t *testing.T) {
 			if x, y := Eval(m, s, b, h, n), Eval(m, s, h, b, n); math.Abs(x-y) > 1e-14*max(math.Abs(x), 1) {
 				t.Errorf("%v(%d, %d, %d, %d) = %v, swapped %v", m, s, b, h, n, x, y)
 			}
-		}
-		// The G test p-value amplifies the rounding noise of the
-		// information near independence: 1 - Q(1/2, x/2) ~ sqrt(2x/pi) as
-		// x -> 0, and x = 2·ln2·n·info carries an absolute error of
-		// dx = 2·ln2·n·tolInfo·ε·(1+ln n) (see TestEvalMatchesUpstream).
-		dx := 2 * ln2 * float64(n) * tolInfo * epsilon * (1 + math.Log(float64(n)))
-		if x, y := Eval(InfoPValue, s, b, h, n), Eval(InfoPValue, s, h, b, n); math.Abs(x-y) > math.Sqrt(2*dx/math.Pi)+1e-12 {
-			t.Errorf("InfoPValue(%d, %d, %d, %d) = %v, swapped %v", s, b, h, n, x, y)
 		}
 		// Complementing body and head maps the table onto itself with
 		// rows and columns exchanged; the two-sided tests do not change,
@@ -184,27 +173,60 @@ func TestMonotonicity(t *testing.T) {
 }
 
 func TestEvalDoesNotAllocate(t *testing.T) {
-	for _, m := range []Measure{Lift, Certainty, Chi2PValue, Info, FisherProb, FisherChi2, FisherInfo, FisherSupport} {
-		allocs := testing.AllocsPerRun(100, func() {
-			Eval(m, 35, 60, 70, 200)
-		})
-		if allocs != 0 {
-			t.Errorf("Eval(%v) allocates %v times", m, allocs)
+	const big = 1 << 62
+	for _, tb := range [][4]tract.Supp{
+		{35, 60, 70, 200},                // Fisher: upstream's algorithm (base <= 170 below)
+		{35, 60, 70, 150},                //
+		{3500, 6000, 7000, 20000},        // Fisher: walk (base > 170)
+		{big / 8, big / 2, big / 4, big}, // 128-bit paths
+		{2, 2, big - 2, big},             // certainty: exact form
+		{9223372036854775800, 9223372036854775800, 9223372036854775800, 9223372036854775803},
+	} {
+		for m := range NumMeasures {
+			if isFisher(m) && fisherCost(tb[1], tb[2], tb[3]) > 1e6 {
+				continue
+			}
+			allocs := testing.AllocsPerRun(100, func() {
+				Eval(m, tb[0], tb[1], tb[2], tb[3])
+			})
+			if allocs != 0 {
+				t.Errorf("Eval(%v, %v) allocates %v times", m, tb, allocs)
+			}
 		}
 	}
 }
 
 func BenchmarkEval(b *testing.B) {
 	for _, bc := range []struct {
+		name        string
 		m           Measure
 		s, bo, h, n tract.Supp
 	}{
-		{Lift, 350, 600, 700, 10000},
-		{Chi2PValue, 350, 600, 700, 10000},
-		{Info, 350, 600, 700, 10000},
-		{FisherProb, 35, 60, 70, 1000},
+		{"", Lift, 350, 600, 700, 10000},
+		{"", Chi2PValue, 350, 600, 700, 10000},
+		{"", Info, 350, 600, 700, 10000},
+		{"", FisherProb, 35, 60, 70, 1000},
+		// added for issue #16
+		{"", Chi2, 350, 600, 700, 10000},
+		{"", Yates, 350, 600, 700, 10000},
+		{"", YatesPValue, 350, 600, 700, 10000},
+		{"", Certainty, 350, 600, 700, 10000},
+		{"", InfoPValue, 350, 600, 700, 10000},
+		{"Info/nearIndep", Info, 3500000, 6000000, 7000000, 100000000},
+		{"InfoPValue/nearIndep", InfoPValue, 3500000, 6000000, 7000000, 100000000},
+		{"Chi2PValue/2^42", Chi2PValue, 1 << 40, 1 << 41, 1 << 41, 1 << 42}, // 128-bit path
+		{"Info/2^42", Info, 1 << 40, 1 << 41, 1 << 41, 1 << 42},
+		{"FisherProb/150", FisherProb, 35, 60, 70, 150}, // upstream's algorithm
+		{"", FisherChi2, 35, 60, 70, 1000},
+		{"", FisherInfo, 35, 60, 70, 1000},
+		{"", FisherSupport, 35, 60, 70, 1000},
+		{"FisherProb/1e6", FisherProb, 35000, 60000, 70000, 1000000},
 	} {
-		b.Run(bc.m.String(), func(b *testing.B) {
+		name := bc.name
+		if name == "" {
+			name = bc.m.String()
+		}
+		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			var sink float64
 			for b.Loop() {
