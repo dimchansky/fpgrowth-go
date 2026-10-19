@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
@@ -1782,19 +1783,24 @@ func TestCancelInOnStart(t *testing.T) {
 					t.Errorf("canceled: got %v, OnStart called %d times, %d results", err, calls, n)
 				}
 
-				ctx, cancel = context.WithTimeout(context.Background(), time.Millisecond)
-				defer cancel()
-				calls = 0
-				n, err = ep.run(ctx, c, func(Stats) error { calls++; <-ctx.Done(); return nil }, nil)
-				if !errors.Is(err, context.DeadlineExceeded) || err != ctx.Err() || calls != 1 || n != 0 {
-					t.Errorf("deadline: got %v, OnStart called %d times, %d results", err, calls, n)
-				}
+				// In the bubble, time advances only while every goroutine
+				// of it is blocked: mining never is, so the deadline
+				// passes exactly while OnStart waits for it.
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+					defer cancel()
+					calls := 0
+					n, err := ep.run(ctx, c, func(Stats) error { calls++; <-ctx.Done(); return nil }, nil)
+					if !errors.Is(err, context.DeadlineExceeded) || err != ctx.Err() || calls != 1 || n != 0 {
+						t.Errorf("deadline: got %v, OnStart called %d times, %d results", err, calls, n)
+					}
 
-				calls = 0 // ctx has expired before the call
-				_, err = ep.run(ctx, c, func(Stats) error { calls++; return nil }, nil)
-				if !errors.Is(err, context.DeadlineExceeded) || calls != 0 {
-					t.Errorf("expired: got %v, OnStart called %d times", err, calls)
-				}
+					calls = 0 // ctx has expired before the call
+					_, err = ep.run(ctx, c, func(Stats) error { calls++; return nil }, nil)
+					if !errors.Is(err, context.DeadlineExceeded) || calls != 0 {
+						t.Errorf("expired: got %v, OnStart called %d times", err, calls)
+					}
+				})
 			})
 		}
 	}
