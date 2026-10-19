@@ -3,6 +3,7 @@ package oracle
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/bits"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -37,55 +38,128 @@ func (d Direction) worst() float64 {
 }
 
 // Measure is an additional rule evaluation measure (upstream -e, -d, -i).
+//
+// A measure is given either by a function (Func), whose values are used
+// as they are, or by a reference measure (Ref), whose values carry a
+// tolerance. With Ref, rules and item sets whose value lies within its
+// tolerance of the threshold are marked Optional (an implementation may
+// report them or not), and the -i test is exact.
 type Measure struct {
-	// Func computes the value of a rule. Required.
+	// Func computes the value of a rule. Exactly one of Func and Ref is
+	// required.
 	Func MeasureFunc
-	// Dir is the measure's direction. Required.
+	// Ref is an independent reference measure (RefMeasures) used instead
+	// of Func.
+	Ref *RefMeasure
+	// Dir is the measure's direction. Required; with Ref it must equal
+	// Ref.Dir.
 	Dir Direction
 	// Threshold is the evaluation threshold as a value of the measure,
 	// i.e. upstream's -d argument divided by 100.
 	Threshold float64
 	// InvalidateBelowExpected (upstream -i) replaces the value of a rule by
 	// the worst value (1 for LowerIsBetter, 0 for HigherIsBetter) unless
-	// float64(supp)*float64(base) > float64(head)*float64(body); the
-	// replaced values still enter set aggregates.
+	// the rule's support is above the support expected under independence:
+	// with Func, upstream's float64 test
+	// float64(supp)*float64(base) > float64(head)*float64(body); with Ref,
+	// the exact integer test supp·base > head·body. The replaced values
+	// still enter set aggregates.
 	InvalidateBelowExpected bool
 }
 
 // validate checks that m is usable.
 func (m *Measure) validate() error {
-	if m.Func == nil {
+	switch {
+	case m.Func == nil && m.Ref == nil:
 		return errors.New("oracle: measure without function")
-	}
-	if m.Dir != HigherIsBetter && m.Dir != LowerIsBetter {
+	case m.Func != nil && m.Ref != nil:
+		return errors.New("oracle: measure with both a function and a reference")
+	case m.Dir != HigherIsBetter && m.Dir != LowerIsBetter:
 		return fmt.Errorf("oracle: invalid measure direction %d", m.Dir)
+	case m.Ref != nil && m.Ref.Dir != m.Dir:
+		return fmt.Errorf("oracle: direction %d differs from the reference measure %s", m.Dir, m.Ref.Name)
 	}
 	return nil
 }
 
+// aboveExpected reports whether supp·base > head·body, exactly (the
+// supports are non-negative, so the 128-bit products cannot overflow).
+func aboveExpected(supp, body, head, base tract.Supp) bool {
+	hi1, lo1 := bits.Mul64(uint64(supp), uint64(base))
+	hi2, lo2 := bits.Mul64(uint64(head), uint64(body))
+	return hi1 > hi2 || hi1 == hi2 && lo1 > lo2
+}
+
 // ruleValue evaluates one rule like istree.c (r4set, evaluate), including
-// the -i invalidation.
-func (m *Measure) ruleValue(supp, body, head, base tract.Supp) float64 {
-	if m.InvalidateBelowExpected &&
-		!(float64(supp)*float64(base) > float64(head)*float64(body)) {
-		return m.Dir.worst()
+// the -i invalidation, and returns the value and its tolerance (0 with
+// Func).
+func (m *Measure) ruleValue(supp, body, head, base tract.Supp) (v, tol float64, err error) {
+	if m.Ref == nil {
+		if m.InvalidateBelowExpected &&
+			!(float64(supp)*float64(base) > float64(head)*float64(body)) {
+			return m.Dir.worst(), 0, nil
+		}
+		return m.Func(supp, body, head, base), 0, nil
 	}
-	return m.Func(supp, body, head, base)
+	if m.InvalidateBelowExpected && !aboveExpected(supp, body, head, base) {
+		return m.Dir.worst(), 0, nil
+	}
+	rv, err := m.Ref.Eval(supp, body, head, base)
+	if err != nil {
+		return 0, 0, fmt.Errorf("oracle: %s(%d, %d, %d, %d): %w", m.Ref.Name, supp, body, head, base, err)
+	}
+	return rv.V, rv.Tol, nil
 }
 
-// rejectsRule is upstream's rule test (r4set): reject if
+// decision is the outcome of a threshold test.
+type decision uint8
+
+const (
+	rejected decision = iota
+	accepted
+	boundary // within the tolerance of the threshold: either is correct
+)
+
+// decideTol classifies d = dir·(v - threshold) with the tolerance tol > 0
+// of a finite v.
+func decideTol(v, tol float64, m *Measure) decision {
+	d := float64(m.Dir) * (v - m.Threshold)
+	switch {
+	case d > tol:
+		return accepted
+	case d < -tol:
+		return rejected
+	}
+	return boundary
+}
+
+// ruleDecision is upstream's rule test (r4set): reject if
 // dir*value < dir*threshold. A NaN value is therefore accepted
-// (rules-eval.md B5).
-func (m *Measure) rejectsRule(v float64) bool {
+// (rules-eval.md B5). With a tolerance, values within it of the
+// threshold are boundary cases.
+func (m *Measure) ruleDecision(v, tol float64) decision {
+	if tol > 0 && !math.IsInf(v, 0) {
+		return decideTol(v, tol, m)
+	}
 	dir := float64(m.Dir)
-	return dir*v < dir*m.Threshold
+	if dir*v < dir*m.Threshold {
+		return rejected
+	}
+	return accepted
 }
 
-// acceptsSet is upstream's item set test (isets): accept if
-// value*dir >= dir*threshold. A NaN value is therefore rejected.
-func (m *Measure) acceptsSet(v float64) bool {
+// setDecision is upstream's item set test (isets): accept if
+// value*dir >= dir*threshold. A NaN value is therefore rejected. With a
+// tolerance, values within it of the threshold are boundary cases.
+func (m *Measure) setDecision(v, tol float64) decision {
+	if tol > 0 && !math.IsInf(v, 0) {
+		return decideTol(v, tol, m)
+	}
 	dir := float64(m.Dir)
-	return v*dir >= dir*m.Threshold
+	if v*dir >= dir*m.Threshold {
+		return accepted
+	}
+	return rejected
 }
 
 // Aggregation selects how SetEval combines the values of the rules formed
@@ -118,6 +192,16 @@ const (
 //     through min/max, later NaNs are ignored, and AggAvg propagates NaN).
 //
 // A set is accepted if value*dir >= dir*threshold.
+//
+// With a reference measure (Measure.Ref) the aggregate carries a
+// tolerance: that of the first rule for AggFirst, the largest tolerance of
+// the set's rules for AggMin and AggMax (the minimum of values that are
+// each within t_i of the reference is within max t_i of the reference
+// minimum), and the average tolerance plus refTau·|value| for AggAvg.
+//
+// Which rule is first (AggFirst) depends on the item order of the
+// implementation, not on a definition (docs/differences.md P6); callers
+// pass the implementation's order in Order.
 type SetEval struct {
 	Measure Measure
 	Agg     Aggregation
@@ -165,18 +249,19 @@ func newSetEvaluator(db *DB, e *SetEval) *setEvaluator {
 	return &setEvaluator{db: db, eval: e, rank: rank}
 }
 
-// value returns the aggregated measure value of the set with mask m.
-func (se *setEvaluator) value(m uint64) (float64, error) {
+// value returns the aggregated measure value of the set with mask m and
+// its tolerance (0 with Measure.Func).
+func (se *setEvaluator) value(m uint64) (float64, float64, error) {
 	meas := &se.eval.Measure
 	n := bits.OnesCount64(m)
 	if n <= 1 {
-		return meas.Dir.worst(), nil
+		return meas.Dir.worst(), 0, nil
 	}
 	heads := make([]int, 0, n)
 	for r := m; r != 0; r &= r - 1 {
 		i := bits.TrailingZeros64(r)
 		if se.rank[i] < 0 {
-			return 0, fmt.Errorf("oracle: item %q missing from SetEval.Order", se.db.items[i])
+			return 0, 0, fmt.Errorf("oracle: item %q missing from SetEval.Order", se.db.items[i])
 		}
 		heads = append(heads, i)
 	}
@@ -184,33 +269,45 @@ func (se *setEvaluator) value(m uint64) (float64, error) {
 
 	db := se.db
 	supp := db.supp[m]
-	ruleValue := func(h int) float64 {
+	ruleValue := func(h int) (float64, float64, error) {
 		bit := uint64(1) << h
 		return meas.ruleValue(supp, db.supp[m&^bit], db.supp[bit], db.total)
 	}
-	agg := ruleValue(heads[0])
-	if se.eval.Agg == AggFirst {
-		return agg, nil
+	agg, tol, err := ruleValue(heads[0])
+	if err != nil || se.eval.Agg == AggFirst {
+		return agg, tol, err
 	}
 	for _, h := range heads[1:] {
-		v := ruleValue(h)
+		v, t, err := ruleValue(h)
+		if err != nil {
+			return 0, 0, err
+		}
 		switch se.eval.Agg {
 		case AggMin:
 			if v < agg {
 				agg = v
 			}
+			tol = max(tol, t)
 		case AggMax:
 			if v > agg {
 				agg = v
 			}
+			tol = max(tol, t)
 		default:
 			agg += v
+			tol += t
 		}
 	}
 	if se.eval.Agg == AggAvg {
 		agg /= float64(n)
+		if meas.Ref != nil {
+			tol = tol/float64(n) + refTau*math.Abs(agg)
+		}
 	}
-	return agg, nil
+	if math.IsInf(agg, 0) {
+		tol = 0
+	}
+	return agg, tol, nil
 }
 
 // sortByRank sorts the bit indices by increasing rank (insertion sort; the

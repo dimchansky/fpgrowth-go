@@ -39,6 +39,8 @@ type DiffOptions struct {
 	// EvalTol is the tolerance for Eval values: a and b match if
 	// |a-b| <= EvalTol*max(1, |a|, |b|). With 0 (the default) the values
 	// must be equal. NaN matches NaN in either case; equal infinities match.
+	// A wanted set or rule with a non-zero EvalTol (a reference value)
+	// also matches within that absolute tolerance.
 	EvalTol float64
 	// IgnoreEval skips the comparison of Eval values.
 	IgnoreEval bool
@@ -46,7 +48,8 @@ type DiffOptions struct {
 
 // DiffSets compares two item set results irrespective of order and
 // returns "" if they are equal (same sets, supports and, unless ignored,
-// evaluation values, and no set reported twice). Otherwise it returns a
+// evaluation values, and no set reported twice). A wanted set marked
+// Optional may be missing from got. Otherwise it returns a
 // readable report: a summary line and the first differences in canonical
 // order. Use it in test failures, e.g. t.Error(DiffSets(want, got, opts)).
 func DiffSets(want, got []Set, opts DiffOptions) string {
@@ -58,20 +61,22 @@ func DiffSets(want, got []Set, opts DiffOptions) string {
 			if w.Supp != g.Supp {
 				parts = append(parts, fmt.Sprintf("supp want %d, got %d", w.Supp, g.Supp))
 			}
-			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol) {
-				parts = append(parts, fmt.Sprintf("eval want %v, got %v", w.Eval, g.Eval))
+			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol, w.EvalTol) {
+				parts = append(parts, fmt.Sprintf("eval want %v%s, got %v", w.Eval, tolText(w.EvalTol), g.Eval))
 			}
 			if len(parts) == 0 {
 				return ""
 			}
 			return w.Items.String() + ": " + strings.Join(parts, "; ")
 		},
-		func(a, b Set) int { return a.Items.Compare(b.Items) })
+		func(a, b Set) int { return a.Items.Compare(b.Items) },
+		func(s Set) bool { return s.Optional })
 }
 
 // DiffRules is DiffSets for rules. Rules are identified by head and body;
 // Supp, BodySupp, HeadSupp and (unless ignored) Eval are compared. Conf
-// and Lift are derived from the supports and not compared.
+// and Lift are derived from the supports and not compared. A wanted rule
+// marked Optional may be missing from got.
 func DiffRules(want, got []Rule, opts DiffOptions) string {
 	return diff(want, got, opts, "rules",
 		func(r Rule) string { return RuleKey(r.Head, r.Body) },
@@ -87,8 +92,8 @@ func DiffRules(want, got []Rule, opts DiffOptions) string {
 			if w.HeadSupp != g.HeadSupp {
 				parts = append(parts, fmt.Sprintf("head want %d, got %d", w.HeadSupp, g.HeadSupp))
 			}
-			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol) {
-				parts = append(parts, fmt.Sprintf("eval want %v, got %v", w.Eval, g.Eval))
+			if !opts.IgnoreEval && !evalMatches(w.Eval, g.Eval, opts.EvalTol, w.EvalTol) {
+				parts = append(parts, fmt.Sprintf("eval want %v%s, got %v", w.Eval, tolText(w.EvalTol), g.Eval))
 			}
 			if len(parts) == 0 {
 				return ""
@@ -100,7 +105,8 @@ func DiffRules(want, got []Rule, opts DiffOptions) string {
 				return c
 			}
 			return cmp.Compare(a.Head, b.Head)
-		})
+		},
+		func(r Rule) bool { return r.Optional })
 }
 
 // diffEntry is one listed difference with its canonical position.
@@ -118,6 +124,7 @@ func diff[T any](
 	format func(T) string,
 	compare func(w, g T) string,
 	order func(a, b T) int,
+	optional func(T) bool,
 ) string {
 	wantByKey := make(map[string]T, len(want))
 	var entries []diffEntry[T]
@@ -154,6 +161,9 @@ func diff[T any](
 	for _, w := range want {
 		if !seen[key(w)] {
 			seen[key(w)] = true
+			if optional(w) {
+				continue
+			}
 			missing++
 			entries = append(entries, diffEntry[T]{w, "missing:    " + format(w)})
 		}
@@ -181,8 +191,9 @@ func diff[T any](
 	return b.String()
 }
 
-// evalMatches compares evaluation values (see DiffOptions.EvalTol).
-func evalMatches(a, b, tol float64) bool {
+// evalMatches compares evaluation values (see DiffOptions.EvalTol): the
+// wanted value a with its absolute tolerance absTol and the value b.
+func evalMatches(a, b, tol, absTol float64) bool {
 	switch {
 	case a == b:
 		return true
@@ -191,6 +202,15 @@ func evalMatches(a, b, tol float64) bool {
 	case math.IsInf(a, 0) || math.IsInf(b, 0):
 		return false
 	default:
-		return math.Abs(a-b) <= tol*max(1, math.Abs(a), math.Abs(b))
+		d := math.Abs(a - b)
+		return d <= tol*max(1, math.Abs(a), math.Abs(b)) || d <= absTol
 	}
+}
+
+// tolText formats a non-zero tolerance as " ±tol".
+func tolText(tol float64) string {
+	if tol == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" ±%.3g", tol)
 }

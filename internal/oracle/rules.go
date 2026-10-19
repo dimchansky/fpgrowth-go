@@ -112,6 +112,14 @@ type Rule struct {
 	Lift float64
 	// Eval is the measure value, 0 without a measure.
 	Eval float64
+	// EvalTol is the tolerance of Eval with a reference measure
+	// (Measure.Ref): an implementation's value matches if it is within
+	// EvalTol of Eval. It is 0 otherwise (values must be equal).
+	EvalTol float64
+	// Optional marks a rule whose reference value lies within its
+	// tolerance of the threshold, so that an implementation may report it
+	// or not (DiffRules accepts both).
+	Optional bool
 }
 
 // Items returns the canonical set Body ∪ {Head}.
@@ -127,6 +135,12 @@ func (r Rule) String() string {
 	s := fmt.Sprintf("%q <- %v supp=%d body=%d head=%d", r.Head, r.Body, r.Supp, r.BodySupp, r.HeadSupp)
 	if r.Eval != 0 {
 		s += fmt.Sprintf(" eval=%v", r.Eval)
+	}
+	if r.EvalTol != 0 {
+		s += fmt.Sprintf(" ±%.3g", r.EvalTol)
+	}
+	if r.Optional {
+		s += " (optional)"
 	}
 	return s
 }
@@ -150,7 +164,9 @@ func (r Rule) String() string {
 //     rules-eval.md §3.4): upstream lets a head-only item that is not the
 //     item with the smallest code end up in a body;
 //  6. Eval is nil or not dir*v < dir*threshold for the rule's value v
-//     (with the -i invalidation if requested).
+//     (with the -i invalidation if requested). With a reference measure,
+//     a rule whose value is within its tolerance of the threshold is
+//     reported with Optional set.
 func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -210,11 +226,18 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 				continue
 			}
 			h := db.supp[bit]
-			var v float64
+			var v, tol float64
+			optional := false
 			if p.Eval != nil {
-				v = p.Eval.ruleValue(s, b, h, db.total)
-				if p.Eval.rejectsRule(v) {
+				var err error
+				if v, tol, err = p.Eval.ruleValue(s, b, h, db.total); err != nil {
+					return nil, err
+				}
+				switch p.Eval.ruleDecision(v, tol) {
+				case rejected:
 					continue
+				case boundary:
+					optional = true
 				}
 			}
 			rules = append(rules, Rule{
@@ -226,6 +249,8 @@ func (db *DB) Rules(p RuleParams) ([]Rule, error) {
 				Conf:     confidence(s, b),
 				Lift:     lift(s, b, h, db.total),
 				Eval:     v,
+				EvalTol:  tol,
+				Optional: optional,
 			})
 		}
 	}
