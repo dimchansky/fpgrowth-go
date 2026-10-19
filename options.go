@@ -433,7 +433,9 @@ type Options[T comparable] struct {
 	// reported (also if none is), with the Stats of the database: the
 	// total weight for relative supports, the resolved thresholds;
 	// not if ctx is canceled by then. Its error stops mining and is
-	// returned unchanged.
+	// returned unchanged, also if ctx is canceled as well; if it returns
+	// nil after ctx was canceled (for example by OnStart itself), mining
+	// returns ctx.Err().
 	OnStart func(Stats) error
 }
 

@@ -749,7 +749,10 @@ Mining checks the context in every phase:
   while a Fisher measure is evaluated.
 
 It returns `ctx.Err()` whenever the context was canceled, also if mining
-finished after the last check. Results found since the last check may
+finished after the last check or `OnStart` canceled it and nothing was
+left to mine. An error returned by `OnStart` or by the callback takes
+precedence: it is returned unchanged even if the context is canceled as
+well. Results found since the last check may
 still be delivered after the cancellation: up to about 1024 item sets, or
 the rules of up to 256 item sets. How long the return takes is the work
 between two checks, which grows with the input (one projection or merge

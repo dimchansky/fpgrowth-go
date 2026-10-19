@@ -122,11 +122,17 @@ var errStop = errors.New("fpgrowth: iteration stopped")
 // with the input (a projection or a merge is proportional to the tree it
 // processes); it is not a hard bound. MineItemsets returns ctx.Err()
 // whenever ctx was canceled before it returns, also if mining finished
-// after the last check.
+// after the last check, and also if OnStart canceled it and nothing is
+// left to mine.
 //
 // If opt.OnStart is set, it is called once before the first result (also
 // if nothing is reported), with the Stats of the database, unless ctx is
 // canceled by then; its error stops mining and is returned unchanged.
+//
+// If more than one error condition holds, an error returned by fn or by
+// OnStart takes precedence: it is returned unchanged even if ctx is
+// canceled as well (for example by fn or OnStart itself before it
+// returns). Otherwise a canceled ctx yields ctx.Err().
 //
 // MineItemsets is safe for concurrent use if src supports concurrent
 // passes. The Summary is valid also when an error is returned (as far as
@@ -266,6 +272,8 @@ func mine[T comparable](
 	// start calls OnStart unless ctx was canceled in the meantime (the
 	// last transactions of a pass, the completion of the bag): a
 	// canceled run returns ctx.Err(), also where nothing would be mined.
+	// OnStart's error is returned unchanged, also if ctx was canceled as
+	// well.
 	start := func() error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -275,8 +283,17 @@ func mine[T comparable](
 		}
 		return p.onStart(sum.Stats)
 	}
+	// startEmpty is start for a run that ends without mining. It checks
+	// ctx again after OnStart, which may have canceled it; on the mining
+	// path the checks of the miner and the final check below do that.
+	startEmpty := func() error {
+		if err := start(); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
 	if ib.Len() == 0 || ib.Records() == 0 {
-		return sum, start()
+		return sum, startEmpty()
 	}
 	m, err := fpg.New[T](p.cfg)
 	if err != nil {
@@ -294,7 +311,7 @@ func mine[T comparable](
 	}
 	if err := m.Data(ib, sc.scan); err != nil {
 		if errors.Is(err, fpg.ErrNoItems) {
-			return sum, start()
+			return sum, startEmpty()
 		}
 		if cerr := ctx.Err(); cerr != nil && errors.Is(err, cerr) {
 			return sum, cerr

@@ -46,7 +46,9 @@
 // [MineItemsets]) but not before every result, so up to about a thousand
 // results may still be delivered after the context is canceled; a
 // canceled run always returns ctx.Err(), also if mining finished after
-// the last check.
+// the last check or OnStart canceled it and nothing was left to mine,
+// unless OnStart or the callback returned an error: that error takes
+// precedence and is returned unchanged.
 //
 // Options.OnStart and RuleOptions.OnStart receive the [Stats] of the
 // database (total weight, frequent items, resolved thresholds) before the

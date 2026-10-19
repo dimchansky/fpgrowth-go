@@ -51,7 +51,8 @@ linked documents.
   dense maximal checks near the size limit (M5A-1), skipping perfect
   extensions that cannot affect a result (NEW-1, quadratic in upstream
   too), the remaining quadratic closed-check shape (NEW-3), independent
-  measure formulas in the oracle (TST-3), and `MineItemsets` returning
-  nil instead of `ctx.Err()` when the context is canceled inside
-  `OnStart` and no item is frequent (RC-2, Info,
-  `docs/audit/rc1-verification.md`).
+  measure formulas in the oracle (TST-3).
+- Resolved after v0.1.0: RC-2 (Info, `docs/audit/rc1-verification.md`),
+  mining returned nil instead of `ctx.Err()` when the context was
+  canceled inside `OnStart` and nothing was left to mine; fixed by
+  issue #14 (PR #26).

@@ -104,7 +104,9 @@ type RuleOptions[T comparable] struct {
 	// OnStart, if not nil, is called once before the first rule is
 	// reported (also if none is), with the Stats of the database, unless
 	// ctx is canceled by then. Its error stops mining and is returned
-	// unchanged.
+	// unchanged, also if ctx is canceled as well; if it returns nil
+	// after ctx was canceled (for example by OnStart itself), mining
+	// returns ctx.Err().
 	OnStart func(Stats) error
 }
 
@@ -212,7 +214,9 @@ func (o *RuleOptions[T]) plan() (*plan, error) {
 // filtered and reported, and every 4096 tables of a Fisher test, but not
 // before every rule: fn may still be called for the rules of up to 256
 // item sets after ctx is canceled, and a canceled run always returns
-// ctx.Err().
+// ctx.Err(), also if OnStart canceled it and nothing is left to mine.
+// The precedence of errors is that of MineItemsets: fn's or OnStart's
+// error is returned unchanged even if ctx is canceled as well.
 func MineRules[T comparable](ctx context.Context, src Source[T], opt RuleOptions[T], fn func(Rule[T]) error) (Summary, error) {
 	p, err := opt.plan()
 	if err != nil {

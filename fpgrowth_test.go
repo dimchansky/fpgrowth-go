@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
@@ -1636,4 +1637,208 @@ func FuzzMineItemsets(f *testing.F) {
 			t.Fatalf("%s/%s %+v eval %+v:\n%s", tg.name, v.name, opt, opt.Evaluation, d)
 		}
 	})
+}
+
+// onStartCase is a database and the options of TestCancelInOnStart and
+// TestErrorPrecedence; together they take every exit of mine after
+// OnStart, for item sets and for rules.
+type onStartCase struct {
+	name   string
+	txs    [][]string
+	supp   int64
+	items  []string   // Options.Items (item sets)
+	appear Appearance // RuleOptions.DefaultAppearance (rules)
+	conf   float64    // RuleOptions.MinConfidence (rules)
+	sets   bool       // whether item sets are reported
+	rules  bool       // whether rules are reported
+}
+
+var onStartCases = []onStartCase{
+	// The comments name the exit of mine each case takes.
+	// ib.Len() == 0 || ib.Records() == 0:
+	{name: "empty database", txs: nil, supp: 2},
+	{name: "empty transactions", txs: [][]string{{}, {}}, supp: 1},
+	// item sets: ErrNoItems; rules: m.Mine (with confidence 0 every item
+	// is frequent for rules), the rules with empty bodies are reported
+	{name: "no frequent item", txs: [][]string{{"a"}, {"b"}}, supp: 2, rules: true},
+	// ErrNoItems (rules need a confidence above 0 for it)
+	{name: "unreachable support", txs: [][]string{{"a"}, {"a", "b"}}, supp: 100, conf: 1},
+	// an item selection that matches nothing (item sets: ErrNoItems), or
+	// ignoring every item (rules: ib.Len() == 0)
+	{name: "empty selection", txs: [][]string{{"a"}, {"a"}}, supp: 1, items: []string{"z"}, appear: AppearNone},
+	// m.Mine (control)
+	{name: "frequent items", txs: [][]string{{"a"}, {"a"}}, supp: 2, sets: true, rules: true},
+}
+
+// entryPoint runs one of the six public mining functions of c with
+// onStart and, for MineItemsets and MineRules, fn as the callback, and
+// returns the error and the number of results.
+type entryPoint struct {
+	name string
+	run  func(ctx context.Context, c onStartCase, onStart func(Stats) error, fn func() error) (int, error)
+}
+
+var entryPoints = []entryPoint{
+	{"MineItemsets", func(ctx context.Context, c onStartCase, onStart func(Stats) error, fn func() error) (int, error) {
+		n := 0
+		_, err := MineItemsets(ctx, FromItems(c.txs), c.itemOptions(onStart), func(Itemset[string]) error {
+			n++
+			if fn != nil {
+				return fn()
+			}
+			return nil
+		})
+		return n, err
+	}},
+	{"Itemsets", func(ctx context.Context, c onStartCase, onStart func(Stats) error, _ func() error) (int, error) {
+		n := 0
+		var last error
+		for _, err := range Itemsets(ctx, FromItems(c.txs), c.itemOptions(onStart)) {
+			if err != nil {
+				last = err
+				continue
+			}
+			n++
+		}
+		return n, last
+	}},
+	{"CollectItemsets", func(ctx context.Context, c onStartCase, onStart func(Stats) error, _ func() error) (int, error) {
+		sets, _, err := CollectItemsets(ctx, FromItems(c.txs), c.itemOptions(onStart))
+		if err != nil && sets != nil {
+			return len(sets), fmt.Errorf("results %v with error %w", sets, err)
+		}
+		return len(sets), err
+	}},
+	{"MineRules", func(ctx context.Context, c onStartCase, onStart func(Stats) error, fn func() error) (int, error) {
+		n := 0
+		_, err := MineRules(ctx, FromItems(c.txs), c.ruleOptions(onStart), func(Rule[string]) error {
+			n++
+			if fn != nil {
+				return fn()
+			}
+			return nil
+		})
+		return n, err
+	}},
+	{"Rules", func(ctx context.Context, c onStartCase, onStart func(Stats) error, _ func() error) (int, error) {
+		n := 0
+		var last error
+		for _, err := range Rules(ctx, FromItems(c.txs), c.ruleOptions(onStart)) {
+			if err != nil {
+				last = err
+				continue
+			}
+			n++
+		}
+		return n, last
+	}},
+	{"CollectRules", func(ctx context.Context, c onStartCase, onStart func(Stats) error, _ func() error) (int, error) {
+		rules, _, err := CollectRules(ctx, FromItems(c.txs), c.ruleOptions(onStart))
+		if err != nil && rules != nil {
+			return len(rules), fmt.Errorf("results %v with error %w", rules, err)
+		}
+		return len(rules), err
+	}},
+}
+
+// reports returns whether the entry point named name reports anything
+// for c when not canceled.
+func (c onStartCase) reports(name string) bool {
+	if strings.Contains(name, "Rules") {
+		return c.rules
+	}
+	return c.sets
+}
+
+func (c onStartCase) itemOptions(onStart func(Stats) error) Options[string] {
+	return Options[string]{MinSupport: Count(c.supp), Items: c.items, OnStart: onStart}
+}
+
+func (c onStartCase) ruleOptions(onStart func(Stats) error) RuleOptions[string] {
+	return RuleOptions[string]{MinSupport: Count(c.supp), DefaultAppearance: c.appear, MinConfidence: c.conf, OnStart: onStart}
+}
+
+// TestCancelInOnStart cancels the context inside OnStart, which returns
+// nil: every entry point must return ctx.Err() on every path, also where
+// nothing is mined (RC-2), and report nothing. Without cancellation
+// OnStart is called exactly once and mining succeeds; with a context
+// canceled before, it is not called.
+func TestCancelInOnStart(t *testing.T) {
+	t.Parallel()
+	for _, c := range onStartCases {
+		for _, ep := range entryPoints {
+			t.Run(c.name+"/"+ep.name, func(t *testing.T) {
+				t.Parallel()
+				calls := 0
+				n, err := ep.run(context.Background(), c, func(Stats) error { calls++; return nil }, nil)
+				if err != nil || calls != 1 || (n > 0) != c.reports(ep.name) {
+					t.Errorf("not canceled: got %v, OnStart called %d times, %d results", err, calls, n)
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				calls = 0
+				n, err = ep.run(ctx, c, func(Stats) error { calls++; cancel(); return nil }, nil)
+				if !errors.Is(err, context.Canceled) || err != ctx.Err() || calls != 1 || n != 0 {
+					t.Errorf("canceled: got %v, OnStart called %d times, %d results", err, calls, n)
+				}
+
+				// In the bubble, time advances only while every goroutine
+				// of it is blocked: mining never is, so the deadline
+				// passes exactly while OnStart waits for it.
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+					defer cancel()
+					calls := 0
+					n, err := ep.run(ctx, c, func(Stats) error { calls++; <-ctx.Done(); return nil }, nil)
+					if !errors.Is(err, context.DeadlineExceeded) || err != ctx.Err() || calls != 1 || n != 0 {
+						t.Errorf("deadline: got %v, OnStart called %d times, %d results", err, calls, n)
+					}
+
+					calls = 0 // ctx has expired before the call
+					_, err = ep.run(ctx, c, func(Stats) error { calls++; return nil }, nil)
+					if !errors.Is(err, context.DeadlineExceeded) || calls != 0 {
+						t.Errorf("expired: got %v, OnStart called %d times", err, calls)
+					}
+				})
+			})
+		}
+	}
+}
+
+// TestErrorPrecedence checks the documented precedence: an error returned
+// by OnStart or by the callback is returned unchanged even if the context
+// is canceled as well; only a nil result gives way to ctx.Err().
+func TestErrorPrecedence(t *testing.T) {
+	t.Parallel()
+	errUser := errors.New("user error")
+	for _, c := range onStartCases {
+		for _, ep := range entryPoints {
+			t.Run("OnStart/"+c.name+"/"+ep.name, func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				calls := 0
+				n, err := ep.run(ctx, c, func(Stats) error { calls++; cancel(); return errUser }, nil)
+				if err != errUser || calls != 1 || n != 0 {
+					t.Errorf("got %v, OnStart called %d times, %d results", err, calls, n)
+				}
+			})
+		}
+	}
+	for _, ep := range entryPoints {
+		if !strings.HasPrefix(ep.name, "Mine") {
+			continue // the adapters take no callback of the caller's
+		}
+		t.Run("callback/"+ep.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			c := onStartCases[len(onStartCases)-1] // frequent items
+			n, err := ep.run(ctx, c, nil, func() error { cancel(); return errUser })
+			if err != errUser || n != 1 {
+				t.Errorf("got %v, %d results", err, n)
+			}
+		})
+	}
 }
