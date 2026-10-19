@@ -340,8 +340,10 @@ func frac(x, y *big.Int) *big.Rat { return new(big.Rat).SetFrac(x, y) }
 // error from the implementation's formula is the known defect DefectALG6
 // (see there). Measured on every table with n <= 60, the boundary tables
 // and 20,000 random tables up to n = 2^24, the implementation stays below 1 % of
-// these tolerances (the Fisher tests below 4 % and the certainty factor
-// below 5 % of theirs, see fisherTol and certValue).
+// these tolerances (the Fisher tests below 4 % of theirs, see fisherTol;
+// the certainty factor, see certValue, reached 40 % of its tolerance on
+// s=13785586 b=13785752 h=13793039 n=13793230, where n/(n−h) is about
+// 72,000, measured in the review of PR #27).
 // Beyond about n = 2^26, or for a prior h/n within about 2^-14 of 1
 // (certainty), a float64 formula can lose more (audit ALG-1,
 // differences.md N1); the reference still returns the exact value with
