@@ -22,6 +22,12 @@ The release workflow publishes the section whose heading matches the tag
   known numerical defects for large total weights (ALG-1, ALG-2, ALG-6)
   are recorded in expected-failure tables (all three are fixed since, see
   below, and the tables are gone). No library or CLI behavior changes.
+- Benchmarks: the dense maximal workload of audit finding M5A-1
+  (`d20000x200d30`: 20,000 transactions, 200 independent items at 30 %)
+  is a pinned dataset of the benchmark generator, and the Go-vs-C
+  comparison has `m5-d20000-*` rows for it (`-tc`/`-tm` with `-n2` to
+  `-n4`), so the size-limited maximal check can be measured from
+  committed code (#19).
 
 ### Changed
 

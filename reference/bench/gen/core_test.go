@@ -36,14 +36,15 @@ func TestCoreInSync(t *testing.T) {
 // together with the documented dataset characteristics.
 func TestDatasetsPinned(t *testing.T) {
 	want := map[string]string{
-		"sparse":       "486a2624710d",
-		"sparse-large": "f9d614829794",
-		"dense":        "b29d20acbcb1",
-		"long":         "cddca8f4d640",
-		"weighted":     "12e2b434b872",
-		"d2000x40d60":  "4b7365057352",
-		"d1000x30d80":  "868be1637571",
-		"d5000x60d40":  "4017ec71e7fa",
+		"sparse":        "486a2624710d",
+		"sparse-large":  "f9d614829794",
+		"dense":         "b29d20acbcb1",
+		"long":          "cddca8f4d640",
+		"weighted":      "12e2b434b872",
+		"d2000x40d60":   "4b7365057352",
+		"d1000x30d80":   "868be1637571",
+		"d5000x60d40":   "4017ec71e7fa",
+		"d20000x200d30": "a91a38aab4da",
 	}
 	for _, s := range benchSpecs {
 		h := sha256.New()

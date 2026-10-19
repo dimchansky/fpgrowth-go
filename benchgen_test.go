@@ -85,6 +85,11 @@ var benchSpecs = []benchSpec{
 	{Name: "d2000x40d60", Seed: 1, Transactions: 2000, Items: 40, Density: 60},
 	{Name: "d1000x30d80", Seed: 2, Transactions: 1000, Items: 30, Density: 80},
 	{Name: "d5000x60d40", Seed: 3, Transactions: 5000, Items: 60, Density: 40},
+	// The dense maximal workload of the independent audit (M5A-1, issue
+	// #19): many maximal sets of exactly the maximum size. The audit made
+	// it with Python random.Random(5); this is the same shape (seed 5),
+	// not the same bytes.
+	{Name: "d20000x200d30", Seed: 5, Transactions: 20000, Items: 200, Density: 30},
 }
 
 // benchSpecByName returns the spec with the given name.

@@ -41,12 +41,23 @@ operations), with seeds 1, 2 and 3; the first two are also the data of
 the in-process `BenchmarkCloMaxLimited`. The files name item `j` `j`,
 `denseTxs` names it `i<j>`.
 
+`d20000x200d30` (seed 5) is the dense maximal workload of the independent
+audit (finding M5A-1, issue #19): 20,000 transactions over 200 items at
+30 %, where every 3-set is frequent at `-s2` and no 4-set is, so
+`-tm -s2 -n3` reports all 1,313,400 3-sets. The audit generated its
+file with Python `random.Random(5)` and did not commit it; this spec has
+the same shape and reproduces the audit's set counts and timings in
+magnitude, not its bytes. Its `m5-d20000-*` rows in `configs.txt` are
+slow (a `-tm -n3` run takes about 100 s in Go, 40 s in C).
+
 ```bash
 cd reference
 go run ./bench/gen -dataset d2000x40d60 -o d2000x40d60.tab
 go run ./bench/gen -dataset d1000x30d80 -o d1000x30d80.tab
 go run ./bench/gen -dataset d5000x60d40 -o d5000x60d40.tab
-bench/compare.sh -m devnull '^(m5-|large-[cm]-n)'   # the M5 configurations
+go run ./bench/gen -dataset d20000x200d30 -o d20000x200d30.tab
+bench/compare.sh -m devnull '^(m5-d[125]000-|large-[cm]-n)'   # the fast M5 configurations
+bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slow)
 ```
 `go test ./bench/...` checks that
 

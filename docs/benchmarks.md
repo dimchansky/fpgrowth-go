@@ -68,12 +68,17 @@ committed; files are written to temporary directories.
 | `d2000x40d60` (M5) | 2,000 | 40 | 24.0 / 12 / 32 | 0.599 | independent, 60 % | — | no | 131,953 | `4b7365057352` |
 | `d1000x30d80` (M5) | 1,000 | 30 | 24.1 / 17 / 29 | 0.805 | independent, 80 % | — | no | 64,348 | `868be1637571` |
 | `d5000x60d40` (M5) | 5,000 | 60 | 24.0 / 11 / 37 | 0.400 | independent, 40 % | — | no | 339,938 | `4017ec71e7fa` |
+| `d20000x200d30` (M5A-1) | 20,000 | 200 | 60.0 / 36 / 86 | 0.300 | independent, 30 % | — | no | 4,137,790 | `a91a38aab4da` |
 
 Density is the average length divided by the number of items used. The
 three `dNxKdP` datasets (added by review fix S3-2, seeds 1–3) are the
 independent dense items of the [M5 investigation](m5-investigation.md)
 §7, generated exactly like its in-process `denseTxs`; they are used only
-by the M5 rows of `reference/bench/configs.txt`.
+by the M5 rows of `reference/bench/configs.txt`. `d20000x200d30` (seed 5,
+issue #19) is the dense maximal workload of the independent audit
+(M5A-1, below), which the audit made with Python `random.Random(5)` and
+did not commit; the spec has the same shape (and the same set counts),
+not the same bytes.
 "Keep" is the probability that each item of a chosen planted pattern is
 included; `dense` keeps whole patterns, so many item sets have perfect
 extensions and the closed sets are far fewer than the frequent ones.
@@ -643,6 +648,23 @@ early and counts the whole cover per set. The dataset is not part of
 ([audit/m5.md](audit/m5.md)). Sharing the work among sibling
 sets is a possible optimization, deferred.
 
+*Note (2026-10-20, issue #19):* the workload is now reproducible as the
+pinned dataset `d20000x200d30` and the `m5-d20000-*` rows of
+`configs.txt`. Re-measured on `main` (`3c0b7e8`), v0.1.0 and C native
+(Apple M1 Max, load average 3.3–12.8; `/usr/bin/time -l`, output to
+`/dev/null`, 5 interleaved runs, median [min–max]; wall s / max RSS MB):
+
+| options | sets | Go `main` | Go v0.1.0 | C 6.21 |
+| --- | ---: | --- | --- | --- |
+| `-tm -s2 -n3` | 1,313,400 | 97.06 [97.03–97.20] / 111.6 | 97.47 [97.20–97.76] / 111.0 | 39.21 [39.07–39.65] / 1259.1 |
+| `-tc -s2 -n3` | 1,333,500 | 10.31 [10.22–10.34] / 111.3 | 10.24 [10.15–10.24] / 111.0 | 39.26 [39.06–39.49] / 1259.1 |
+| `-tm -s2 -n2` (3 runs) | 0 | 0.63 [0.62–0.65] / 107.6 | 0.62 [0.61–0.63] / 107.7 | 8.40 [8.39–8.67] / 1259.0 |
+
+The set counts equal the audit's (every 3-set is frequent, no 4-set is),
+and the times match its 99.7 s / 39.0 s within noise. A CPU profile of
+the `-tm -s2 -n3` run attributes 91 % of the time to the extension check
+(`checkPath` cum), 86 % to `scanMaximal` alone.
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package
@@ -708,14 +730,17 @@ go test -run '^$' -bench 'BenchmarkCLI' -benchmem -count 6 ./cmd/fpgrowth | tee 
 benchstat suite.txt; benchstat internal.txt
 benchstat old.txt new.txt          # after a change: same machine, same toolchain
 
-# Go vs C (about 6 minutes; needs a C compiler and GNU make)
+# Go vs C (about 6 minutes without the slow m5-d20000-* rows, which an
+# unfiltered run includes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
-# (configs.txt has 15 M5 rows more than the 32 measured above: m5-*,
-# large-[cm]-n*, added by review fix S3-2; '^(sparse|large-[scm]$|dense|long|weighted)'
+# (configs.txt has 22 M5 rows more than the 32 measured above: m5-*,
+# large-[cm]-n* (review fix S3-2) and the slow m5-d20000-* (issue #19); '^(sparse|large-[scm]$|dense|long|weighted)'
 # selects the original 32)
 # only the size-limited closed/maximal (M5) configurations: the pinned
 # dNxKdP datasets and sparse-large with -n (reference/bench/README.md)
-(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-|large-)')
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-d[125]000-|large-)')
+# the dense maximal workload of finding M5A-1 (issue #19; slow: Go about 100 s and C about 40 s per -tm -n3 run, over an hour in all)
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5a1 '^m5-d20000-')
 
 # profiles (one workload at a time)
 go test -c -o /tmp/root.test .

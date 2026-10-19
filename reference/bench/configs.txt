@@ -68,3 +68,16 @@ m5-d1000-m-n2*  d1000x30d80.tab   -tm -s10 -n2
 m5-d1000-c      d1000x30d80.tab   -tc -s30
 m5-d5000-c-n3*  d5000x60d40.tab   -tc -s5 -n3
 m5-d5000-m-n3*  d5000x60d40.tab   -tm -s5 -n3
+# Dense maximal sets of exactly the maximum size (independent audit
+# M5A-1, issue #19): every 3-set of d20000x200d30 is frequent at -s2 and
+# no 4-set is, so -tm -n3 reports all C(200,3) = 1,313,400 3-sets, each
+# after a check that counts its whole cover. Slow (Go about 100 s, C
+# about 40 s per -n3 run); select the other M5 rows with an id filter,
+# e.g. '^(m5-d[125]000-|large-[cm]-n)'.
+m5-d20000-c-n2*    d20000x200d30.tab -tc -s2 -n2
+m5-d20000-m-n2*    d20000x200d30.tab -tm -s2 -n2
+m5-d20000-c-n3*    d20000x200d30.tab -tc -s2 -n3
+m5-d20000-m-n3*    d20000x200d30.tab -tm -s2 -n3
+m5-d20000-m-n3-As* d20000x200d30.tab -tm -s2 -n3 -As
+m5-d20000-m-n3-At* d20000x200d30.tab -tm -s2 -n3 -At
+m5-d20000-m-n4*    d20000x200d30.tab -tm -s1 -n4
