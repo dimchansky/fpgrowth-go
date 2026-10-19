@@ -172,8 +172,6 @@ func itemNames(txs []oracle.Transaction) []string {
 // threshold decisions) and once with the independent reference measures
 // (values within their tolerances, so that a formula error fails).
 func TestReport_RulesOracle(t *testing.T) {
-	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
-	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(1, 2))
 	n := 600
 	if testing.Short() {
@@ -199,7 +197,7 @@ func TestReport_RulesOracle(t *testing.T) {
 		}
 		if c.eval.Measure != ruleval.None {
 			ref := oracleRules(t, d, c, true)
-			if diff := oracle.DiffRules(ref, got.rules, oracle.DiffOptions{Defects: defects}); diff != "" {
+			if diff := oracle.DiffRules(ref, got.rules, oracle.DiffOptions{}); diff != "" {
 				t.Fatalf("seed %d config %+v: reference measure:\n%s", seed, c, diff)
 			}
 		}
@@ -211,8 +209,6 @@ func TestReport_RulesOracle(t *testing.T) {
 // with the implementation's measure functions and with the reference
 // measures.
 func TestReport_SetsOracle(t *testing.T) {
-	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
-	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(3, 4))
 	targets := []report.Target{report.TargetAll, report.TargetClosed, report.TargetMaximal, report.TargetGenerators}
 	n := 800
@@ -265,7 +261,7 @@ func TestReport_SetsOracle(t *testing.T) {
 			if want, err = d.db.Mine(p); err != nil {
 				t.Fatal(err)
 			}
-			if diff := oracle.DiffSets(want, got.sets, oracle.DiffOptions{Defects: defects}); diff != "" {
+			if diff := oracle.DiffSets(want, got.sets, oracle.DiffOptions{}); diff != "" {
 				t.Fatalf("seed %d config %+v codes %v: reference measure:\n%s", seed, c, d.names, diff)
 			}
 		}

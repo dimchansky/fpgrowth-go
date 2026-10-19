@@ -3,12 +3,14 @@ package ruleval
 import (
 	"bufio"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/dimchansky/fpgrowth-go/internal/oracle"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -413,7 +415,44 @@ type diffStat struct {
 	skip     int         // rows without an upstream value
 	dev      int         // rows where a deliberate deviation applies
 	devDiff  int         // ... and the fixed value differs from upstream's
+	exact    int         // rows compared with the exact reference (N1, issue #16)
+	exactUp  int         // ... where upstream's value is outside the bound
+	maxRef   float64     // largest deviation from the reference, in tolerances
 	failures int
+}
+
+// productsSmall reports whether supp·base and head·body are at most 2^53,
+// so that upstream's double products are exact.
+func productsSmall(supp, body, head, base tract.Supp) bool {
+	h1, l1 := bits.Mul64(uint64(supp), uint64(base))
+	h2, l2 := bits.Mul64(uint64(head), uint64(body))
+	return h1 == 0 && h2 == 0 && l1 <= 1<<53 && l2 <= 1<<53
+}
+
+// exactScope reports whether measure m on row r is compared with the
+// exact reference (internal/oracle) within its documented bound instead
+// of with upstream's value (docs/differences.md, numeric contract):
+//
+//   - Chi2, Yates and their p-values when a product exceeds 2^53
+//     (upstream rounds them; below, the values are bit-identical
+//     respectively within the class tolerance);
+//   - Certainty when base/(base-head) > certGate (the exact form, for
+//     every sign of D; elsewhere bit-identical);
+//   - the Fisher tests for base > maxFact where the reference has a value
+//     (at most oracle.FisherMaxTables tables); with more tables they keep
+//     the class tolerance against upstream's (fixed) value.
+func exactScope(m Measure, r upstreamRow) bool {
+	s, b, h, n := r.supp, r.body, r.head, r.base
+	switch m {
+	case Chi2, Yates, Chi2PValue, YatesPValue:
+		return !productsSmall(s, b, h, n)
+	case Certainty:
+		return b > 0 && h < n && n-h < n/certGate
+	case FisherProb, FisherChi2, FisherInfo, FisherSupport:
+		lo, hi := max(0, b-(n-h)), min(b, h)
+		return n > maxFact && hi-lo+1 <= oracle.FisherMaxTables
+	}
+	return false
 }
 
 // TestEvalMatchesUpstream compares every measure with the values computed
@@ -423,7 +462,10 @@ type diffStat struct {
 // Where a deliberate deviation applies (fixedUpstreamValue), the value is
 // compared with the corrected value instead: a fixed constant, a clamped
 // upstream value, or for FisherProb and FisherInfo an independent exact
-// computation (fisherOracle).
+// computation (fisherOracle). Where the port computes the value exactly
+// although upstream does not (exactScope; issue #16), it is compared with
+// the exact reference within the documented bound, and the rows where
+// upstream's own value is outside that bound are counted.
 func TestEvalMatchesUpstream(t *testing.T) {
 	t.Parallel()
 	rows := loadUpstreamRows(t)
@@ -437,6 +479,28 @@ func TestEvalMatchesUpstream(t *testing.T) {
 			}
 			st.n++
 			got := Eval(m, r.supp, r.body, r.head, r.base)
+			if exactScope(m, r) {
+				rm, _ := oracle.RefByName(m.String())
+				ref, err := rm.Eval(r.supp, r.body, r.head, r.base)
+				if err != nil {
+					t.Fatalf("%v%v: %v", m, r.supp, err)
+				}
+				st.exact++
+				if !ref.Matches(r.vals[m]) {
+					st.exactUp++
+				}
+				if ref.Tol > 0 {
+					st.maxRef = max(st.maxRef, math.Abs(got-ref.V)/ref.Tol)
+				}
+				if !ref.Matches(got) {
+					st.failures++
+					if st.failures <= 5 {
+						t.Errorf("Eval(%v, %d, %d, %d, %d) = %.17g, reference %v (upstream %.17g)",
+							m, r.supp, r.body, r.head, r.base, got, ref, r.vals[m])
+					}
+				}
+				continue
+			}
 			want, dev, oracle := fixedUpstreamValue(t, m, r, got)
 			tol := classTolerance(measureClass(m))
 			e := normalizedDiff(m, r, got, want)
@@ -445,7 +509,7 @@ func TestEvalMatchesUpstream(t *testing.T) {
 				if normalizedDiff(m, r, got, r.vals[m]) > tol {
 					st.devDiff++
 				}
-				if oracle {
+				if oracle && r.base <= maxFact {
 					tol = 0 // the oracle reproduces the value exactly
 				}
 			} else {
@@ -467,8 +531,9 @@ func TestEvalMatchesUpstream(t *testing.T) {
 	}
 	for m := range NumMeasures {
 		st := &stats[m]
-		t.Logf("%-18v rows=%4d skipped=%3d deviation=%3d (differs %3d) max=%.3g rel=%.2g at (%d, %d, %d, %d)",
-			m, st.n, st.skip, st.dev, st.devDiff, st.max, st.maxRel, st.row.supp, st.row.body, st.row.head, st.row.base)
+		t.Logf("%-18v rows=%4d skipped=%3d deviation=%3d (differs %3d) max=%.3g rel=%.2g at (%d, %d, %d, %d); exact reference %d rows (upstream outside the bound %d, max %.3g·tol)",
+			m, st.n, st.skip, st.dev, st.devDiff, st.max, st.maxRel, st.row.supp, st.row.body, st.row.head, st.row.base,
+			st.exact, st.exactUp, st.maxRef)
 	}
 }
 

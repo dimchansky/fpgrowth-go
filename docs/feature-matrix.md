@@ -49,10 +49,10 @@ All upstream rows were verified at the end of Stage 1 (review
 | --- | --- | --- | --- | --- | --- |
 | Rule confidence (`-c`), lift | `ist_*`, `isr_rinfo` | `>=` with `1−ε` tolerance [rules §3] | `internal/istree`, `internal/isrout` | oracle | verified |
 | Original rule support (`-o`) | `FPG_ORIGSUPP` | body ∪ head [rules §1.2] | `internal/istree` | oracle | verified |
-| 25 rule measures (`-e`) | `re_*` (ruleval.c), chi2.c, gamma.c | [rules §6]; float64, the statistical measures reliable below a total weight of about 10^12 (N1) | `internal/ruleval` | C fixtures, exact big-number checks, independent reference (`internal/oracle` `RefMeasures`: sweeps, oracle comparisons, expected-failure table for ALG-1/ALG-6) | verified |
+| 25 rule measures (`-e`) | `re_*` (ruleval.c), chi2.c, gamma.c | [rules §6]; float64 with exact 128-bit cross products, a cancellation-free information and Fisher sums from Stirling's formula above a total of 170: accurate up to 2^63 (N1, numeric contract) | `internal/ruleval` | C fixtures (bit-identical where upstream's arithmetic is exact), exact big-number checks, independent reference (`internal/oracle` `RefMeasures`: sweeps and oracle comparisons with the documented bounds as tolerances, large-weight grid) | verified |
 | Log support quotient (`-eb`) | `isr_logrto` | [rules §4.3, report §4] | `internal/report` | differential (tolerance), oracle (`LogRatioEval`) | verified |
 | Aggregation (`-a`) | `ist_seteval`, `evaluate` | first/min/max/avg over single-head rules; "first" depends on the internal item order (P6) [rules §4] | `internal/istree` | oracle (with the implementation's and the reference measures) | verified |
-| Threshold (`-d`), invalidate below expected (`-i`) | `ist_seteval`, `FPG_INVBXS` | [rules §4]; `-i` in float64 like upstream (exact in the reference; ALG-1 expected failure beyond 2^53) | `internal/istree` | oracle, differential | verified |
+| Threshold (`-d`), invalidate below expected (`-i`) | `ist_seteval`, `FPG_INVBXS` | [rules §4]; `-i` exact in integers (`ruleval.AboveExpected`; upstream's doubles agree up to products of 2^53, N1) | `internal/istree` | oracle, differential | verified |
 | Evaluation pruning (`-p`) | `ist_filter` | no effect upstream (rules B2); fixed for item sets (R2) | `internal/istree` | patched-C comparison, oracle | verified |
 
 ## Output and statistics

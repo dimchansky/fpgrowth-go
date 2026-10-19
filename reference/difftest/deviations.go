@@ -239,13 +239,17 @@ func allItemsPerfect(c *tcase, db *bfDB, smin int64) bool {
 }
 
 // valueDev describes a value-level deviation of an evaluation measure
-// (R4-R7, R9): the port's value differs from upstream's in a known
+// (R4-R7, R9, N1): the port's value differs from upstream's in a known
 // direction for the rules that rulePred selects (nil: any rule).
 type valueDev struct {
 	id       string
 	goGE     bool // Go's value >= C's
 	goLE     bool // Go's value <= C's
 	rulePred func(supp, body, head, base int64) bool
+	// slack, if not nil, replaces the direction test: the values may
+	// differ by up to slack of the rule (the largest over the rules of an
+	// item set), a bound on upstream's known error (N1).
+	slack func(supp, body, head, base int64) float64
 }
 
 // measureDeviation returns the value-level deviation of the case's
@@ -261,6 +265,8 @@ func measureDeviation(c *tcase) *valueDev {
 		return &valueDev{id: "R5", goGE: true, goLE: true, rulePred: func(_, _, h, n int64) bool { return h == n }}
 	case 'f', 'm', 'h', 's': // R6, R9: Fisher ties decided exactly, p-values clamped
 		return &valueDev{id: "R6/R9", goGE: true}
+	case 'g': // N1 (ALG-6): upstream's G statistic has an absolute error
+		return &valueDev{id: "N1", slack: alg6Slack}
 	case 'i': // R7: information clamped at 0 (negative for independent tables)
 		return &valueDev{id: "R7", goGE: true, rulePred: func(s, b, h, n int64) bool { return s*n == h*b }}
 	case 'y': // R9 (B10): Yates' correction clamped at 0
@@ -269,6 +275,43 @@ func measureDeviation(c *tcase) *valueDev {
 		return &valueDev{id: "R9", goGE: true, rulePred: yatesClamped}
 	}
 	return nil
+}
+
+// alg6Slack bounds the error of upstream's G-test p-value (audit ALG-6,
+// docs/differences.md N1; the bound of the #15 oracle's DefectALG6): its
+// information (ln n + Σ t·ln(t/(r·k))/n) has an absolute error of at most
+// δI = 16·2^-52·max(1, ln n) nats, so its statistic G = 2·n·I is off by
+// δG = 2·n·δI. The chi²(1) tail turns that into a p-value error of at
+// most √(6·δG/π) for G <= 2·δG (the tail is 1 - √(2G/π) + O(G^1.5) near
+// 0) and of at most δG·f(G - δG) beyond, where f is the chi²(1) density
+// (decreasing). G is evaluated here in float64 from the supports; its own
+// error is below δG, which the bound absorbs by using G - δG (and 3·δG
+// for the switch). The port computes the exact value (within 2^-36
+// relative), so the difference is upstream's error.
+func alg6Slack(s, b, h, n int64) float64 {
+	dg := 2 * float64(n) * 16 * dblEpsilon * max(1, math.Log(float64(n)))
+	g := gStat(s, b, h, n)
+	if g <= 3*dg {
+		return math.Sqrt(6 * dg / math.Pi)
+	}
+	y := g - 2*dg
+	return dg * math.Exp(-y/2) / math.Sqrt(2*math.Pi*y)
+}
+
+// gStat returns the G statistic 2·Σ c·ln(c·n/(r·k)) of a table in
+// float64 (0 for degenerate margins).
+func gStat(s, b, h, n int64) float64 {
+	if b <= 0 || b >= n || h <= 0 || h >= n {
+		return 0
+	}
+	fn := float64(n)
+	var sum float64
+	for _, c := range [4][3]int64{{s, b, h}, {b - s, b, n - h}, {h - s, n - b, h}, {n - b - h + s, n - b, n - h}} {
+		if c[0] > 0 {
+			sum += float64(c[0]) * math.Log(float64(c[0])*fn/(float64(c[1])*float64(c[2])))
+		}
+	}
+	return max(2*sum, 0)
 }
 
 // yatesClamped reports whether |head*body - supp*base| < base/2, where
@@ -319,10 +362,35 @@ func (d *valueDev) allowsValue(c *tcase, db *bfDB, r record, cv, gv float64, per
 		return d.goGE && d.goLE // R5 only
 	}
 	slack := relTol*max(math.Abs(cv), math.Abs(gv)) + absTol
+	if d.slack != nil {
+		slack += d.maxSlack(c, db, r)
+	}
 	if percent {
 		slack *= 100
 	}
+	if d.slack != nil {
+		return math.Abs(cv-gv) <= slack
+	}
 	return (!d.goGE || gv >= cv-slack) && (!d.goLE || gv <= cv+slack)
+}
+
+// maxSlack returns the largest slack of the rules of a record (the rule
+// itself, or the rules S\{h} -> h of an item set S).
+func (d *valueDev) maxSlack(c *tcase, db *bfDB, r record) float64 {
+	if c.isRules() {
+		return d.slack(db.support(append(slices.Clone(r.items), r.head)), db.support(r.items),
+			db.support([]string{r.head}), db.total)
+	}
+	m, ok := db.mask(r.items)
+	if !ok {
+		return 0
+	}
+	var s float64
+	for x := m; x != 0; x &= x - 1 {
+		bit := x & -x
+		s = max(s, d.slack(db.supp[m], db.supp[m&^bit], db.supp[bit], db.total))
+	}
+	return s
 }
 
 // allowsMissing reports whether a record that only one side reported (inGo
@@ -330,6 +398,9 @@ func (d *valueDev) allowsValue(c *tcase, db *bfDB, r record, cv, gv float64, per
 // toward acceptance may report more.
 func (d *valueDev) allowsMissing(c *tcase, db *bfDB, r record, inGo bool) bool {
 	if !d.affects(c, db, r) {
+		return false
+	}
+	if d.slack != nil { // a value within the slack of the threshold
 		return false
 	}
 	if d.goGE && d.goLE {

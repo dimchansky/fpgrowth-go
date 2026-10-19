@@ -108,7 +108,8 @@ func clampUnit(p float64) float64 {
 // observed one by more than a bound on their rounding error
 // (fisherLogProbTol); the rest are compared exactly in integer arithmetic
 // (fisherTable.cmpWeight). The probabilities that are summed and the
-// summation order are upstream's.
+// summation order are upstream's for base <= maxFact; larger totals use
+// fetProbLarge (deviation ALG-1, fisherlarge.go).
 func reFetProb(supp, body, head, base tract.Supp) float64 {
 	v, _ := fetProb(supp, body, head, base, nil)
 	return v
@@ -119,6 +120,12 @@ func reFetProb(supp, body, head, base tract.Supp) float64 {
 func fetProb(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
 		return 1, nil
+	}
+	if base > maxFact {
+		if !validTable(supp, body, head, base) {
+			return math.NaN(), nil // unspecified; avoids long walks over invalid tables
+		}
+		return fetProbLarge(supp, body, head, base, abort)
 	}
 	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
@@ -217,6 +224,7 @@ func cmpRangeProducts(l, a1, a2, c1, c2 int64) int {
 // distance |x - E| to the expected support E = head·body/base. It sums
 // either the more extreme tables or 1 minus the less extreme ones,
 // whichever range is shorter. The result is clamped to [0, 1] (clampUnit).
+// Totals above maxFact use fetChi2Large (deviation ALG-1, fisherlarge.go).
 func reFetChi2(supp, body, head, base tract.Supp) float64 {
 	v, _ := fetChi2(supp, body, head, base, nil)
 	return v
@@ -227,6 +235,12 @@ func reFetChi2(supp, body, head, base tract.Supp) float64 {
 func fetChi2(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
 		return 1, nil
+	}
+	if base > maxFact {
+		if !validTable(supp, body, head, base) {
+			return math.NaN(), nil // unspecified; avoids long walks over invalid tables
+		}
+		return fetChi2Large(supp, body, head, base, abort)
 	}
 	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
@@ -274,7 +288,8 @@ func fetChi2(supp, body, head, base tract.Supp, abort func() error) (float64, er
 // reFetSupp ports re_fetsupp: Fisher's exact test, one-sided by support.
 // It sums P(x) over the tables with x >= supp (the upper tail of the
 // normalized table), or computes 1 minus the lower tail when that is
-// shorter. The result is clamped to [0, 1] (clampUnit).
+// shorter. The result is clamped to [0, 1] (clampUnit). Totals above
+// maxFact use fetSuppLarge (deviation ALG-1, fisherlarge.go).
 func reFetSupp(supp, body, head, base tract.Supp) float64 {
 	v, _ := fetSupp(supp, body, head, base, nil)
 	return v
@@ -285,6 +300,12 @@ func reFetSupp(supp, body, head, base tract.Supp) float64 {
 func fetSupp(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
 		return 1, nil
+	}
+	if base > maxFact {
+		if !validTable(supp, body, head, base) {
+			return math.NaN(), nil // unspecified; avoids long walks over invalid tables
+		}
+		return fetSuppLarge(supp, body, head, base, abort)
 	}
 	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)
@@ -321,7 +342,8 @@ func fetSupp(supp, body, head, base tract.Supp, abort func() error) (float64, er
 // observed value makes the observed table exclude itself:
 // re_fetinfo(1, 2, 3, 6) is 0.4 instead of 1. Here computed values decide
 // only tables that differ by more than a bound on the rounding error
-// (fisherInfoTol); the rest are compared exactly (cmpXLogX).
+// (fisherInfoTol); the rest are compared exactly (cmpXLogX). Totals above
+// maxFact use fetInfoLarge (deviation ALG-1, fisherlarge.go).
 func reFetInfo(supp, body, head, base tract.Supp) float64 {
 	v, _ := fetInfo(supp, body, head, base, nil)
 	return v
@@ -332,6 +354,12 @@ func reFetInfo(supp, body, head, base tract.Supp) float64 {
 func fetInfo(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	if marginsDegenerate(body, head, base) {
 		return 1, nil
+	}
+	if base > maxFact {
+		if !validTable(supp, body, head, base) {
+			return math.NaN(), nil // unspecified; avoids long walks over invalid tables
+		}
+		return fetInfoLarge(supp, body, head, base, abort)
 	}
 	st := stepper{abort: abort}
 	t := newFisherTable(supp, body, head, base)

@@ -262,11 +262,17 @@ The full list with evidence and tests is in
   threshold can then be reported by one program and not the other. For
   any measure, a value that is mathematically equal to the `-d`
   threshold may fall on either side after rounding, in both programs.
-- **Numeric limits** (N1-N3): the statistical measures (`-e n p y t i g
-  f h m s z` and `-i`) are reliable only below a total transaction weight
-  of about 10^12; above about 2^52 `-s`, `-S` and `-c` admit results just
-  outside the bound; absolute thresholds (`-s-<n>`, `-S-<n>`) above 2^53
-  are rounded, as upstream parses them as doubles.
+- **Statistical measures** (N1): `-e n p y t i g f h m s z` and `-i` are
+  accurate for total weights up to 2^63 (upstream's double formulas
+  cancel beyond about 10^12). Chi², Yates and `-i` print upstream's
+  values wherever upstream's arithmetic is exact, the certainty factor
+  wherever base/(base−head) <= 2^10; `-ei`, `-eg`
+  and the Fisher tests above a total weight of 170 can differ from
+  upstream in the last digits. The Fisher tests take time proportional to
+  the square root of the total weight in the worst case.
+- **Numeric limits** (N2, N3): above about 2^52 `-s`, `-S` and `-c`
+  admit results just outside the bound; absolute thresholds (`-s-<n>`,
+  `-S-<n>`) above 2^53 are rounded, as upstream parses them as doubles.
 - **Closed standard output** (C10): when the caller closes standard
   output (`>&-`), the Go runtime opens `/dev/null` in its place, so the
   program exits 0 where upstream reports "write error on file <stdout>"

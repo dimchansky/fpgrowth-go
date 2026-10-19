@@ -59,11 +59,10 @@ type Measure struct {
 	Threshold float64
 	// InvalidateBelowExpected (upstream -i) replaces the value of a rule by
 	// the worst value (1 for LowerIsBetter, 0 for HigherIsBetter) unless
-	// the rule's support is above the support expected under independence:
-	// with Func, upstream's float64 test
-	// float64(supp)*float64(base) > float64(head)*float64(body); with Ref,
-	// the exact integer test supp·base > head·body. The replaced values
-	// still enter set aggregates.
+	// the rule's support is above the support expected under independence,
+	// supp·base > head·body, decided exactly in integers (upstream's
+	// float64 test agrees whenever both products are at most 2^53). The
+	// replaced values still enter set aggregates.
 	InvalidateBelowExpected bool
 }
 
@@ -99,8 +98,7 @@ func (m *Measure) worstValue() Value { return conv(m.Dir.worst(), ConvWorst) }
 // is the reference Value.
 func (m *Measure) ruleValue(supp, body, head, base tract.Supp) (Value, error) {
 	if m.Ref == nil {
-		if m.InvalidateBelowExpected &&
-			!(float64(supp)*float64(base) > float64(head)*float64(body)) {
+		if m.InvalidateBelowExpected && !aboveExpected(supp, body, head, base) {
 			return m.worstValue(), nil
 		}
 		return Value{V: m.Func(supp, body, head, base)}, nil
@@ -114,11 +112,6 @@ func (m *Measure) ruleValue(supp, body, head, base tract.Supp) (Value, error) {
 	}
 	return rv, nil
 }
-
-// margin returns the half-width of the band around a value in which an
-// implementation's threshold decision may go either way: its tolerance,
-// or the bound of its known defect if larger.
-func (v Value) margin() float64 { return max(v.Tol, v.DefectTol) }
 
 // decision is the outcome of a threshold test.
 type decision uint8
@@ -147,7 +140,7 @@ func decideTol(v, tol float64, m *Measure) decision {
 // (rules-eval.md B5). With a tolerance, values within it of the
 // threshold are boundary cases.
 func (m *Measure) ruleDecision(val Value) decision {
-	v, tol := val.V, val.margin()
+	v, tol := val.V, val.Tol
 	if tol > 0 && !math.IsInf(v, 0) {
 		return decideTol(v, tol, m)
 	}
@@ -162,7 +155,7 @@ func (m *Measure) ruleDecision(val Value) decision {
 // value*dir >= dir*threshold. A NaN value is therefore rejected. With a
 // tolerance, values within it of the threshold are boundary cases.
 func (m *Measure) setDecision(val Value) decision {
-	v, tol := val.V, val.margin()
+	v, tol := val.V, val.Tol
 	if tol > 0 && !math.IsInf(v, 0) {
 		return decideTol(v, tol, m)
 	}
@@ -208,8 +201,7 @@ const (
 // tolerance: that of the first rule for AggFirst, the largest tolerance of
 // the set's rules for AggMin and AggMax (the minimum of values that are
 // each within t_i of the reference is within max t_i of the reference
-// minimum), and the average tolerance plus ratTau·|value| for AggAvg;
-// known-defect bounds (Value.DefectTol) aggregate the same way.
+// minimum), and the average tolerance plus ratTau·|value| for AggAvg.
 //
 // Which rule is first (AggFirst) depends on the item order of the
 // implementation, not on a definition (docs/differences.md P6); callers
@@ -262,7 +254,7 @@ func newSetEvaluator(db *DB, e *SetEval) *setEvaluator {
 }
 
 // value returns the aggregated measure value of the set with mask m with
-// its tolerance and known defect (none with Measure.Func).
+// its tolerance (none with Measure.Func).
 func (se *setEvaluator) value(m uint64) (Value, error) {
 	meas := &se.eval.Measure
 	n := bits.OnesCount64(m)
@@ -295,24 +287,20 @@ func (se *setEvaluator) value(m uint64) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		if v.KnownDefect != "" {
-			agg.KnownDefect = v.KnownDefect
-		}
 		switch se.eval.Agg {
 		case AggMin:
 			if v.V < agg.V {
 				agg.V = v.V
 			}
-			agg.Tol, agg.DefectTol = max(agg.Tol, v.Tol), max(agg.DefectTol, v.DefectTol)
+			agg.Tol = max(agg.Tol, v.Tol)
 		case AggMax:
 			if v.V > agg.V {
 				agg.V = v.V
 			}
-			agg.Tol, agg.DefectTol = max(agg.Tol, v.Tol), max(agg.DefectTol, v.DefectTol)
+			agg.Tol = max(agg.Tol, v.Tol)
 		default:
 			agg.V += v.V
 			agg.Tol += v.Tol
-			agg.DefectTol += max(v.Tol, v.DefectTol)
 		}
 	}
 	if se.eval.Agg == AggAvg {
@@ -320,14 +308,10 @@ func (se *setEvaluator) value(m uint64) (Value, error) {
 		agg.V /= fn
 		if meas.Ref != nil {
 			agg.Tol = agg.Tol/fn + ratTau*math.Abs(agg.V)
-			agg.DefectTol = agg.DefectTol/fn + ratTau*math.Abs(agg.V)
 		}
 	}
-	if agg.KnownDefect == "" {
-		agg.DefectTol = 0
-	}
 	if math.IsInf(agg.V, 0) {
-		agg.Tol, agg.DefectTol, agg.KnownDefect = 0, 0, ""
+		agg.Tol = 0
 	}
 	return agg, nil
 }

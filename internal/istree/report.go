@@ -39,7 +39,8 @@ type Eval struct {
 	Agg Aggregation
 	// Invalidate (-i) replaces the value of a rule by the worst value
 	// (1 for (-) measures, 0 for (+) measures) unless
-	// float64(supp)*float64(base) > float64(head)*float64(body).
+	// supp·base > head·body (ruleval.AboveExpected: exact; upstream's
+	// float64 test differs only when a product exceeds 2^53).
 	Invalidate bool
 	// Threshold is the evaluation threshold (-d/100).
 	Threshold float64
@@ -90,7 +91,7 @@ func (t *Tree) worst() float64 {
 // (returned by the next tick) and the value is NaN. Callers check t.err
 // after evaluating.
 func (t *Tree) value(supp, body, head, base tract.Supp) float64 {
-	if !t.isInvBxs || float64(supp)*float64(base) > float64(head)*float64(body) {
+	if !t.isInvBxs || ruleval.AboveExpected(supp, body, head, base) {
 		if t.afn == nil || t.abort == nil {
 			return t.fn(supp, body, head, base)
 		}

@@ -20,11 +20,59 @@ The release workflow publishes the section whose heading matches the tag
   every evaluation value against it, so a wrong measure formula now fails
   `go test ./...` without the C-derived fixtures (audit TST-3, #15). The
   known numerical defects for large total weights (ALG-1, ALG-2, ALG-6)
-  are recorded in expected-failure tables. No library or CLI behavior
-  changes.
+  are recorded in expected-failure tables (ALG-1 and ALG-6 are fixed
+  since, see below). No library or CLI behavior changes.
+
+### Changed
+
+- The values of the information (`i`) and the G-test p-value (`g`), and
+  of the Fisher tests (`f h m s`) for total weights above 170, differ from
+  upstream's (and v0.1.0's) in the last bits on ordinary data: they are
+  computed with cancellation-free formulas (see Fixed). Chi², Yates,
+  their p-values, the certainty factor and `-i` keep upstream's values
+  wherever upstream's double arithmetic is exact (products up to 2^53;
+  for the certainty factor, unless base/(base−head) > 2^10, where an
+  exact form is used). A rule or item set whose value lies within
+  those last bits of an evaluation threshold can change membership
+  (`docs/differences.md` N1, F-1).
+- The Fisher tests for total weights above 170 visit only the tables
+  that contribute to the p-value, about 9 standard deviations of the
+  hypergeometric distribution on each side of its mode, instead of
+  min(body, head)+1 tables: a few hundred tables for ordinary data
+  (`BenchmarkEval/FisherProb`, total 1000: 2.43 µs → 0.51 µs; dense rule
+  mining with FisherProb: 20 s → 0.3 s), and at a total weight of 10^8
+  with balanced margins about 0.4 ms instead of seconds. FisherProb
+  returns 0 at once when an upper bound of its p-value is below the
+  smallest float64 (strong associations at large totals), without
+  resolving near-ties.
 
 ### Fixed
 
+- The statistical evaluation measures are accurate for every total
+  transaction weight up to 2^63−1 (audit ALG-1 and ALG-6, #16;
+  `docs/differences.md` N1, which was a known limitation of v0.1.0):
+  chi² and Yates (`n y`) within 8 ulps, the information (`i`) within 32
+  ulps, the certainty factor (`z`) within 2^-40, the p-values (`p t g`)
+  within 2^-36·(1+x) and the Fisher tests (`f h m s`) within 2^-36. They
+  lost precision from about 10^12 and collapsed beyond (strong
+  associations got p = 1, chi² = 0 or information 0), and already within
+  upstream's 32-bit range chi² and Yates were off by more than 8 ulps
+  (chi² 0 instead of 6.6e-17 for a total of 123456789). The G-test p-value
+  of an exactly independent table is exactly 1 (it was 0.99999996), and
+  it is accurate near independence (relative 2.4e-8 off at n = 65535
+  before). `InvalidateBelowExpected` (`-i`) compares
+  `supp·base > head·body` exactly; it could invalidate a rule whose
+  products exceed 2^53. The audit's CLI reproductions now print 0.0455,
+  0.0361 and 1/9 for `-ep`, `-eg`, `-ef` on `chi_big`, 1 and 25/36 for
+  `-en`, `-ey` on the perfect association and 1 for `-ez` on the
+  certainty case. FisherChi2 finds its mirror table exactly, and
+  FisherChi2 and FisherSupport sum tiny tails directly (for totals above
+  170), so they have a relative error bound. The certainty factor no
+  longer gets the wrong sign near independence at large totals (it gave
+  1 instead of −1.2e-19, and 0.1667 for an independent table at
+  n = 2^62). FisherProb decides near-ties of far-apart tables at 320
+  bits, so only probabilities equal within a relative 2^-200 count as
+  ties.
 - `MineItemsets`, `Itemsets`, `CollectItemsets`, `MineRules`, `Rules` and
   `CollectRules` return `ctx.Err()` when the context is canceled inside
   `OnStart` (which then returns nil) and nothing is mined: an empty

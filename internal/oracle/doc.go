@@ -115,24 +115,18 @@
 // exact values. The first rule of AggFirst follows the implementation's
 // item order (Order; docs/differences.md P6).
 //
-// Reference values carry a tolerance (Value.Tol, see ratTau and pTau):
-// 2^-44 relative for products and quotients and for chi², Yates and the
-// information, 2^-44·max(1, |v|) for the differences and Importance,
-// 2^-36 scaled by the conditioning of the chi² tail for p-values and by
-// ln Γ(n+1) (capped at 2^-20) for the Fisher tests. With Measure.Ref,
-// rules and item sets whose value lies within the tolerance of the
-// threshold are reported with Optional set, and DiffRules/DiffSets accept
-// them missing; Eval values must lie within EvalTol. The -i test is then
-// exact in integers.
-//
-// The information and the G-test p-value also name the known
-// implementation defect DefectALG6 with a derived bound
-// (Value.DefectTol): the implementation's information has an absolute
-// error of a few ulps of ln n, which the p-value amplifies near
-// independence. DiffRules and DiffSets accept and count such deviations
-// only with DiffOptions.Defects; Value.Matches never does, so the strict
-// tests of the implementation keep them, and the precision loss for
-// large total weights (audit ALG-1), in expected-failure tables.
+// Reference values carry a tolerance (Value.Tol): the error bound the
+// implementation documents for the measure (see ratTau and the constants
+// after it): 2^-44 relative for products and quotients, 2^-44·max(1, |v|)
+// for the differences and Importance, 2^-49 relative for chi² and Yates,
+// 2^-47 relative for the information, 2^-40 absolute for the certainty
+// factor, 2^-36 scaled by the conditioning of the chi² tail for p-values
+// and 2^-36 relative for the Fisher tests, for every valid table up to a
+// total weight of 2^63 - 1. With Measure.Ref, rules and item sets whose
+// value lies within the tolerance of the threshold are reported with
+// Optional set, and DiffRules/DiffSets accept them missing; Eval values
+// must lie within EvalTol. The -i test is exact in integers in both
+// modes.
 //
 // # Helpers
 //

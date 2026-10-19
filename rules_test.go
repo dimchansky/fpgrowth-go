@@ -84,8 +84,6 @@ func TestRulesEquivalenceCLI(t *testing.T) {
 // their tolerances), which catches formula errors.
 func TestRulesOracle(t *testing.T) {
 	t.Parallel()
-	defects := map[string]int{} // reference values within a known-defect bound (oracle.DefectALG6)
-	defer func() { t.Logf("known implementation defects accepted within their bounds: %v", defects) }()
 	r := rand.New(rand.NewPCG(51, 52))
 	pubApp := []Appearance{AppearBoth, AppearBody, AppearHead, AppearNone}
 	oraApp := []oracle.Appearance{oracle.AppearBoth, oracle.AppearBody, oracle.AppearHead, oracle.AppearNone}
@@ -164,7 +162,7 @@ func TestRulesOracle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{Defects: defects}); d != "" {
+			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{}); d != "" {
 				t.Fatalf("seed %d opt %+v eval %+v: reference measure:\n%s", seed, opt, *opt.Evaluation, d)
 			}
 		}
@@ -410,7 +408,7 @@ func FuzzMineRules(f *testing.F) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{Defects: map[string]int{}}); d != "" {
+			if d := oracle.DiffRules(ref, toOracleRules(got), oracle.DiffOptions{}); d != "" {
 				t.Fatalf("opt %+v eval %+v: reference measure:\n%s", opt, *opt.Evaluation, d)
 			}
 		}
