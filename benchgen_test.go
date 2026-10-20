@@ -57,6 +57,15 @@ type benchSpec struct {
 	// per item and transaction, compared with Density/100 (both exact
 	// IEEE operations). denseTxs names item j "i<j>", the files "<j>".
 	Density int
+	// Common > 0 (with Density > 0) makes the first Common items common:
+	// item j < Common is present with probability CommonDensity/100
+	// instead (two-tier data: a few common items, many rare ones).
+	Common, CommonDensity int
+	// Slices > 0 (with Density > 0) puts Slices mutually exclusive items
+	// first: with probability SliceDensity/100 a transaction holds one
+	// of them, chosen by the next PCG value modulo Slices (a categorical
+	// attribute). The Common items follow them, then the others.
+	Slices, SliceDensity int
 }
 
 // benchSpecs are the datasets of the benchmark suite and of the C
@@ -85,6 +94,25 @@ var benchSpecs = []benchSpec{
 	{Name: "d2000x40d60", Seed: 1, Transactions: 2000, Items: 40, Density: 60},
 	{Name: "d1000x30d80", Seed: 2, Transactions: 1000, Items: 30, Density: 80},
 	{Name: "d5000x60d40", Seed: 3, Transactions: 5000, Items: 60, Density: 40},
+	// The dense maximal workload of the independent audit (M5A-1, issue
+	// #19): many maximal sets of exactly the maximum size. The audit made
+	// it with Python random.Random(5); this is the same shape (seed 5),
+	// not the same bytes.
+	{Name: "d20000x200d30", Seed: 5, Transactions: 20000, Items: 200, Density: 30},
+	// Two-tier independent data (issue #19, performance review F1): 4
+	// common items at 20 % and 200 rare ones at 10 %. With -tm -n3 at
+	// smin 0.9·N·0.1²·0.2 every pair of rare items is a parent whose few
+	// children (the common items) are all maximal: sibling rows must not
+	// be built for them.
+	{Name: "t100000x204c4", Seed: 6, Transactions: 100000, Items: 204, Density: 10, Common: 4, CommonDensity: 20},
+	// Slices and spreaders (issue #19, performance review R2-1): 400
+	// rare items at 15 %, 4 exclusive slice items (80 % of the
+	// transactions hold one) and 10 spreaders at 65 %. With -tm -n3 at
+	// smin 1350 a rare item's children are its 4 slices (maximal) and
+	// 10 spreaders, which are never checked (they have frequent
+	// supersets below them): sibling rows must not be built for them.
+	{Name: "s50000x414", Seed: 7, Transactions: 50000, Items: 414, Density: 15, Common: 10, CommonDensity: 65,
+		Slices: 4, SliceDensity: 80},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -122,6 +150,12 @@ func (s benchSpec) validate() error {
 	case s.Density < 0 || s.Density > 100 || s.Density > 0 &&
 		(s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.MaxWeight != 0):
 		return fmt.Errorf("benchgen %s: invalid density", s.Name)
+	case s.Common < 0 || s.Common > s.Items || s.Common > 0 && s.Density == 0 ||
+		s.CommonDensity < 0 || s.CommonDensity > 100:
+		return fmt.Errorf("benchgen %s: invalid common items", s.Name)
+	case s.Slices < 0 || s.Slices+s.Common > s.Items || s.Slices > 0 && s.Density == 0 ||
+		s.SliceDensity < 0 || s.SliceDensity > 100:
+		return fmt.Errorf("benchgen %s: invalid slices", s.Name)
 	}
 	return nil
 }
@@ -203,12 +237,22 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 func benchIndependent(s benchSpec, fn func(tx benchTx) error) error {
 	src := rand.NewPCG(s.Seed, 1)
 	d := float64(s.Density) / 100
+	dc := float64(s.CommonDensity) / 100
+	ds := float64(s.SliceDensity) / 100
+	uniform := func() float64 { return float64(src.Uint64()<<11>>11) / (1 << 53) }
 	items := make([]int32, 0, s.Items)
 	for range s.Transactions {
 		items = items[:0]
-		for j := range int32(s.Items) {
+		if s.Slices > 0 && uniform() < ds {
+			items = append(items, int32(src.Uint64()%uint64(s.Slices)))
+		}
+		for j := int32(s.Slices); j < int32(s.Items); j++ {
+			p := d
+			if j < int32(s.Slices+s.Common) {
+				p = dc
+			}
 			// math/rand/v2's Rand.Float64, spelled out
-			if float64(src.Uint64()<<11>>11)/(1<<53) < d {
+			if float64(src.Uint64()<<11>>11)/(1<<53) < p {
 				items = append(items, j)
 			}
 		}

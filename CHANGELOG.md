@@ -22,9 +22,29 @@ The release workflow publishes the section whose heading matches the tag
   known numerical defects for large total weights (ALG-1, ALG-2, ALG-6)
   are recorded in expected-failure tables (all three are fixed since, see
   below, and the tables are gone). No library or CLI behavior changes.
+- Benchmarks: the dense maximal workload of audit finding M5A-1
+  (`d20000x200d30`: 20,000 transactions, 200 independent items at 30 %)
+  is a pinned dataset of the benchmark generator, and the Go-vs-C
+  comparison has `m5-d20000-*` rows for it (`-tc`/`-tm` with `-n2` to
+  `-n4`), so the size-limited maximal check can be measured from
+  committed code (#19).
 
 ### Changed
 
+- Maximal item sets with a maximum size (`-tm -n`, `TargetMaximal` with
+  `MaxSize`) are much faster on dense data with many maximal sets of the
+  maximum size. The complete extension check re-indexes a parent's
+  cover once and decides its children by population counts over the
+  parent's transactions, instead of scanning each child's cover. On the
+  audit's dense workload (`d20000x200d30 -tm -s2 -n3`, 1,313,400 sets)
+  the run takes about 20 s instead of 97 s (C: 39 s), with the same peak
+  memory. The output is unchanged. A parent's rows are built only when
+  two conditions hold. First, its children's actual check work has
+  reached half the build cost. Second, the children still to come
+  would save at least that cost. That count comes from a bound given
+  by the miner, scaled below the maximum size by how many such children
+  were actually checked. Data with few checked children per parent
+  therefore keeps its speed (#19, audit M5A-1).
 - The values of the information (`i`) and the G-test p-value (`g`), and
   of the Fisher tests (`f h m s`) for total weights above 170, differ from
   upstream's (and v0.1.0's) in the last bits on ordinary data: they are

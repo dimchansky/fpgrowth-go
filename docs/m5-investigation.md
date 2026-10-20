@@ -236,6 +236,28 @@ only on what is computed, not on how:
   depend on the order in which the cover transactions are visited, and
   intersecting with a transaction twice changes nothing, so the probe
   order of the closed scan (§4) does not affect the result.
+- **Sibling rows (maximal checks, issue #19, §4.1).** A maximal check
+  whose prefix is N = P ∪ {h} (|N| ≥ 2) may compute the same supports
+  from bit sets re-indexed to cover(P). The positions 0, 1, … are the
+  transactions of cover(P) in ascending order, a bijection onto
+  cover(P), and cover(N̂) = cover(N) ⊆ cover(P) (first bullet). So the
+  population count of R_h & R_j (weighted by the weight bit planes of
+  the positions) is the weight of the cover transactions of N̂ that
+  contain j, i.e. supp(N̂ ∪ {j}), for every item j with a row. Every
+  item j ∉ P with supp(P ∪ {j}) ≥ smin has a row. For every other item
+  j ∉ P, anti-monotonicity gives supp(N̂ ∪ {j}) ≤ supp(P ∪ {j}) < smin
+  (weights are not negative, M6), so j cannot make N̂ non-maximal. The
+  items of P are in N̂. Perfect extensions of P or of N keep their rows
+  (all ones over the cover, resp. over R_h) and are skipped because
+  they are in N̂; with `-x` an equal-support item is not in N̂ and is
+  counted like any other item. The child item h has a row, because
+  supp(P ∪ {h}) = supp(N̂) ≥ smin for every reported set (a reported
+  set is frequent, §3.4). So every j ∈ E \ N̂ is still decided, by the
+  same support as the ordinary check. The rows of level L are a
+  function of path level L (the cover of P) and the bag only, and
+  `checkPath` drops them whenever it recomputes a level ≤ L. Whether
+  and when the rows are built is a cost decision only; it changes no
+  verdict.
 
 ### 3.3 Order facts used (all closed/maximal variants)
 
@@ -412,7 +434,8 @@ differ):
 | --- | --- | --- |
 | `3e5d372` | per check from scratch (AND of the set's bit sets) | full rows for every item if they need ≤ 4× the horizontal items **or ≤ 64 MiB**, else per-item transaction lists (the rarest item's list filtered by containment) |
 | `671474e` | incremental per prefix depth (`checkPath`, bit sets only) | as above |
-| Stage 3 fix S3-1 (this version) | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
+| Stage 3 fix S3-1 | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
+| issue #19 (this version) | as S3-1 | as S3-1, plus sibling rows for maximal checks (§4.1) |
 
 The 64 MiB floor of the first two versions was a memory-for-speed
 trade-off: on `sparse-large` (2,592 frequent items at `-s0.05`, 3,115
@@ -423,6 +446,141 @@ n = 5–6, load 5–40): +21 to +31 % time for `-tc`/`-tm` `-s0.05 -n2/-n3`
 at −80 MB allocated. Compact rows remove the trade-off: they bound the
 vertical form relative to the input (§5) and are faster than both
 (§7).
+
+### 4.1 Sibling rows of the maximal check (issue #19)
+
+The independent audit's finding M5A-1 (§8): on dense data with many
+maximal sets of exactly the maximum size, every check of a maximal set
+counts its whole cover, and the checks of the children of one parent
+repeat that work over subsets of the same transactions. On
+`d20000x200d30 -tm -s2 -n3` all 1,313,400 checked sets are maximal.
+Their parents (19,701 pairs P) have 67 checked children each on
+average. A parent cover has about 1,800 transactions in 297 of 313
+words, a child cover about 540 transactions in 239 words. The check took
+91 % of the run (`scanMaximal` 86 %, about 2.1 ns per item visit).
+The auditor's suggested bound, supp(P ∪ {j}) ≥ smin, holds for 198 of
+the 198 candidate items there, so it prunes nothing by itself.
+
+`internal/fpg/extsib.go` re-indexes the parent's cover instead (the
+proof is in §3.2, last bullet):
+
+- **Rows.** For the parent level L = |prefix| − 2 ≥ 0 of `checkPath`,
+  one pass over the horizontal form of cover(P) assigns the positions
+  0, 1, … to the cover transactions. It sets, for every frequent item
+  that occurs there, the bit of each position in a row of
+  ⌈|cover(P)|/64⌉ words. It also sums supp(P ∪ {j}), and it fills the
+  positions' weight bit planes when some distinct transaction has a
+  weight above 1. Items with supp(P ∪ {j}) < smin and the items of P
+  get no entry. The entries are sorted by descending supp(P ∪ {j}), so
+  a non-maximal child usually stops at the first entries.
+- **Child check** (`sibMaximal`). The row R_h of the child item is the
+  child's cover; for every entry j not in the checked set,
+  supp(X ∪ {j}) = Σ_b 2^b · popcount(R_h & R_j & plane_b) (without
+  planes, the popcount of R_h & R_j). The check stops at the first j
+  that reaches smin. On the target this replaces about 32,000 random
+  item visits per child by 198 × 29 sequential word operations.
+- **One cache per path level.** Level L's rows depend only on path level
+  L. `checkPath` drops the rows of every level ≥ k, k being the first
+  level it recomputes, so a level's rows survive the checks of the
+  children's own subtrees between two children (all miners report in
+  post-order). A single cache for the deepest parent was reset after
+  every child at `-n4` (design review F2).
+- **When to build (actual work and the children that remain).** The
+  costs are in units of item visits and word tests; a build visit counts
+  like a scan visit (on the target profile 1.9 vs 2.1 ns).
+  - The ordinary maximal check counts its actual work: item visits in
+    `scanMaximal`, and word tests (times the weight planes) in
+    `vertMaximal`, up to its stop. The work of the children's ordinary
+    checks is accumulated per level.
+  - The build cost B is Σ_{t ∈ cover(P)} |t| plus the words to clear. It
+    is computed by one pass over the cover's transaction lengths, but
+    only once the work has reached 4·(L+1)·|cover(P)|. Every cover
+    transaction has at least L+1 items, so that pass costs at most a
+    quarter of the work. The gate delays a build until the work reaches
+    max(B/2, 4·(L+1)·|cover(P)|), i.e. by up to a factor of 8 on
+    transactions of about L+1 items.
+  - **The rule.** For the child h, the rows are built iff
+    1. the work reached B/2, and
+    2. (r + 1) · (w̄ − c_row) ≥ B, where w̄ is the average actual work of
+       the level's children so far, c_row = frequent items · words ·
+       planes is the rows' cost per child, and r bounds the children
+       that still follow h.
+  - **The bound r** is the minimum of two upper bounds:
+    - the miner's: the entries left in its loop over the parent's
+      conditional items (`recSimple`, `recSmp16` plus the packed items,
+      `recCmplx`, `recSingle` plus the packed items, `recTopDown`), or
+      the item count of the 16-items machine for every set it reports;
+      passed as `miner.left` on every check;
+    - the frequent items with a code below h, because every variant
+      checks a parent's children in descending code order (§3.3).
+
+    `TestExtCheckSiblingLeft` checks the miner's bound against the
+    actual later siblings in every variant (34,687 checks, 15,931 of them
+    exact). The bounds steer only the cost decision, never a verdict.
+  - **Which of them are checked.** Under a size limit a child whose
+    subtree holds a frequent superset is reported as non-maximal by the
+    repository and never checked; both bounds still count it.
+    - At the level whose children have the maximum size (|prefix| =
+      zmax), no child has a subtree, so every bounded sibling is checked
+      and r is used as it is.
+    - At a shallower level r is scaled by the fraction of bounded
+      children checked after a check, over the parents at that level
+      completed so far. For a parent with k checks the realized count is
+      k(k−1)/2 against Σ r. The fraction is 0 until a parent has
+      completed.
+
+    `TestExtCheckSiblingBound` pins the rule: the build child for the
+    code bound and for the miner bound, no build when no child follows,
+    and none for the first parent below the maximum size.
+  - Further gates: the rows must be estimated cheaper per child than the
+    child's ordinary check (c_row < `decide`'s estimate, the shared
+    helper `costs`), and they must fit the memory budget below. After
+    the build, a child uses the rows only if |entries| · words · planes
+    ≤ its ordinary estimate.
+  - Bound: a build costs at most twice the ordinary-check work already
+    spent at its level, plus the cost pass (a quarter of it). Condition 2
+    makes such a build an expected gain, not a bet on later children.
+  - History:
+    - An estimated rather than actual cost was rejected (design review
+      F1). A scan of a non-maximal set stops at its first frequent
+      extension, so the estimate can exceed the work by orders of
+      magnitude: on `d20000x200d30 -tm -s-2 -n2` the review's prototype
+      built rows 187 times and the run became 27 % slower. With actual
+      work it builds none.
+    - Threshold B/2 instead of B: target 19.8 s instead of 22.3 s (2
+      runs each).
+    - Condition 2 was added after the PR review (performance finding
+      F1). Without it, two-tier data became 23–34 % slower than `main`:
+      each pair of rare items is a parent whose 4–5 maximal children
+      are the common items, the work reached B/2 before the last child,
+      and the rows then answered one child. Those parents now build
+      nothing (§7.3).
+    - The scaling below the maximum size was added after the second
+      review round (performance finding R2-1). Data with slices and
+      spreaders: a rare item's 4 slice children are maximal, and its 10
+      spreader children are never checked. There the unscaled bound
+      expected 10 more children, so rows were built for the last slice:
+      +7 to +13 % against `main`. Using r only at the maximum size, and
+      0 below it, removed that regression, but it also removed the
+      whole `-n4` gain (143 s instead of 73 s): the 3-set children
+      there are checked although they are below the maximum size. The
+      history scaling keeps the `-n4` gain and builds rows for only the
+      first 12 parents of the new shape (§7.4).
+- **Memory budget.** The rows and planes of all levels together hold at
+  most 2 words per item occurrence of the horizontal form (16·O bytes).
+  A build that does not fit first releases the buffers of levels without
+  rows, then refuses the level until it is dropped. Peak use measured
+  (test statistics, §7.2): 6,200 words (50 KB) on the target, 8,400
+  words at `-n4`, against a budget of 2.4 M words.
+- **Closed checks** are unchanged: a closed check of a non-closed set
+  usually stops after a few candidates (§4), and the closed scan's
+  remaining quadratic case is issue #20.
+- **Test hooks** (`testHooks.sib`): never, at the first child, at child
+  number m, or by the production rule. A verify mode also runs the
+  ordinary check and panics on a different verdict. The statistics
+  (`sibStats`: builds, builds with several words, with planes, checks
+  answered from rows, refusals, releases, peak words) are asserted by
+  the tests (§6). The memory budget applies in every mode.
 
 ## 5. Memory and cost of the check
 
@@ -440,7 +598,8 @@ words, k items, O item occurrences (Σ |t|) and Z ≤ O non-zero words
 | weight planes (only if some distinct transaction has weight > 1) | 8·W·⌈log₂(max weight + 1)⌉ |
 | per-depth path cache (`checkPath`) | ≤ 12·W per level (12 bytes per non-zero cover word; level k ⊆ level k−1 ⊆ the first item's words), at most zmax levels (the prefix of a reported set has at most zmax items): ≤ 12·W·zmax. Tighter (independent audit, M5A-2): a transaction contributes a cover word to at most \|t\| levels, so all levels together hold ≤ 12·O bytes, independent of zmax |
 | scratch covers of `check` | ≤ 2 · 12·W |
-| per item: frequencies, order, stamps, counts, offsets | ≈ 44·k |
+| sibling rows of the maximal check (§4.1), all levels | ≤ 16·O (budget: 2 words per item occurrence); measured peak 50 KB on `d20000x200d30 -tm -s2 -n3` |
+| per item: frequencies, order, stamps, counts, offsets | ≈ 44·k (maximal: + 8·k build scratch) |
 
 Measured on `sparse-large` at `-s0.05` (k = 2,592, T = 199,337,
 W = 3,115, O = 1,765,336, Z = 924,374; the 4× rule fails, 62 dense
@@ -479,6 +638,63 @@ All on the final code, re-run after fix S3-1 with the same counts
 | `TestExtCheckLocalSweep` | negative control: the same traversal with a **local** check (only items below the prefix, i.e. the conditional tree's items; repository for the rest) | 5,072 of 33,000 runs (508 of 1,500 datasets) differ from the oracle |
 | `TestReporter_BoundaryPexNotEnough` (report) | minimized case on the reporter simulator: boundary pex alone reports `{b,c}`; with the complete check equal to brute force | pass |
 | `TestReporter_PropertyClosedMaximalZmax` (report) | 1,600 random simulator runs without the chain shortcut, with the complete check | pass |
+
+*Sibling rows (issue #19, 2026-10-20; numbers after the PR review's
+round 2).* The table's tests were re-run
+with `FPG_M5_CASES=20000 FPG_ORACLE_CASES=5000 FPG_M5_UNLIMITED=300
+FPG_SIB_CASES=2000`: `TestExtCheckOracle` 440,000 comparisons, 0
+differences; `TestOracle` 220,000 comparisons, 0 differences;
+`TestExtCheckUnlimited` 26,400 runs equal; `TestExtCheckBrute`,
+`TestExtCheckRegressions`, `TestExtCheckLocalSweep` (5,072 of 33,000 runs
+differ, as before) and `TestDeviations` pass. New tests
+(`internal/fpg/extsib_test.go`):
+
+| test | what | result |
+| --- | --- | --- |
+| `TestExtCheckSiblingRows` | 2,000 dense datasets (default 60) of 65–400 transactions (rows of up to 7 words, ragged last word; a third with independent items and unit weights, the rest with merged or random weights, i.e. planes), 4–20 items, zmax 2–4, `-x` in a third; maximal × 11 variants; rows built at the first child, at child m (random 0–5) and by the production rule, every verdict from rows verified against the ordinary check; a quarter also through `bruteCheck` (every call against the source transactions); counters asserted | 63,459 runs, 700,540 builds (230,643 with several words, 489,652 with planes, 260,821 under `-x`), 2,786,259 checks from rows, 0 differences |
+| `TestExtCheckSiblingRowsOracle` | `TestExtCheckOracle`'s first 300 generator cases, rows forced at the first child and at child seed mod 4 | 2,904 runs, 18,954 builds, 0 differences |
+| `TestExtCheckSiblingSupp` | random parents and children over 1–1,400 transactions (up to 22 words), weights 1, 0–3, 0–9: every row's supp(P ∪ {j}) and every child's row popcount against `suppWith`; every item without a row is infrequent with P | pass |
+| `TestExtCheckSiblingInvalidate` | 40 datasets × 400 `checkPath` steps: deeper, next sibling, shrink and regrow, the same last item under a different earlier item, jumps, interleaved `check` and one-item prefixes, random subsets of perfect extensions, wrapping set stamp; against a checker without rows | pass |
+| `TestExtCheckSiblingWork` | production rule: children that stop at once build nothing; 39 maximal children build after child 7 and use the rows; a budget below one level's rows refuses the build with the same verdicts | pass |
+| `TestExtCheckSiblingLeft` | the miner's bound of the later siblings (`miner.left`) against the later checks with the same parent, 40 dense datasets × 11 variants | 34,687 checks bounded (15,931 exactly), none exceeded |
+| `TestExtCheckSiblingBound` | the second build condition: build child 16 with the code bound (ascending children), 4 with the miner's exact bound (descending), none with a bound of 0, none for the first parent below the maximum size and about child 4 for the second | pass |
+| `TestExtCheckSiblingRelease` | the memory budget's release branch: level 0 holds rows, level 2 an old buffer, the build at level 1 fits only after releasing that buffer; level 0's rows survive and keep the ordinary verdicts | pass |
+
+Mutants of the sibling rows, each run against the default `go test
+./internal/fpg` (no environment variables): row filter `>` instead of
+`≥` smin, word index 0, weight planes ignored, invalidation from level
+k+1, no invalidation, rows with supp(P ∪ {j}) = supp(P) dropped (assumed
+perfect extensions), build scratch reset only for kept items, perfect
+extensions of the child counted (only h skipped), support test `>`
+instead of `≥` smin, last word of the rows dropped, the budget release
+also freeing built levels (review mutant M15), the release freeing
+nothing; and the cost-rule mutants (bound + 1, `freqBelow[h+1]`, the
+miner's bound ignored, the gain gate or all gates removed, the history
+scaling ignored): **all caught** (by `TestExtCheckSiblingInvalidate`,
+`TestExtCheckSiblingRowsOracle`, `TestExtCheckSiblingSupp`,
+`TestExtCheckSiblingRows`, `TestExtCheckSiblingRelease` or
+`TestExtCheckSiblingBound`; 18 of 19 mutants). The mutant
+"bit (r+1) mod 64 instead of r mod 64" survives; it is equivalent (a
+permutation of the positions within each word, applied to every row
+and plane alike).
+
+The audit's brute forces (`reference/_audit/m5/bf`, `bfs`, built from
+the archive) against the branch: with the production rule `bf -big -n
+2500` seeds 11 and 12, `-focus -big -eval 6 -n 2500` seed 21, `-focus
+-eval 6 -n 4000` seed 22, `-wide -focus -big -eval 8 -n 2500` seed 41,
+`-wide -eval 8 -n 3000` seed 42 and `bfs -n 400` seed 51: 189,000 runs,
+0 failures (2,781 builds in 247 runs, from a statistics build of the
+same code; 16,191 builds in 859 runs before the round-1 rule). With rows forced at the first child (`-big` seed 13,
+`-focus -big` seed 23, `-wide -focus -big` seed 43, plain `-n 4000` seed
+14, `bfs -n 200` seed 52) and at the third child (`-big` seed 15,
+`-focus -n 4000` seed 24), both verifying every verdict against the
+ordinary check: 199,000 runs, 0 failures. With a budget of 48 words
+(refusals and releases), by the production rule (`-big` seed 16,
+`-focus -big -eval 6` seed 25) and forced with verification (`-big`
+seed 17, `-wide -focus -big -eval 8` seed 44): 110,000 runs, 0
+failures. `go test -race ./...`,
+`FuzzMine` and `FuzzMineItemsets` (60 s each) and `cd reference &&
+./build.sh && go test ./...` (difftest) pass.
 
 Also green: `gofmt`, `go vet ./...`, `staticcheck ./...`,
 `go test -race ./...` (all packages, incl. CLI golden tests and the
@@ -623,6 +839,201 @@ slower (`dense.tab -tm -s2 -n3` +2.5 %, p = 0.010; `weighted.tab -w -tm`
 user+sys at 10 ms resolution; in-process `CloMaxLimited` ~ to +2.8 %).
 RSS is equal or lower everywhere.
 
+### 7.2 Sibling rows on dense maximal data (issue #19)
+
+The CLI with output to `/dev/null`, `/usr/bin/time -l`. Runs are
+interleaved per configuration: `main` (`3c0b7e8`), v0.1.0, the branch
+and, for the target, C native. Apple M1 Max, Go 1.27.2, load average
+4.6–4.8 (the first rounds of the target ran while the load decayed
+from an earlier job). Median [min–max] of wall seconds and max RSS MB;
+the set counts are equal for all Go binaries:
+
+| `d20000x200d30` | sets | n | `main` | v0.1.0 | branch | C |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| `-tm -s2 -n3` (target) | 1,313,400 | 5 | 97.12 [96.81–97.50] / 110.5 | 97.25 [97.14–97.67] / 110.5 | **19.82 [19.78–20.19] / 110.9** | 39.12 [39.02–39.51] / 1259.1 |
+| `-tm -s1 -n4` | 1,211,590 | 3 | 131.39 [131.06–131.78] / 111.3 | 131.06 [131.02–131.75] / 111.3 | **67.74 [67.68–67.78] / 111.8** | — |
+| `-tm -s2 -n3 -As` | 1,313,400 | 3 | 95.72 [95.72–96.20] | 95.79 [95.60–96.15] | **18.53 [18.44–18.54]** | — |
+| `-tm -s2 -n3 -At` | 1,313,400 | 3 | 119.93 [119.34–120.02] | 119.47 [119.25–120.22] | **42.31 [42.00–42.44]** | — |
+| `-tc -s2 -n3` | 1,333,500 | 3 | 10.42 [10.40–10.58] | 10.28 [10.20–10.45] | 10.41 [10.15–10.43] | — |
+| `-tm -s-2 -n2` (F1 row) | 0 | 5 | 0.62 [0.61–0.65] | 0.61 [0.61–0.62] | 0.62 [0.61–0.62] | — |
+| `-tm -s2 -n2` | 0 | 5 | 0.62 | 0.62 | 0.61 | — |
+
+On the target the branch is 4.9× faster than `main` and 2.0× faster than
+C, at a ninth of C's memory. The remaining profile (in-process, 18.5 s):
+building the rows 20 %, the mining 38 % (`csCondSupp`, `addCmplx`,
+`projCmplx`), the row popcounts 20 %, the ordinary checks before the
+builds (`scanMaximal`) 14 %, the cover updates (`and`) 6 %. 18,528
+parents build rows; 1,271,436 of the 1,313,400 checks are answered from
+them. The peak row memory is 6,200 words (50 KB). At `-n4` there are
+24,631 builds and the peak is 8,400 words. The F1 row (every check stops
+at once) builds nothing and is unchanged.
+
+The 28 other configurations ran 7 times each: every `m5-*` row of
+`configs.txt` except the slow ones, `sparse-large` with and without
+`-n`, `dense`, `sparse`, `weighted` and `long`, closed and maximal.
+benchstat of the wall time, branch against `main`: significant only
+`dense -tm -s2 -n3` −15.0 % (0.83 → 0.71 s, p = 0.002) and `d5000x60d40
+-tm -s5 -n3` −8.2 % (243 → 223 ms, p = 0.001). The others are `~`, and
+against v0.1.0 the result is the same. RSS differences are within
+±2 % (≤ 0.8 MB). The design review's prototype hint of +9 % on
+`d5000x60d40 -tm` (single runs) does not reproduce: that row has 1,379
+builds and is faster.
+
+In process, there were 6 interleaved rounds of `internal/fpg`
+`BenchmarkCloMaxLimited` and `BenchmarkMine`, and of the root
+`BenchmarkSuiteMaxSize`, `SuiteVariants` and `SuiteTargets` (88 rows),
+at load 4.2–4.8. benchstat, branch against `main`:
+
+- `SuiteMaxSize/dense/s=2/maximal/n=3`: −17.4 % (808 → 667 ms,
+  p = 0.004).
+- `CloMaxLimited/dense2000x40d60/tm/n3`: +0.5 % (p = 0.032). This data
+  builds no rows; the extra cost is the work counter.
+- `Mine/s/s-l0` and `Mine/m/s-l0`: −1.0 % and −0.7 %.
+- Three rows without a maximum size, where the checker is not installed
+  and no code changed: `SuiteTargets/dense/s=10/closed` +2.4 %,
+  `SuiteVariants/dense/s=10/frequent/simple` +1.1 %, `maximal/complex`
+  +1.9 %. Against v0.1.0 the same benchmarks show −2.7 to +2.4 %; these
+  are noise.
+- Everything else is `~`.
+
+### 7.3 Review round 1: few children per parent (issue #19)
+
+The PR review found a shape that the first build rule (B/2 ski rental
+alone) made slower. It is two-tier independent data: a few common items
+and many rare ones, where every pair of rare items is a parent whose
+4–5 maximal children are the common items. The children's work reached
+B/2 just before the last child, the rows answered one child, and
+`-tm -n3` became 23–34 % slower than `main` (the reviewer's runs, 5
+each, ranges separated; −As, −At and the default variant alike).
+
+The fix is condition 2 of §4.1: build only if the children still to
+come save the build cost, with the miner's bound of those children.
+Re-measured on the pinned `t100000x204c4` (`m5-tier-*` rows) and on the
+reviewer's shape at 200,000 transactions (`w1`: 200 rare items at 10 %,
+4 common ones at 20 %). `blk1` is an adversary for a code-order bound
+alone: half the transactions hold 50 frequent items that never occur
+with the rare/common block. Median wall s:
+
+| data, options | n | `main` | v0.1.0 | before the fix | branch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `t100000x204c4 -tm -s-180 -n3` | 7 | 3.42 | 3.48 | 4.28 (1 run) | 3.42 |
+| `… -As` | 7 | 3.33 | 3.15 | 4.09 (1 run) | 3.27 |
+| `… -At` | 7 | 5.60 | 5.82 | 6.79 (1 run) | 5.69 |
+| `… -Ad` | 7 | 3.31 | 3.25 | — | 3.30 |
+| `t100000x204c4 -tc -s-180 -n3` (control) | 7 | 2.14 | 2.21 | — | 2.14 |
+| `w1 -tm -s-360 -n3` | 10 | 9.26 | — | 12.23 (1 run) | 9.46 |
+| `blk1 -tm -s-180 -n3` | 10 | 6.75 | — | 7.76 (1 run) | 6.76 |
+
+benchstat finds no significant difference between the branch and
+`main` on these rows. A statistics build shows 0 sibling-row builds on
+all three datasets. The machine was loaded (1-minute load average
+5–30 in the `w1`/`blk1` rounds), so the ranges are wide: `w1` 8.96–12.97
+(main) and 9.11–12.16 s (branch). The target and its neighbours keep
+their gain (n = 5 / 3, the same rounds):
+
+| `d20000x200d30` | `main` | branch | C |
+| --- | ---: | ---: | ---: |
+| `-tm -s2 -n3` | 97.35 | 19.81 | 39.23 |
+| `-tm -s1 -n4` | 132.82 | 67.81 | — |
+| `-tm -s2 -n3 -As` | 96.30 | 18.40 | — |
+| `-tm -s2 -n3 -At` | 119.88 | 42.17 | — |
+| `-tc -s2 -n3` (n = 7) | 10.32 | 10.24 | — |
+
+The 28 fast configurations of §7.2 (7 runs each, benchstat against
+`main`) show only improvements: `dense -tm -s2 -n3` −14.6 %,
+`d5000x60d40 -tm -s5 -n3` −8.3 %, and two 10 ms-resolution artefacts
+(`d1000x30d80 -tm -n2`, `weighted -w -tc`).
+
+The full root `BenchmarkSuite*` (99 rows) and `internal/fpg`
+`CloMaxLimited`/`Mine` ran in 6 interleaved rounds at load 5–9:
+
+- `SuiteMaxSize/dense/s=2/maximal/n=3`: −13.6 %.
+- Three rows without a maximum size, where the checker is not
+  installed: +2.2 % to +9.1 % (two of them CSV sources at ±13 %).
+- `CloMaxLimited/dense2000x40d60/tm/n3`: +2.6 % (p = 0.015). After the
+  work counter was moved out of the scan's inner loop, it was re-run
+  with 10 interleaved rounds: all 12 `CloMaxLimited` rows are `~`.
+
+**Worst case.** A level whose rows are built and then not used costs
+at most about 3.25 times its ordinary checks: the build is at most
+twice the work already spent, and the cost pass a quarter. Condition 2
+allows a build only if the children still to come are expected to
+save B at the average work of the children so far. A loss therefore
+needs the later children to stop much earlier than the earlier ones,
+or fewer of them than the miner's bound. The second review round
+found such a shape (§7.4).
+
+### 7.4 Review round 2: later siblings that are never checked (issue #19)
+
+The reviewer's shape, regenerated with its generator and pinned as
+`s50000x414`, uses slices and spreaders. 400 rare items at 15 %. One
+of 4 exclusive slice items in 80 % of the transactions. 10 spreaders
+at 65 % in all transactions. A rare item's slice children are maximal
+and count their covers. Its spreader children have frequent supersets
+in their subtrees, so they are never checked. The round-1 rule counted
+the 10 spreaders as children to come and built rows for the last
+slice, which answered one child (399 builds, 399 checks from rows).
+After the fix of §4.1 ("Which of them are checked") a statistics build
+shows 12 builds and 60 checks from rows: the first parents, before a
+history exists.
+
+CLI, interleaved `main` / v0.1.0 / round-2 head (`cf4c6d7`) / branch,
+median wall s. The machine was loaded (load average 4–37), so ranges
+are wide.
+
+| data, options | n | `main` | v0.1.0 | `cf4c6d7` | branch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `s50000x414 -tm -s-1350 -n3` | 7 | 2.52 | 2.43 | 2.73 (1 run) | 2.47 |
+| `… -As` | 7 | 2.35 | 2.33 | 2.50 (1 run) | 2.32 |
+| `… -At` | 7 | 4.58 | 4.63 | 5.24 (1 run) | 4.61 |
+| reviewer's s400 (200,000 transactions) `-tm -s-5400 -n3` | 5 | 10.72 | 10.47 | 12.57 (1 run) | 10.45 |
+| reviewer's s1000 (100,000 transactions) `-tm -s-2700 -n3` | 5 | 18.40 | 18.27 | 19.12 (1 run) | 18.61 |
+| `t100000x204c4 -tm -s-180 -n3` | 7 | 3.96 | 4.01 | — | 4.08 |
+| `… -As` | 7 / 10 | 3.68 / 3.62 | 3.80 | — | 3.83 / 3.73 |
+| `… -At` | 7 | 6.75 | 6.46 | — | 6.71 |
+| `… -Ad` | 7 | 3.80 | 3.73 | — | 3.93 |
+| `w1`, `blk1` (§7.3) | 5 | 9.75, 6.85 | 9.49, 6.74 | — | 9.42, 6.81 |
+
+The gains of the target and its neighbours (n = 5 / 3):
+
+| `d20000x200d30` | `main` | branch | C |
+| --- | ---: | ---: | ---: |
+| `-tm -s2 -n3` | 104.75 | 21.78 | 41.83 |
+| `-tm -s1 -n4` | 142.79 | 74.33 | — |
+| `-tm -s2 -n3 -As` | 102.52 | 20.23 | — |
+| `-tm -s2 -n3 -At` | 126.13 | 45.51 | — |
+| `-tc -s2 -n3` (n = 7) | 11.50 | 11.65 | — |
+
+These absolute times are about 7 % above §7.2–7.3 for all binaries
+alike (machine state).
+
+- **What the alternatives cost.**
+  - Using the bound only at the maximum size, and 0 below it, would
+    lose the whole `-n4` gain: 143.4 s against 73.6 s, one run each.
+  - The history scaling keeps it: 74.3 s.
+  - On the target (all children at the maximum size) the two are the
+    same.
+- **benchstat, branch against `main`** on all CLI rows (the 28 fast
+  configurations of §7.2 and the rows above):
+  - Improvements only: the target, dense `-tm` −12.5 %, d5000 `-tm`
+    −9.1 %, and sparse-large `-tm -n2` −1.9 %.
+  - One exception: `t100000x204c4 -tm -n3 -As` +3.9 % (n = 7, p =
+    0.001). It builds no rows, and it is `~` (p = 0.42) in a re-run with
+    10 interleaved rounds.
+  - The largest median ratio on the guard rows is +3.4 %
+    (`t100000x204c4 -Ad`, not significant).
+- **Full root `BenchmarkSuite*`** (99 rows) and `CloMaxLimited`/`Mine`,
+  6 interleaved rounds against `main`:
+  - `SuiteMaxSize` maximal n=3 −13.3 %, n=5 −4.2 %, `Mine/m/s-l0`
+    −1.5 %.
+  - Nothing slower.
+- **Measured worst case and bound.** The measured worst case is the
+  `-As` row above: +3.9 % in one round, not significant in another.
+  The bound stays as stated in §7.3: a level costs at most about 3.25×
+  its ordinary checks. It is reached only if rows are built and then go
+  unused, which both bounds and the history make unlikely but not
+  impossible.
+
 ## 8. Decision
 
 The size-limited search with the complete extension check is exactly
@@ -655,6 +1066,18 @@ compressed FP-trees. The result is exact; the time is accepted for now.
 A possible optimization is to share the work among the children of a
 boundary node (one pass over the parent's cover bounds every child's
 extensions); it is deferred.
+
+*Update (2026-10-20, issue #19):* done, as sibling rows (§4.1, proof in
+§3.2). The bound alone prunes nothing on that workload; the gain comes
+from re-indexing the parent's cover, so that a child's check counts
+over the parent's transactions in sequential words. The run takes
+19.8 s instead of 97.1 s (C 39.1 s), with the same peak memory. `-n4` is
+2× faster, and `dense -tm -s2 -n3` 15 % faster. Two review rounds
+found shapes where rows were built for too few children (§7.3, §7.4).
+After their fixes the worst measured row is +3.9 % in one round and
+not significant in a repeat (§7.4). The bound is not zero: a level
+whose rows go unused costs at most about 3.25× its ordinary checks.
+Closed checks are unchanged.
 
 Reusing covers along the search path (`checkPath`, the cover of a set
 is the cover of its prefix) was implemented after this report's first

@@ -212,9 +212,11 @@ func (m *miner) recSimple(t *fpTree, depth int) error {
 			}
 			m.fp.nodes = m.fp.nodes[:mark] // release the projection
 		}
+		m.left = later(i, t.cnt, t.dir)
 		if err := m.rep.Report(); err != nil {
 			return err
 		}
+		m.left = -1
 		m.rep.Remove(1)
 	}
 	return nil
@@ -367,7 +369,11 @@ func (m *miner) recSmp16(t *fpTree, depth int) error {
 					t.fim.add(uint16(nodes[node].id.PackedBits()), nodes[node].supp)
 				}
 			}
+			// every set the machine reports has its siblings among
+			// the packed items
+			m.left = packedCount(h.item)
 			r, err := t.fim.mine()
+			m.left = -1
 			if err != nil {
 				return err
 			}
@@ -395,9 +401,12 @@ func (m *miner) recSmp16(t *fpTree, depth int) error {
 			}
 			m.fp.nodes = m.fp.nodes[:mark] // release the projection
 		}
+		// the packed head counts as up to all of its items
+		m.left = later(i, t.cnt, t.dir) + packedCount(t.heads[0].item)
 		if err := m.rep.Report(); err != nil {
 			return err
 		}
+		m.left = -1
 		m.rep.Remove(1)
 	}
 	return nil

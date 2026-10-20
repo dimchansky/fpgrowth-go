@@ -68,12 +68,22 @@ committed; files are written to temporary directories.
 | `d2000x40d60` (M5) | 2,000 | 40 | 24.0 / 12 / 32 | 0.599 | independent, 60 % | — | no | 131,953 | `4b7365057352` |
 | `d1000x30d80` (M5) | 1,000 | 30 | 24.1 / 17 / 29 | 0.805 | independent, 80 % | — | no | 64,348 | `868be1637571` |
 | `d5000x60d40` (M5) | 5,000 | 60 | 24.0 / 11 / 37 | 0.400 | independent, 40 % | — | no | 339,938 | `4017ec71e7fa` |
+| `d20000x200d30` (M5A-1) | 20,000 | 200 | 60.0 / 36 / 86 | 0.300 | independent, 30 % | — | no | 4,137,790 | `a91a38aab4da` |
+| `t100000x204c4` (#19) | 100,000 | 204 | 20.8 / 5 / 43 | 0.102 | independent: 4 items 20 %, 200 items 10 % | — | no | 7,144,752 | `768bd8ccd3c2` |
+| `s50000x414` (#19) | 50,000 | 414 | 67.2 / 39 / 98 | 0.162 | 4 exclusive items (80 %), 10 at 65 %, 400 at 15 % | — | no | 12,205,031 | `0f109186d108` |
 
 Density is the average length divided by the number of items used. The
 three `dNxKdP` datasets (added by review fix S3-2, seeds 1–3) are the
 independent dense items of the [M5 investigation](m5-investigation.md)
 §7, generated exactly like its in-process `denseTxs`; they are used only
-by the M5 rows of `reference/bench/configs.txt`.
+by the M5 rows of `reference/bench/configs.txt`. `d20000x200d30` (seed 5,
+issue #19) is the dense maximal workload of the independent audit
+(M5A-1, below), which the audit made with Python `random.Random(5)` and
+did not commit; the spec has the same shape (and the same set counts),
+not the same bytes. `t100000x204c4` (seed 6) is two-tier data from the
+PR review of #19 (performance finding F1): every pair of rare items is a
+parent with only the 4 common items as maximal children, a guard
+against building sibling rows that cannot pay off (`m5-tier-*` rows).
 "Keep" is the probability that each item of a chosen planted pattern is
 included; `dense` keeps whole patterns, so many item sets have perfect
 extensions and the closed sets are far fewer than the frequent ones.
@@ -643,6 +653,59 @@ early and counts the whole cover per set. The dataset is not part of
 ([audit/m5.md](audit/m5.md)). Sharing the work among sibling
 sets is a possible optimization, deferred.
 
+*Note (2026-10-20, issue #19):* the workload is now reproducible as the
+pinned dataset `d20000x200d30` and the `m5-d20000-*` rows of
+`configs.txt`. Re-measured on `main` (`3c0b7e8`), v0.1.0 and C native
+(Apple M1 Max, load average 3.3–12.8; `/usr/bin/time -l`, output to
+`/dev/null`, 5 interleaved runs, median [min–max]; wall s / max RSS MB):
+
+| options | sets | Go `main` | Go v0.1.0 | C 6.21 |
+| --- | ---: | --- | --- | --- |
+| `-tm -s2 -n3` | 1,313,400 | 97.06 [97.03–97.20] / 111.6 | 97.47 [97.20–97.76] / 111.0 | 39.21 [39.07–39.65] / 1259.1 |
+| `-tc -s2 -n3` | 1,333,500 | 10.31 [10.22–10.34] / 111.3 | 10.24 [10.15–10.24] / 111.0 | 39.26 [39.06–39.49] / 1259.1 |
+| `-tm -s2 -n2` (3 runs) | 0 | 0.63 [0.62–0.65] / 107.6 | 0.62 [0.61–0.63] / 107.7 | 8.40 [8.39–8.67] / 1259.0 |
+
+The set counts equal the audit's (every 3-set is frequent, no 4-set is),
+and the times match its 99.7 s / 39.0 s within noise. A CPU profile of
+the `-tm -s2 -n3` run attributes 91 % of the time to the extension check
+(`checkPath` cum), 86 % to `scanMaximal` alone.
+
+*Update (2026-10-20, issue #19):* the maximal check now decides the
+children of a parent from sibling rows, i.e. bit sets re-indexed to the
+parent's cover ([M5 §4.1](m5-investigation.md#41-sibling-rows-of-the-maximal-check-issue-19)).
+5 interleaved runs, load 4.6–4.8, median [min–max] wall s / max RSS MB:
+
+| `d20000x200d30` | Go `main` | Go v0.1.0 | Go branch | C 6.21 |
+| --- | --- | --- | --- | --- |
+| `-tm -s2 -n3` | 97.12 [96.81–97.50] / 110.5 | 97.25 / 110.5 | **19.82 [19.78–20.19] / 110.9** | 39.12 / 1259.1 |
+| `-tm -s1 -n4` (3 runs) | 131.39 / 111.3 | 131.06 / 111.3 | **67.74 / 111.8** | — |
+| `-tm -s2 -n3 -At` (3 runs) | 119.93 | 119.47 | **42.31** | — |
+| `-tc -s2 -n3` (3 runs) | 10.42 | 10.28 | 10.41 | — |
+| `-tm -s-2 -n2` | 0.62 | 0.61 | 0.62 | — |
+
+On 28 other configurations (all fast `m5-*` rows, `sparse-large`,
+`dense`, `sparse`, `weighted`, `long`; 7 runs each) only `dense -tm -s2
+-n3` (−15.0 %) and `d5000x60d40 -tm -s5 -n3` (−8.2 %) changed
+significantly; the rest is within noise. The in-process benchmarks are
+in M5 §7.2.
+
+The PR review found two-tier data, where every parent has only 4
+maximal children, that this first build rule made 23–34 % slower
+(`-tm -n3`). The final rule also requires the remaining children to pay
+for the build ([M5 §4.1](m5-investigation.md#41-sibling-rows-of-the-maximal-check-issue-19)).
+On the pinned `t100000x204c4` (`m5-tier-*` rows) and the reviewer's
+shape it now builds nothing and matches `main` (3.42 vs 3.42 s for
+`-tm -s-180 -n3`, n = 7). The target is unchanged at 19.8 s
+([M5 §7.3](m5-investigation.md#73-review-round-1-few-children-per-parent-issue-19)).
+
+The second review round found slices-and-spreaders data (pinned as
+`s50000x414`, `m5-split-*` rows), where most later siblings are never
+checked. It was +7 to +13 % slower than `main` until the later-sibling
+bound was scaled below the maximum size. It now measures 2.47 vs
+2.52 s. The worst row measured since then is +3.9 % in one round and
+`~` in a repeat. The bound is 3.25× of the ordinary checks per level
+([M5 §7.4](m5-investigation.md#74-review-round-2-later-siblings-that-are-never-checked-issue-19)).
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package
@@ -708,14 +771,17 @@ go test -run '^$' -bench 'BenchmarkCLI' -benchmem -count 6 ./cmd/fpgrowth | tee 
 benchstat suite.txt; benchstat internal.txt
 benchstat old.txt new.txt          # after a change: same machine, same toolchain
 
-# Go vs C (about 6 minutes; needs a C compiler and GNU make)
+# Go vs C (about 6 minutes without the slow m5-d20000-* rows, which an
+# unfiltered run includes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
-# (configs.txt has 15 M5 rows more than the 32 measured above: m5-*,
-# large-[cm]-n*, added by review fix S3-2; '^(sparse|large-[scm]$|dense|long|weighted)'
+# (configs.txt has 30 M5 rows more than the 32 measured above: m5-*,
+# large-[cm]-n* (review fix S3-2) and the slow m5-d20000-* (issue #19); '^(sparse|large-[scm]$|dense|long|weighted)'
 # selects the original 32)
 # only the size-limited closed/maximal (M5) configurations: the pinned
 # dNxKdP datasets and sparse-large with -n (reference/bench/README.md)
-(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-|large-)')
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-d[125]000-|m5-tier-|m5-split-|large-)')
+# the dense maximal workload of finding M5A-1 (issue #19; slow: Go about 100 s and C about 40 s per -tm -n3 run, over an hour in all)
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5a1 '^m5-d20000-')
 
 # profiles (one workload at a time)
 go test -c -o /tmp/root.test .

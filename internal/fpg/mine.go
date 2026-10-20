@@ -3,6 +3,7 @@ package fpg
 import (
 	"context"
 	"math"
+	"math/bits"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -28,6 +29,11 @@ type miner struct {
 	pack   int  // FIM16 field (number of items for the 16-items machine)
 	dir    int  // item loop direction (fpg->dir)
 	clomax bool // closed or maximal target
+	// left is, while a node's set is reported, an upper bound of the
+	// sibling nodes that follow it in its loop (-1: unknown). The
+	// maximal check uses it to decide whether sibling rows pay off
+	// (extsib.go); it never changes a result.
+	left int
 	// limited: closed/maximal search limited by the maximum size zmax,
 	// with the complete extension check (see xable2).
 	limited bool
@@ -61,6 +67,11 @@ type testHooks struct {
 	// rows selects the form of the extension checker's bit sets
 	// (rowsAuto by default).
 	rows rowMode
+	// sib selects when the maximal check builds sibling rows (sibAuto by
+	// default) and whether it verifies them.
+	sib sibHook
+	// checker, if set, is called with the run's extension checker.
+	checker func(*extChecker)
 }
 
 // mineItemSets runs the item set variant selected by c (fpgvars[algo]).
@@ -78,6 +89,7 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		pack:   c.Pack,
 		dir:    1,
 		clomax: c.Target == report.TargetClosed || c.Target == report.TargetMaximal,
+		left:   -1,
 	}
 	if m.clomax && c.ZMax < bag.MaxSize() {
 		// A maximum size below the longest transaction: limited search
@@ -86,12 +98,22 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		if err != nil {
 			return err
 		}
+		chk.sib, chk.zmax = h.sib, c.ZMax
+		if h.checker != nil {
+			h.checker(chk)
+		}
 		m.limited, m.zmax = true, c.ZMax
+		// chk.left: the siblings that can follow the set (cost only)
 		fn := func(set []tract.Item, supp tract.Supp) bool {
+			chk.left = m.left
 			return chk.checkPath(rep.Items(), set, supp)
 		}
 		if h.cloMaxCheck != nil {
-			fn = h.cloMaxCheck(chk, rep)
+			hook := h.cloMaxCheck(chk, rep)
+			fn = func(set []tract.Item, supp tract.Supp) bool {
+				chk.left = m.left
+				return hook(set, supp)
+			}
 		}
 		rep.SetCloMaxCheck(fn)
 	}
@@ -113,6 +135,24 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 	default:
 		return m.mineComplex()
 	}
+}
+
+// later returns the number of loop entries after index i of a loop over
+// cnt entries in direction dir.
+func later(i, cnt, dir int) int {
+	if dir < 0 {
+		return i
+	}
+	return cnt - 1 - i
+}
+
+// packedCount returns the number of items of a packed head item (0 for
+// an ordinary item).
+func packedCount(it tract.Item) int {
+	if it >= 0 {
+		return 0
+	}
+	return bits.OnesCount32(uint32(it) & 0xffff)
 }
 
 // buildCheckEvery is the number of transactions between two cancellation

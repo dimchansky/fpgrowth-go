@@ -36,9 +36,14 @@ func (m *miner) recSingle(t *fpTree, n int) error {
 				return err
 			}
 		}
+		m.left = n - 1 - i // and the packed items, wherever they come
+		if t.fim != nil {
+			m.left += packedCount(t.heads[0].item)
+		}
 		if err := m.rep.Report(); err != nil {
 			return err
 		}
+		m.left = -1
 		m.rep.Remove(1)
 	}
 	return nil
@@ -100,7 +105,12 @@ func (m *miner) projectSingle(t *fpTree, i int) error {
 		m.rep.AddPex(h.item)
 	}
 	if t.fim != nil {
-		if _, err := t.fim.mine(); err != nil {
+		// every set the machine reports has its siblings among its
+		// (at most 16) items
+		m.left = 16
+		_, err := t.fim.mine()
+		m.left = -1
+		if err != nil {
 			return err
 		}
 	}
@@ -152,7 +162,12 @@ func (m *miner) mineSingle() error {
 		return err
 	}
 	if t.fim != nil {
-		if _, err := t.fim.mine(); err != nil {
+		// every set the machine reports has its siblings among its
+		// (at most 16) items
+		m.left = 16
+		_, err := t.fim.mine()
+		m.left = -1
+		if err != nil {
 			return err
 		}
 	}
