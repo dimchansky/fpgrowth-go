@@ -175,7 +175,10 @@ func (m *miner) mine16(dst *csTree, id, n int, imap []int32) error {
 		m.fim.add(b, p.w[k])
 		start = end
 	}
+	// every set the machine reports has its siblings among its n items
+	m.left = n
 	_, err := m.fim.mine()
+	m.left = -1
 	return err
 }
 
@@ -394,9 +397,11 @@ func (m *miner) recCmplx(t *csTree, depth int) error {
 			}
 			m.cs.nodes = m.cs.nodes[:mark] // release the projection
 		}
+		m.left = later(i, t.cnt, m.dir)
 		if err := m.rep.Report(); err != nil {
 			return err
 		}
+		m.left = -1
 		m.rep.Remove(1)
 	}
 	return nil

@@ -28,15 +28,28 @@ import (
 // verdict is therefore the complete check's, item by item.
 //
 // The rows of level L are a function of path[L] only and are dropped
-// whenever checkPath recomputes a level ≤ L. They are built when the
-// actual work of the children's ordinary checks at that level (item
-// visits of scanMaximal, word tests of vertMaximal) reaches half the
-// build cost, so building (with the pass that computes its cost) costs
-// at most 2.25 times the work already spent there (ski rental): a level
-// whose rows never pay off costs at most 3.25 times its ordinary checks.
-// After the build a child uses the rows only if they are estimated
-// cheaper than its ordinary check. The rows of all levels together stay
-// within sibBudget words per item occurrence of the bag.
+// whenever checkPath recomputes a level ≤ L. Whether they are built is a
+// cost decision (sibWorth), in units of item visits and word tests (a
+// build visit counts like a scan visit; on the M5A-1 target they cost
+// about the same time, 1.9 and 2.1 ns): the children's ordinary checks
+// at that level count their actual work (scanMaximal, vertMaximal), and
+// the rows are built only if
+//
+//   - that work reached half the build cost B (so a build never costs
+//     more than twice the work already spent at the level), and
+//   - the children that can still follow, including the current one,
+//     would save at least B: their number times (the average actual work
+//     of a child so far − the rows' cost per child) ≥ B.
+//
+// The number of children after h is bounded by the miner (c.left: the
+// entries left in its loop over the parent's conditional items, or the
+// items of the 16-items machine that reports the set) and by the
+// frequent items with a code below h (freqBelow[h]; the children of P
+// are checked in descending code order in all variants,
+// docs/m5-investigation.md §3.3). Both are upper bounds; a wrong bound
+// could only make the cost decision worse, never a verdict. After the build a child uses the rows only if they are
+// estimated cheaper than its ordinary check. The rows of all levels
+// together stay within sibCap words (sibBudget per item occurrence).
 
 // sibMode selects when sibling rows are built.
 type sibMode uint8
@@ -44,8 +57,8 @@ type sibMode uint8
 const (
 	sibAuto  sibMode = iota // by actual work and cost (production)
 	sibOff                  // never (tests)
-	sibForce                // at the first child, without gates (tests)
-	sibAt                   // at child number sibHook.at of a parent, without gates (tests)
+	sibForce                // at the first child, without cost gates (tests)
+	sibAt                   // at child number sibHook.at of a parent, without cost gates (tests)
 )
 
 // sibHook are the test settings of the sibling rows.
@@ -68,7 +81,7 @@ type sibLevel struct {
 	refused bool  // over the memory budget until the level is dropped
 	work    int64 // actual work of the ordinary checks of children so far
 	need    int64 // build cost (-1: not yet computed)
-	kids    int   // children checked so far (sibAt)
+	kids    int   // children checked so far
 	words   int   // words per row: ⌈|cover|/64⌉
 	ents    []sibEnt
 	rows    []uint64 // row r at rows[r*words:], r in touch order
@@ -78,14 +91,16 @@ type sibLevel struct {
 // sibEnt is an item with a row: its offset in rows and supp(P ∪ {item}).
 type sibEnt struct {
 	item tract.Item
-	off  int32
+	off  int
 	supp tract.Supp
 }
 
 // sibStats counts the use of the sibling rows (tests, docs).
 type sibStats struct {
-	builds, multiWord, weighted, checks, refused int
-	peakWords                                    int // peak words of all levels
+	builds, multiWord, weighted, checks int
+	refused                             int // builds refused by the memory budget
+	released                            int // budget releases of other levels' buffers
+	peakWords                           int // peak words of all levels
 }
 
 // sibReset drops the sibling rows of levels from and up (their path
@@ -107,6 +122,20 @@ func (c *extChecker) sibWords() int {
 	return n
 }
 
+// sibPlanes returns the number of weight bit planes (0: unweighted).
+func (c *extChecker) sibPlanes() int {
+	if c.planes == nil {
+		return 0
+	}
+	return len(c.planes) / c.words
+}
+
+// sibWant returns the words that rows of level L take at most (every
+// frequent item and the planes, over the level's cover).
+func (c *extChecker) sibWant(L int) int {
+	return (c.nFreq + c.sibPlanes()) * ((c.path[L].n + 63) / 64)
+}
+
 // sibCheck decides the marked set, whose prefix is prefix (at least two
 // items) and whose cover is path[len(prefix)-1] with n transactions,
 // from the sibling rows of its parent level if they exist or are worth
@@ -118,12 +147,10 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 		c.sibs = append(c.sibs, sibLevel{need: -1})
 	}
 	s := &c.sibs[L]
-	pl := 1
-	if c.planes != nil {
-		pl = len(c.planes) / c.words
-	}
-	// today's estimated cost of the child's check (decide)
-	est := int64(min(n*(len(c.txItems)/max(len(c.txW), 1)+1), len(c.order)*len(c.nz)*pl))
+	pl := int64(max(c.sibPlanes(), 1))
+	hc, vc := c.costs(n) // the child's ordinary check, estimated
+	est := int64(min(hc, vc))
+	h := prefix[L+1]
 	if !s.built && !s.refused {
 		var build bool
 		switch c.sib.mode {
@@ -132,9 +159,9 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 		case sibAt:
 			build = s.kids >= c.sib.at
 		case sibAuto:
-			build = c.sibWorth(L, s, est, pl)
+			build = c.sibWorth(L, s, est, pl, h)
 		}
-		if build {
+		if build && c.sibFits(L) {
 			c.sibBuild(L, prefix)
 		}
 	}
@@ -142,11 +169,10 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 	if !s.built {
 		return false, false
 	}
-	gated := c.sib.mode == sibAuto
-	if gated && int64(len(s.ents))*int64(s.words)*int64(pl) > est {
+	if c.sib.mode == sibAuto && int64(len(s.ents))*int64(s.words)*pl > est {
 		return false, false // the ordinary check is estimated cheaper
 	}
-	got, found := c.sibMaximal(s, prefix[L+1])
+	got, found := c.sibMaximal(s, h)
 	if !found {
 		return false, false // cannot happen for a frequent child
 	}
@@ -160,23 +186,33 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 	return got, true
 }
 
-// sibWorth reports whether the rows of level L should be built now
-// (sibAuto): the actual work spent on the level's children reached half
-// the build cost, the rows are cheaper per child than the child's
-// estimated ordinary check, and they fit the memory budget.
-func (c *extChecker) sibWorth(L int, s *sibLevel, est int64, pl int) bool {
+// sibWorth reports whether the rows of level L are worth building now
+// (sibAuto) for the child h, whose ordinary check is estimated at est:
+// see the cost rule at the top of this file.
+func (c *extChecker) sibWorth(L int, s *sibLevel, est, pl int64, h tract.Item) bool {
+	if s.kids == 0 {
+		return false // no child's actual work known yet
+	}
 	lv := &c.path[L]
 	words := int64((lv.n + 63) / 64)
-	if int64(c.nFreq)*words*int64(pl) >= est {
+	row := int64(c.nFreq) * words * pl // the rows' cost per child, at most
+	if row >= est {
 		return false // no gain per child
 	}
-	// The exact build cost needs one pass over the lengths of the cover
-	// transactions (n steps). It is computed only once the work reached
-	// 4·(L+1)·n, so that it costs at most a quarter of the work; every
-	// cover transaction contains the L+1 items of P, so the build cost
-	// is at least (L+1)·n and this delays no build by more than a factor
-	// of 2 in work.
-	if s.work < 4*int64(L+1)*int64(lv.n) {
+	avg := s.work / int64(s.kids)
+	rem := int(c.freqBelow[h]) // the children after h
+	if c.left >= 0 {
+		rem = min(rem, c.left)
+	}
+	gain := int64(rem+1) * (avg - row) // what the children left, h included, save
+	// Every cover transaction contains the L+1 items of P, so B is at
+	// least (L+1)·n. The exact B needs one pass over the lengths of the
+	// cover transactions (n steps); it is computed only once the work
+	// reached 4·(L+1)·n, so that it costs at most a quarter of the work.
+	// That delays a build until the work reaches max(B/2, 4·(L+1)·n),
+	// i.e. by up to a factor of 8 on transactions of about L+1 items.
+	lo := int64(L+1) * int64(lv.n)
+	if gain < lo || s.work < 4*lo {
 		return false
 	}
 	if s.need < 0 {
@@ -187,26 +223,33 @@ func (c *extChecker) sibWorth(L int, s *sibLevel, est int64, pl int) bool {
 				visits += int64(c.txOff[t+1] - c.txOff[t])
 			}
 		}
-		s.need = visits + int64(c.nFreq+pl)*words // item visits and cleared words
+		s.need = visits + (int64(c.nFreq)+pl)*words // item visits and cleared words
 	}
-	if 2*s.work < s.need {
-		return false
+	return 2*s.work >= s.need && gain >= s.need
+}
+
+// sibFits reports whether rows of level L fit the memory budget (every
+// mode). If not, it releases the buffers of the other levels that hold
+// no rows and retries; if they still do not fit, the level is refused
+// until it is dropped.
+func (c *extChecker) sibFits(L int) bool {
+	s := &c.sibs[L]
+	want := c.sibWant(L)
+	if c.sibWords()-cap(s.rows)-cap(s.planes)+want <= c.sibCap {
+		return true
 	}
-	want := int(int64(c.nFreq+pl) * words)
-	if c.sibWords()-cap(s.rows)-cap(s.planes)+want > c.sibCap {
-		// release the rows of the levels that hold none, then retry
-		for i := range c.sibs {
-			if t := &c.sibs[i]; !t.built && i != L {
-				t.rows, t.planes = nil, nil
-			}
+	for i := range c.sibs {
+		if t := &c.sibs[i]; !t.built && i != L && cap(t.rows)+cap(t.planes) > 0 {
+			t.rows, t.planes = nil, nil
+			c.sibStat.released++
 		}
-		if c.sibWords()-cap(s.rows)-cap(s.planes)+want > c.sibCap {
-			s.refused = true
-			c.sibStat.refused++
-			return false
-		}
 	}
-	return true
+	if c.sibWords()-cap(s.rows)-cap(s.planes)+want <= c.sibCap {
+		return true
+	}
+	s.refused = true
+	c.sibStat.refused++
+	return false
 }
 
 // sibBuild builds the sibling rows of level L (the parent prefix[:L+1])
@@ -262,7 +305,7 @@ func (c *extChecker) sibBuild(L int, prefix []tract.Item) {
 	s.ents = s.ents[:0]
 	for k, it := range touched {
 		if supp[it] >= c.smin && !slices.Contains(prefix[:L+1], it) {
-			s.ents = append(s.ents, sibEnt{item: it, off: int32(k * words), supp: supp[it]})
+			s.ents = append(s.ents, sibEnt{item: it, off: k * words, supp: supp[it]})
 		}
 		slot[it], supp[it] = 0, 0 // reset every touched item, kept or not
 	}
@@ -298,7 +341,7 @@ func (c *extChecker) sibMaximal(s *sibLevel, h tract.Item) (ok, found bool) {
 	var rh []uint64
 	for _, e := range s.ents {
 		if e.item == h {
-			rh = s.rows[e.off : int(e.off)+w]
+			rh = s.rows[e.off : e.off+w]
 			break
 		}
 	}
@@ -309,7 +352,7 @@ func (c *extChecker) sibMaximal(s *sibLevel, h tract.Item) (ok, found bool) {
 		if c.inSet[e.item] == c.setStamp {
 			continue // h, perfect extensions (pex of P have full rows)
 		}
-		sp := s.supp(rh, s.rows[e.off:int(e.off)+w])
+		sp := s.supp(rh, s.rows[e.off:e.off+w])
 		if sp >= c.smin {
 			return false, true // a frequent superset with one more item
 		}

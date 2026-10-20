@@ -123,11 +123,11 @@ func checkSibCase(t *testing.T, c m5Case, sib sibHook, brute bool, tot *sibTotal
 // before and after the build) and by the production rule, against the
 // oracle and the ordinary check (verify), and against a brute force from
 // the source transactions on a part of them. FPG_SIB_CASES sets the
-// number of datasets (default 120, 30 with -short).
+// number of datasets (default 120, 30 with -short or the race detector).
 func TestExtCheckSiblingRows(t *testing.T) {
 	t.Parallel()
 	cases := 120
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		cases = 30
 	}
 	if s := os.Getenv("FPG_SIB_CASES"); s != "" {
@@ -169,7 +169,7 @@ func TestExtCheckSiblingRows(t *testing.T) {
 func TestExtCheckSiblingRowsOracle(t *testing.T) {
 	t.Parallel()
 	cases := 600
-	if testing.Short() {
+	if testing.Short() || raceEnabled {
 		cases = 100
 	}
 	var tot sibTotals
@@ -242,6 +242,7 @@ func TestExtCheckSiblingSupp(t *testing.T) {
 		smin := tract.Supp(1 + r.IntN(max(n/8, 1)))
 		c, _ := newTestChecker(t, txs, report.TargetMaximal, smin, rowMode(iter%3))
 		c.sib = sibHook{mode: sibForce}
+		c.sibCap = 1 << 40 // small bags: rows may exceed 2 words per occurrence
 		k := tract.Item(len(c.freq))
 		if k < 3 {
 			continue
@@ -267,7 +268,7 @@ func TestExtCheckSiblingSupp(t *testing.T) {
 			c.nz, c.cover = lp.nz, lp.cover
 			rowOf := map[tract.Item][]uint64{}
 			for _, e := range s.ents {
-				rowOf[e.item] = s.rows[e.off : int(e.off)+s.words]
+				rowOf[e.item] = s.rows[e.off : e.off+s.words]
 				if got := c.suppWith(e.item); got != e.supp {
 					t.Fatalf("iter %d: supp(P ∪ {%d}) = %d, row %d", iter, e.item, got, e.supp)
 				}
@@ -409,6 +410,119 @@ func TestExtCheckSiblingWork(t *testing.T) {
 	built, maximal = children(c)
 	if built >= 0 || c.sibStat.refused == 0 || maximal != len(c.freq)-1 {
 		t.Fatalf("budget 100 words: built at child %d, %d refusals, %d maximal", built, c.sibStat.refused, maximal)
+	}
+	if w := c.sibWords(); w > c.sibCap {
+		t.Fatalf("%d words held, budget %d", w, c.sibCap)
+	}
+}
+
+// TestExtCheckSiblingLeft checks the miner's bound of the siblings that
+// follow a reported set (miner.left, used only for the cost decision of
+// the sibling rows): for every check, the later checks of sets with the
+// same parent prefix must not outnumber it, in every variant.
+func TestExtCheckSiblingLeft(t *testing.T) {
+	t.Parallel()
+	type call struct {
+		prefix []tract.Item
+		left   int
+	}
+	known, unknown, tight := 0, 0, 0
+	for seed := range uint64(40) {
+		c, err := genSibCase(seed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range variants {
+			var calls []call
+			hooks := testHooks{cloMaxCheck: func(chk *extChecker, rep *report.Reporter) report.CloMaxCheck {
+				return func(set []tract.Item, supp tract.Supp) bool {
+					calls = append(calls, call{slices.Clone(rep.Items()), chk.left})
+					return chk.checkPath(rep.Items(), set, supp)
+				}
+			}}
+			cfg := c.config(v, report.TargetMaximal)
+			if _, err := run(scanOf(c.txs), cfg, runOpts{hooks: hooks, sink: &collectSink{}}); err != nil {
+				if errors.Is(err, ErrNoItems) {
+					continue
+				}
+				t.Fatal(err)
+			}
+			for i, ci := range calls {
+				if len(ci.prefix) < 2 {
+					continue
+				}
+				if ci.left < 0 {
+					unknown++
+					continue
+				}
+				known++
+				parent := ci.prefix[:len(ci.prefix)-1]
+				later := 0
+				for _, cj := range calls[i+1:] {
+					if len(cj.prefix) == len(ci.prefix) && slices.Equal(cj.prefix[:len(parent)], parent) {
+						later++
+					}
+				}
+				if later > ci.left {
+					t.Fatalf("seed %d %s: prefix %v: %d later siblings checked, bound %d",
+						seed, v.name, ci.prefix, later, ci.left)
+				}
+				if later == ci.left {
+					tight++
+				}
+			}
+		}
+	}
+	t.Logf("%d checks with a bound (%d exact), %d without", known, tight, unknown)
+	if known == 0 || tight == 0 {
+		t.Errorf("bound not exercised: %d known, %d exact", known, tight)
+	}
+}
+
+// TestExtCheckSiblingRelease drives the memory budget's release branch:
+// level 0 holds rows, level 2 an old buffer without rows, and the build
+// at level 1 fits only after that buffer is released. The rows of level
+// 0 must survive and keep giving the ordinary check's verdicts.
+func TestExtCheckSiblingRelease(t *testing.T) {
+	r := rand.New(rand.NewPCG(19, 4))
+	txs := sibData(r, 2000, 12, 0.5, 1)
+	const smin = 20
+	c, _ := newTestChecker(t, txs, report.TargetMaximal, smin, rowsAuto)
+	ref, _ := newTestChecker(t, txs, report.TargetMaximal, smin, rowsAuto)
+	c.sib = sibHook{mode: sibForce, verify: true}
+	ref.sib = sibHook{mode: sibOff}
+	k := tract.Item(len(c.freq))
+	a, b, d, e, f, g := k-1, k-2, k-3, k-4, k-5, k-6
+	check := func(prefix ...tract.Item) {
+		t.Helper()
+		if got, want := c.checkPath(prefix, prefix, 1), ref.checkPath(prefix, prefix, 1); got != want {
+			t.Fatalf("checkPath(%v) = %v, want %v", prefix, got, want)
+		}
+	}
+	check(a, b)       // builds level 0 (parent {a})
+	check(a, b, d)    // level 1 (parent {a, b})
+	check(a, b, d, e) // level 2 (parent {a, b, d})
+	check(a, f)       // drops levels 1 and 2; level 0 answers
+	if !c.sibs[0].built || c.sibs[1].built || c.sibs[2].built || cap(c.sibs[2].rows) == 0 {
+		t.Fatal("unexpected level state before the release")
+	}
+	// budget: level 0's and level 1's buffers and level 1's new rows
+	// (for the parent {a, f}), but not level 2's old buffer
+	held := c.sibWords() - cap(c.sibs[2].rows) - cap(c.sibs[2].planes) -
+		cap(c.sibs[1].rows) - cap(c.sibs[1].planes)
+	c.sibCap = held + c.sibWant(1)
+	check(a, f, g) // builds level 1 after releasing level 2's buffer
+	if c.sibStat.released == 0 || c.sibStat.refused != 0 || !c.sibs[1].built || cap(c.sibs[2].rows) != 0 {
+		t.Fatalf("no release: %+v, level 1 built %v", c.sibStat, c.sibs[1].built)
+	}
+	if !c.sibs[0].built {
+		t.Fatal("level 0 lost its rows")
+	}
+	for h := range k - 6 {
+		check(a, f, h) // level 1's rows
+	}
+	for h := range k - 6 {
+		check(a, h) // level 0's rows, still valid
 	}
 	if w := c.sibWords(); w > c.sibCap {
 		t.Fatalf("%d words held, budget %d", w, c.sibCap)

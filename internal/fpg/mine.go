@@ -3,6 +3,7 @@ package fpg
 import (
 	"context"
 	"math"
+	"math/bits"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -28,6 +29,11 @@ type miner struct {
 	pack   int  // FIM16 field (number of items for the 16-items machine)
 	dir    int  // item loop direction (fpg->dir)
 	clomax bool // closed or maximal target
+	// left is, while a node's set is reported, an upper bound of the
+	// sibling nodes that follow it in its loop (-1: unknown). The
+	// maximal check uses it to decide whether sibling rows pay off
+	// (extsib.go); it never changes a result.
+	left int
 	// limited: closed/maximal search limited by the maximum size zmax,
 	// with the complete extension check (see xable2).
 	limited bool
@@ -83,6 +89,7 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		pack:   c.Pack,
 		dir:    1,
 		clomax: c.Target == report.TargetClosed || c.Target == report.TargetMaximal,
+		left:   -1,
 	}
 	if m.clomax && c.ZMax < bag.MaxSize() {
 		// A maximum size below the longest transaction: limited search
@@ -102,7 +109,10 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		if h.cloMaxCheck != nil {
 			fn = h.cloMaxCheck(chk, rep)
 		}
-		rep.SetCloMaxCheck(fn)
+		rep.SetCloMaxCheck(func(set []tract.Item, supp tract.Supp) bool {
+			chk.left = m.left // the siblings that can follow (cost only)
+			return fn(set, supp)
+		})
 	}
 	if m.done != nil {
 		// Recursion entries alone do not bound the work after a
@@ -122,6 +132,24 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 	default:
 		return m.mineComplex()
 	}
+}
+
+// later returns the number of loop entries after index i of a loop over
+// cnt entries in direction dir.
+func later(i, cnt, dir int) int {
+	if dir < 0 {
+		return i
+	}
+	return cnt - 1 - i
+}
+
+// packedCount returns the number of items of a packed head item (0 for
+// an ordinary item).
+func packedCount(it tract.Item) int {
+	if it >= 0 {
+		return 0
+	}
+	return bits.OnesCount32(uint32(it) & 0xffff)
 }
 
 // buildCheckEvery is the number of transactions between two cancellation

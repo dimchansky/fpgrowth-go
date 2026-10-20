@@ -45,6 +45,7 @@ func TestDatasetsPinned(t *testing.T) {
 		"d1000x30d80":   "868be1637571",
 		"d5000x60d40":   "4017ec71e7fa",
 		"d20000x200d30": "a91a38aab4da",
+		"t100000x204c4": "768bd8ccd3c2",
 	}
 	for _, s := range benchSpecs {
 		h := sha256.New()

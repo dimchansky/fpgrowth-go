@@ -88,15 +88,17 @@ type extChecker struct {
 	setStamp uint32
 
 	// Sibling rows of the maximal check (extsib.go), one per path level.
-	sibs     []sibLevel
-	sib      sibHook
-	sibStat  sibStats
-	nFreq    int          // items with freq >= smin
-	sibCap   int          // words the sibling rows of all levels may hold
-	sibSlot  []int32      // build scratch: row number + 1 per item
-	sibSupp  []tract.Supp // build scratch: supp(P ∪ {i})
-	sibTouch []tract.Item // build scratch: items with a row, in touch order
-	work     int64        // actual work of the last ordinary maximal check
+	sibs      []sibLevel
+	sib       sibHook
+	sibStat   sibStats
+	nFreq     int          // items with freq >= smin
+	freqBelow []int32      // freqBelow[i]: items with code < i and freq >= smin
+	sibCap    int          // words the sibling rows of all levels may hold
+	sibSlot   []int32      // build scratch: row number + 1 per item
+	sibSupp   []tract.Supp // build scratch: supp(P ∪ {i})
+	sibTouch  []tract.Item // build scratch: items with a row, in touch order
+	work      int64        // actual work of the last ordinary maximal check
+	left      int          // miner's bound of the siblings after the set (-1: unknown)
 }
 
 // coverLevel is a cover in compact form: the non-zero words cover[i] of
@@ -184,9 +186,17 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		}
 	}
 	c.sibCap = sibBudget * len(c.txItems)
+	c.left = -1
 	if c.maximal {
 		c.sibSlot = make([]int32, k)
 		c.sibSupp = make([]tract.Supp, k)
+		c.freqBelow = make([]int32, k+1)
+		for i, f := range c.freq {
+			c.freqBelow[i+1] = c.freqBelow[i]
+			if f >= smin {
+				c.freqBelow[i+1]++
+			}
+		}
 	}
 	return c, nil
 }
@@ -470,14 +480,7 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 // decide decides the marked set from its cover in c.nz and c.cover with
 // n transactions.
 func (c *extChecker) decide(n int, supp tract.Supp) bool {
-	// Estimated costs: scanning the cover transactions versus testing
-	// every item against the non-zero cover words.
-	h := n * (len(c.txItems)/max(len(c.txW), 1) + 1)
-	v := len(c.order) * len(c.nz)
-	if c.maximal && c.planes != nil {
-		v *= len(c.planes) / c.words
-	}
-	if h <= v {
+	if h, v := c.costs(n); h <= v {
 		if c.maximal {
 			return c.scanMaximal()
 		}
@@ -487,6 +490,19 @@ func (c *extChecker) decide(n int, supp tract.Supp) bool {
 		return c.vertMaximal()
 	}
 	return c.vertClosed(supp)
+}
+
+// costs returns decide's estimated costs of the marked set's check from
+// its cover in c.nz with n transactions: scanning the cover transactions
+// (item visits) versus testing every item against the non-zero cover
+// words (word tests, times the weight planes for a maximal check).
+func (c *extChecker) costs(n int) (h, v int) {
+	h = n * (len(c.txItems)/max(len(c.txW), 1) + 1)
+	v = len(c.order) * len(c.nz)
+	if c.maximal && c.planes != nil {
+		v *= len(c.planes) / c.words
+	}
+	return h, v
 }
 
 // markSet marks the items of set (inSet).

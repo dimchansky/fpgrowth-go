@@ -56,6 +56,10 @@ type benchSpec struct {
 	// per item and transaction, compared with Density/100 (both exact
 	// IEEE operations). denseTxs names item j "i<j>", the files "<j>".
 	Density int
+	// Common > 0 (with Density > 0) makes the first Common items common:
+	// item j < Common is present with probability CommonDensity/100
+	// instead (two-tier data: a few common items, many rare ones).
+	Common, CommonDensity int
 }
 
 // benchSpecs are the datasets of the benchmark suite and of the C
@@ -89,6 +93,12 @@ var benchSpecs = []benchSpec{
 	// it with Python random.Random(5); this is the same shape (seed 5),
 	// not the same bytes.
 	{Name: "d20000x200d30", Seed: 5, Transactions: 20000, Items: 200, Density: 30},
+	// Two-tier independent data (issue #19, performance review F1): 4
+	// common items at 20 % and 200 rare ones at 10 %. With -tm -n3 at
+	// smin 0.9·N·0.1²·0.2 every pair of rare items is a parent whose few
+	// children (the common items) are all maximal: sibling rows must not
+	// be built for them.
+	{Name: "t100000x204c4", Seed: 6, Transactions: 100000, Items: 204, Density: 10, Common: 4, CommonDensity: 20},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -126,6 +136,9 @@ func (s benchSpec) validate() error {
 	case s.Density < 0 || s.Density > 100 || s.Density > 0 &&
 		(s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.MaxWeight != 0):
 		return fmt.Errorf("benchgen %s: invalid density", s.Name)
+	case s.Common < 0 || s.Common > s.Items || s.Common > 0 && s.Density == 0 ||
+		s.CommonDensity < 0 || s.CommonDensity > 100:
+		return fmt.Errorf("benchgen %s: invalid common items", s.Name)
 	}
 	return nil
 }
@@ -207,12 +220,17 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 func benchIndependent(s benchSpec, fn func(tx benchTx) error) error {
 	src := rand.NewPCG(s.Seed, 1)
 	d := float64(s.Density) / 100
+	dc := float64(s.CommonDensity) / 100
 	items := make([]int32, 0, s.Items)
 	for range s.Transactions {
 		items = items[:0]
 		for j := range int32(s.Items) {
+			p := d
+			if j < int32(s.Common) {
+				p = dc
+			}
 			// math/rand/v2's Rand.Float64, spelled out
-			if float64(src.Uint64()<<11>>11)/(1<<53) < d {
+			if float64(src.Uint64()<<11>>11)/(1<<53) < p {
 				items = append(items, j)
 			}
 		}

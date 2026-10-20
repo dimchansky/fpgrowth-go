@@ -251,9 +251,11 @@ func (m *miner) recTopDown(t *tdTree, depth int) error {
 				}
 			}
 		}
+		m.left = int(nd.id) // the items left in the tree have lower ids
 		if err := m.rep.Report(); err != nil {
 			return err
 		}
+		m.left = -1
 		m.rep.Remove(1)
 		nd = m.td.nodes[node]
 		t.root = m.tdMerge(nd.sibling, nd.children)

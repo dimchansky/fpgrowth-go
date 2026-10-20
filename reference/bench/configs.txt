@@ -84,3 +84,11 @@ m5-d20000-m-n4*    d20000x200d30.tab -tm -s1 -n4
 # smin 2 transactions: every check stops at its first frequent extension,
 # so sibling rows (issue #19) must not be built (design review F1)
 m5-d20000-m-n2-s2* d20000x200d30.tab -tm -s-2 -n2
+# Two-tier data (issue #19, performance review F1): each pair of rare
+# items is a parent with 4 maximal children; rows built for them would
+# pay off for at most one child, so they must not be built (no
+# regression against main).
+m5-tier-m-n3*      t100000x204c4.tab -tm -s-180 -n3
+m5-tier-m-n3-As*   t100000x204c4.tab -tm -s-180 -n3 -As
+m5-tier-m-n3-At*   t100000x204c4.tab -tm -s-180 -n3 -At
+m5-tier-c-n3*      t100000x204c4.tab -tc -s-180 -n3
