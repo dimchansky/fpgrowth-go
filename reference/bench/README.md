@@ -56,6 +56,13 @@ every pair of rare items is a parent whose only maximal children are
 the common items. Its `m5-tier-*` rows guard against sibling rows
 (issue #19) that are built for a few children and cannot pay off.
 
+`s50000x414` (seed 7, `benchSpec.Slices`) puts 4 mutually exclusive
+items first (80 % of the transactions hold one), then 10 items at 65 %,
+then 400 at 15 %. With `-tm -s-1350 -n3` a rare item's slice children
+are maximal and checked. Its other children have frequent supersets
+and are never checked. The `m5-split-*` rows guard the later-sibling
+bound of the same rule.
+
 ```bash
 cd reference
 go run ./bench/gen -dataset d2000x40d60 -o d2000x40d60.tab

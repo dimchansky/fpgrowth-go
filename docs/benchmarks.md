@@ -70,6 +70,7 @@ committed; files are written to temporary directories.
 | `d5000x60d40` (M5) | 5,000 | 60 | 24.0 / 11 / 37 | 0.400 | independent, 40 % | — | no | 339,938 | `4017ec71e7fa` |
 | `d20000x200d30` (M5A-1) | 20,000 | 200 | 60.0 / 36 / 86 | 0.300 | independent, 30 % | — | no | 4,137,790 | `a91a38aab4da` |
 | `t100000x204c4` (#19) | 100,000 | 204 | 20.8 / 5 / 43 | 0.102 | independent: 4 items 20 %, 200 items 10 % | — | no | 7,144,752 | `768bd8ccd3c2` |
+| `s50000x414` (#19) | 50,000 | 414 | 67.2 / 39 / 98 | 0.162 | 4 exclusive items (80 %), 10 at 65 %, 400 at 15 % | — | no | 12,205,031 | `0f109186d108` |
 
 Density is the average length divided by the number of items used. The
 three `dNxKdP` datasets (added by review fix S3-2, seeds 1–3) are the
@@ -697,6 +698,14 @@ shape it now builds nothing and matches `main` (3.42 vs 3.42 s for
 `-tm -s-180 -n3`, n = 7). The target is unchanged at 19.8 s
 ([M5 §7.3](m5-investigation.md#73-review-round-1-few-children-per-parent-issue-19)).
 
+The second review round found slices-and-spreaders data (pinned as
+`s50000x414`, `m5-split-*` rows), where most later siblings are never
+checked. It was +7 to +13 % slower than `main` until the later-sibling
+bound was scaled below the maximum size. It now measures 2.47 vs
+2.52 s. The worst row measured since then is +3.9 % in one round and
+`~` in a repeat. The bound is 3.25× of the ordinary checks per level
+([M5 §7.4](m5-investigation.md#74-review-round-2-later-siblings-that-are-never-checked-issue-19)).
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package
@@ -765,12 +774,12 @@ benchstat old.txt new.txt          # after a change: same machine, same toolchai
 # Go vs C (about 6 minutes without the slow m5-d20000-* rows, which an
 # unfiltered run includes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
-# (configs.txt has 27 M5 rows more than the 32 measured above: m5-*,
+# (configs.txt has 30 M5 rows more than the 32 measured above: m5-*,
 # large-[cm]-n* (review fix S3-2) and the slow m5-d20000-* (issue #19); '^(sparse|large-[scm]$|dense|long|weighted)'
 # selects the original 32)
 # only the size-limited closed/maximal (M5) configurations: the pinned
 # dNxKdP datasets and sparse-large with -n (reference/bench/README.md)
-(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-d[125]000-|m5-tier-|large-)')
+(cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5 '^(m5-d[125]000-|m5-tier-|m5-split-|large-)')
 # the dense maximal workload of finding M5A-1 (issue #19; slow: Go about 100 s and C about 40 s per -tm -n3 run, over an hour in all)
 (cd reference && bench/compare.sh -n 5 -m devnull -o /tmp/fpgm5a1 '^m5-d20000-')
 
