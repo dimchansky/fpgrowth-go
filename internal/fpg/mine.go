@@ -98,7 +98,7 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		if err != nil {
 			return err
 		}
-		chk.sib = h.sib
+		chk.sib, chk.zmax = h.sib, c.ZMax
 		if h.checker != nil {
 			h.checker(chk)
 		}

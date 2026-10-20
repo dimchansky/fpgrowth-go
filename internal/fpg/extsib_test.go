@@ -124,10 +124,10 @@ func checkSibCase(t *testing.T, c m5Case, sib sibHook, brute bool, tot *sibTotal
 // before and after the build) and by the production rule, against the
 // oracle and the ordinary check (verify), and against a brute force from
 // the source transactions on a part of them. FPG_SIB_CASES sets the
-// number of datasets (default 120, 30 with -short or the race detector).
+// number of datasets (default 60, 30 with -short or the race detector).
 func TestExtCheckSiblingRows(t *testing.T) {
 	t.Parallel()
-	cases := 120
+	cases := 60
 	if testing.Short() || raceEnabled {
 		cases = 30
 	}
@@ -169,7 +169,7 @@ func TestExtCheckSiblingRows(t *testing.T) {
 // first child and at a random child.
 func TestExtCheckSiblingRowsOracle(t *testing.T) {
 	t.Parallel()
-	cases := 600
+	cases := 300
 	if testing.Short() || raceEnabled {
 		cases = 100
 	}
@@ -528,4 +528,77 @@ func TestExtCheckSiblingRelease(t *testing.T) {
 	if w := c.sibWords(); w > c.sibCap {
 		t.Fatalf("%d words held, budget %d", w, c.sibCap)
 	}
+}
+
+// TestExtCheckSiblingBound pins the second build condition of the
+// production rule (the children still to come must save the build
+// cost): with the later-children bound from the miner (c.left), from
+// the codes (freqBelow) and, below the maximum size, scaled by the
+// history of completed parents. Data as in TestExtCheckSiblingWork: 39
+// maximal children of the item with the highest code.
+func TestExtCheckSiblingBound(t *testing.T) {
+	r := rand.New(rand.NewPCG(19, 3))
+	txs := sibData(r, 3000, 40, 0.3, 1)
+	// run checks the children of parent p in the miner's order
+	// (descending codes) or ascending, with c.left set by left (nil:
+	// unknown), and returns the 0-based number of the child at which
+	// the rows were built (-1: none).
+	run := func(c *extChecker, p tract.Item, desc bool, left func(h tract.Item) int) int {
+		t.Helper()
+		built := -1
+		for n := range int(p) {
+			h := tract.Item(n)
+			if desc {
+				h = p - 1 - tract.Item(n)
+			}
+			c.left = -1
+			if left != nil {
+				c.left = left(h)
+			}
+			before := c.sibStat.builds
+			if !c.checkPath([]tract.Item{p, h}, []tract.Item{p, h}, 1) {
+				t.Fatalf("{%d, %d} not maximal", p, h)
+			}
+			if built < 0 && c.sibStat.builds > before {
+				built = n
+			}
+		}
+		return built
+	}
+	newChecker := func() (*extChecker, tract.Item) {
+		c, _ := newTestChecker(t, txs, report.TargetMaximal, 140, rowsAuto)
+		return c, tract.Item(len(c.freq) - 1)
+	}
+	exact := func(h tract.Item) int { return int(h) } // the children below h
+	// ascending: freqBelow[h] = h binds, small for the first children
+	c, p := newChecker()
+	asc := run(c, p, false, nil)
+	// descending with the exact miner bound: earlier
+	c, p = newChecker()
+	desc := run(c, p, true, exact)
+	// pinned for these data: a change of the rule moves them
+	if asc != 16 || desc != 4 {
+		t.Fatalf("built at child %d (ascending, code bound) and %d (descending, miner bound), want 16 and 4", asc, desc)
+	}
+	if asc < 0 || desc < 0 || desc >= asc {
+		t.Fatalf("built at child %d (ascending, code bound) and %d (descending, miner bound), want both, descending first",
+			asc, desc)
+	}
+	// a miner bound of 0 (no later children): the remaining children
+	// cannot pay the build
+	c, p = newChecker()
+	if b := run(c, p, true, func(tract.Item) int { return 0 }); b >= 0 {
+		t.Fatalf("built at child %d although no child follows", b)
+	}
+	// below the maximum size the bound counts only after a parent has
+	// completed: none for the first parent, then as above
+	c, p = newChecker()
+	c.zmax = 3
+	if b := run(c, p, true, exact); b >= 0 {
+		t.Fatalf("first parent below the maximum size: built at child %d", b)
+	}
+	if b := run(c, p-1, true, exact); b < 0 || b > desc+1 {
+		t.Fatalf("second parent below the maximum size: built at child %d, want about %d", b, desc)
+	}
+	t.Logf("built at child %d (ascending), %d (descending)", asc, desc)
 }

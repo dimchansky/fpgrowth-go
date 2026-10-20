@@ -60,6 +60,11 @@ type benchSpec struct {
 	// item j < Common is present with probability CommonDensity/100
 	// instead (two-tier data: a few common items, many rare ones).
 	Common, CommonDensity int
+	// Slices > 0 (with Density > 0) puts Slices mutually exclusive items
+	// first: with probability SliceDensity/100 a transaction holds one
+	// of them, chosen by the next PCG value modulo Slices (a categorical
+	// attribute). The Common items follow them, then the others.
+	Slices, SliceDensity int
 }
 
 // benchSpecs are the datasets of the benchmark suite and of the C
@@ -99,6 +104,14 @@ var benchSpecs = []benchSpec{
 	// children (the common items) are all maximal: sibling rows must not
 	// be built for them.
 	{Name: "t100000x204c4", Seed: 6, Transactions: 100000, Items: 204, Density: 10, Common: 4, CommonDensity: 20},
+	// Slices and spreaders (issue #19, performance review R2-1): 400
+	// rare items at 15 %, 4 exclusive slice items (80 % of the
+	// transactions hold one) and 10 spreaders at 65 %. With -tm -n3 at
+	// smin 1350 a rare item's children are its 4 slices (maximal) and
+	// 10 spreaders, which are never checked (they have frequent
+	// supersets below them): sibling rows must not be built for them.
+	{Name: "s50000x414", Seed: 7, Transactions: 50000, Items: 414, Density: 15, Common: 10, CommonDensity: 65,
+		Slices: 4, SliceDensity: 80},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -139,6 +152,9 @@ func (s benchSpec) validate() error {
 	case s.Common < 0 || s.Common > s.Items || s.Common > 0 && s.Density == 0 ||
 		s.CommonDensity < 0 || s.CommonDensity > 100:
 		return fmt.Errorf("benchgen %s: invalid common items", s.Name)
+	case s.Slices < 0 || s.Slices+s.Common > s.Items || s.Slices > 0 && s.Density == 0 ||
+		s.SliceDensity < 0 || s.SliceDensity > 100:
+		return fmt.Errorf("benchgen %s: invalid slices", s.Name)
 	}
 	return nil
 }
@@ -221,12 +237,17 @@ func benchIndependent(s benchSpec, fn func(tx benchTx) error) error {
 	src := rand.NewPCG(s.Seed, 1)
 	d := float64(s.Density) / 100
 	dc := float64(s.CommonDensity) / 100
+	ds := float64(s.SliceDensity) / 100
+	uniform := func() float64 { return float64(src.Uint64()<<11>>11) / (1 << 53) }
 	items := make([]int32, 0, s.Items)
 	for range s.Transactions {
 		items = items[:0]
-		for j := range int32(s.Items) {
+		if s.Slices > 0 && uniform() < ds {
+			items = append(items, int32(src.Uint64()%uint64(s.Slices)))
+		}
+		for j := int32(s.Slices); j < int32(s.Items); j++ {
 			p := d
-			if j < int32(s.Common) {
+			if j < int32(s.Slices+s.Common) {
 				p = dc
 			}
 			// math/rand/v2's Rand.Float64, spelled out

@@ -99,6 +99,7 @@ type extChecker struct {
 	sibTouch  []tract.Item // build scratch: items with a row, in touch order
 	work      int64        // actual work of the last ordinary maximal check
 	left      int          // miner's bound of the siblings after the set (-1: unknown)
+	zmax      int          // maximum size of the search (sibling-row cost rule)
 }
 
 // coverLevel is a cover in compact form: the non-zero words cover[i] of

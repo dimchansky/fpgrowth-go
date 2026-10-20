@@ -46,8 +46,13 @@ import (
 // items of the 16-items machine that reports the set) and by the
 // frequent items with a code below h (freqBelow[h]; the children of P
 // are checked in descending code order in all variants,
-// docs/m5-investigation.md §3.3). Both are upper bounds; a wrong bound
-// could only make the cost decision worse, never a verdict. After the build a child uses the rows only if they are
+// docs/m5-investigation.md §3.3). Both bound the later siblings, but
+// only at the level whose children have the maximum size is every one
+// of them checked; at a shallower level a sibling with a frequent
+// superset in its subtree is never checked. There the bound is scaled by
+// the fraction of bounded children that were checked at that level for
+// the parents completed so far (0 until one completes). None of this
+// can change a verdict, only the cost decision. After the build a child uses the rows only if they are
 // estimated cheaper than its ordinary check. The rows of all levels
 // together stay within sibCap words (sibBudget per item occurrence).
 
@@ -82,10 +87,15 @@ type sibLevel struct {
 	work    int64 // actual work of the ordinary checks of children so far
 	need    int64 // build cost (-1: not yet computed)
 	kids    int   // children checked so far
-	words   int   // words per row: ⌈|cover|/64⌉
-	ents    []sibEnt
-	rows    []uint64 // row r at rows[r*words:], r in touch order
-	planes  []uint64 // weight bit b at planes[b*words:]; empty if unweighted
+	bound   int64 // Σ over those checks of the bound of the later children
+	// Of the completed parents at this level (never reset): the later
+	// children actually checked and the bounds of them, summed over all
+	// checks; their ratio estimates how many bounded children follow.
+	histLater, histBound int64
+	words                int // words per row: ⌈|cover|/64⌉
+	ents                 []sibEnt
+	rows                 []uint64 // row r at rows[r*words:], r in touch order
+	planes               []uint64 // weight bit b at planes[b*words:]; empty if unweighted
 }
 
 // sibEnt is an item with a row: its offset in rows and supp(P ∪ {item}).
@@ -108,7 +118,10 @@ type sibStats struct {
 func (c *extChecker) sibReset(from int) {
 	for L := from; L < len(c.sibs); L++ {
 		s := &c.sibs[L]
-		s.built, s.refused, s.work, s.need, s.kids = false, false, 0, -1, 0
+		k := int64(s.kids) // check i of k had k-1-i checked siblings after it
+		s.histLater += k * (k - 1) / 2
+		s.histBound += s.bound
+		s.built, s.refused, s.work, s.need, s.kids, s.bound = false, false, 0, -1, 0, 0
 		s.ents = s.ents[:0]
 	}
 }
@@ -151,6 +164,10 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 	hc, vc := c.costs(n) // the child's ordinary check, estimated
 	est := int64(min(hc, vc))
 	h := prefix[L+1]
+	r := int(c.freqBelow[h]) // a bound of the children after h
+	if c.left >= 0 {
+		r = min(r, c.left)
+	}
 	if !s.built && !s.refused {
 		var build bool
 		switch c.sib.mode {
@@ -159,13 +176,14 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 		case sibAt:
 			build = s.kids >= c.sib.at
 		case sibAuto:
-			build = c.sibWorth(L, s, est, pl, h)
+			build = c.sibWorth(L, s, est, pl, r)
 		}
 		if build && c.sibFits(L) {
 			c.sibBuild(L, prefix)
 		}
 	}
 	s.kids++
+	s.bound += int64(r)
 	if !s.built {
 		return false, false
 	}
@@ -189,7 +207,7 @@ func (c *extChecker) sibCheck(prefix []tract.Item, n int) (ok, done bool) {
 // sibWorth reports whether the rows of level L are worth building now
 // (sibAuto) for the child h, whose ordinary check is estimated at est:
 // see the cost rule at the top of this file.
-func (c *extChecker) sibWorth(L int, s *sibLevel, est, pl int64, h tract.Item) bool {
+func (c *extChecker) sibWorth(L int, s *sibLevel, est, pl int64, r int) bool {
 	if s.kids == 0 {
 		return false // no child's actual work known yet
 	}
@@ -200,11 +218,23 @@ func (c *extChecker) sibWorth(L int, s *sibLevel, est, pl int64, h tract.Item) b
 		return false // no gain per child
 	}
 	avg := s.work / int64(s.kids)
-	rem := int(c.freqBelow[h]) // the children after h
-	if c.left >= 0 {
-		rem = min(rem, c.left)
+	// The children that will be checked after h. At the level whose
+	// children have the maximum size every one of the r bounded children
+	// is checked: they have no subtree, so none is skipped for a frequent
+	// superset found below it. At a shallower level a later sibling with
+	// a frequent superset in its subtree is never checked, so r is scaled
+	// by the fraction of bounded children that were checked after a
+	// check at this level for the parents completed so far (none before
+	// the first one completes).
+	rem := int64(r)
+	if L+2 < c.zmax {
+		if s.histBound == 0 {
+			rem = 0
+		} else {
+			rem = int64(float64(rem) * float64(s.histLater) / float64(s.histBound))
+		}
 	}
-	gain := int64(rem+1) * (avg - row) // what the children left, h included, save
+	gain := (rem + 1) * (avg - row) // what the children left, h included, save
 	// Every cover transaction contains the L+1 items of P, so B is at
 	// least (L+1)·n. The exact B needs one pass over the lengths of the
 	// cover transactions (n steps); it is computed only once the work
