@@ -665,6 +665,25 @@ and the times match its 99.7 s / 39.0 s within noise. A CPU profile of
 the `-tm -s2 -n3` run attributes 91 % of the time to the extension check
 (`checkPath` cum), 86 % to `scanMaximal` alone.
 
+*Update (2026-10-20, issue #19):* the maximal check now decides the
+children of a parent from sibling rows, i.e. bit sets re-indexed to the
+parent's cover ([M5 §4.1](m5-investigation.md#41-sibling-rows-of-the-maximal-check-issue-19)).
+5 interleaved runs, load 4.6–4.8, median [min–max] wall s / max RSS MB:
+
+| `d20000x200d30` | Go `main` | Go v0.1.0 | Go branch | C 6.21 |
+| --- | --- | --- | --- | --- |
+| `-tm -s2 -n3` | 97.12 [96.81–97.50] / 110.5 | 97.25 / 110.5 | **19.82 [19.78–20.19] / 110.9** | 39.12 / 1259.1 |
+| `-tm -s1 -n4` (3 runs) | 131.39 / 111.3 | 131.06 / 111.3 | **67.74 / 111.8** | — |
+| `-tm -s2 -n3 -At` (3 runs) | 119.93 | 119.47 | **42.31** | — |
+| `-tc -s2 -n3` (3 runs) | 10.42 | 10.28 | 10.41 | — |
+| `-tm -s-2 -n2` | 0.62 | 0.61 | 0.62 | — |
+
+On 28 other configurations (all fast `m5-*` rows, `sparse-large`,
+`dense`, `sparse`, `weighted`, `long`; 7 runs each) only `dense -tm -s2
+-n3` (−15.0 %) and `d5000x60d40 -tm -s5 -n3` (−8.2 %) changed
+significantly; the rest is within noise. The in-process benchmarks are
+in M5 §7.2.
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package
@@ -733,7 +752,7 @@ benchstat old.txt new.txt          # after a change: same machine, same toolchai
 # Go vs C (about 6 minutes without the slow m5-d20000-* rows, which an
 # unfiltered run includes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
-# (configs.txt has 22 M5 rows more than the 32 measured above: m5-*,
+# (configs.txt has 23 M5 rows more than the 32 measured above: m5-*,
 # large-[cm]-n* (review fix S3-2) and the slow m5-d20000-* (issue #19); '^(sparse|large-[scm]$|dense|long|weighted)'
 # selects the original 32)
 # only the size-limited closed/maximal (M5) configurations: the pinned

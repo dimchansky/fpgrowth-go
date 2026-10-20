@@ -1113,12 +1113,13 @@ equal to the definition. The argument and the test evidence are in
 [docs/m5-investigation.md](docs/m5-investigation.md). Measured costs
 ([docs/benchmarks.md](docs/benchmarks.md#m5-size-limited-closedmaximal)):
 on dense data with a small `-n` the Go program is faster than C; on
-large sparse data it takes 2.2–3.2× C's wall time; and on dense data with
-many maximal sets of exactly the maximum size the maximal check
-dominates (independent audit, `-tm -s2 -n3` on 20,000 transactions of
-200 items: Go 99.7 s and 111 MB, C 39.0 s and 1,258 MB, with C's output
-not exact in general). Without a maximum size below the longest
-transaction nothing is checked.
+large sparse data it takes 2.2–3.2× C's wall time. On dense data with
+many maximal sets of exactly the maximum size, the children of a parent
+are checked together over the parent's transactions (issue #19). The
+independent audit's case, `-tm -s2 -n3` on 20,000 transactions of 200
+items, takes Go 19.8 s and 111 MB (before: 97 s), C 39.1 s and 1,259 MB;
+C's output is not exact in general. Without a maximum size below the
+longest transaction nothing is checked.
 
 The `Tuning` options and `Algorithm` change speed and result order only
 (apart from the `AggregateFirst` case under [Features](#features)). Which

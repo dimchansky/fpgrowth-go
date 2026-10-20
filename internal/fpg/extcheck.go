@@ -43,7 +43,10 @@ import (
 // candidate is left, a maximal check counts supports and stops at the
 // first frequent extension) or tests every item against the cover
 // (vertical: a subset test, resp. a weighted population count, over the
-// non-zero cover words), whichever is estimated to be cheaper.
+// non-zero cover words), whichever is estimated to be cheaper. A
+// maximal check of a set whose prefix has a parent may instead use the
+// parent's sibling rows (extsib.go), the same supports computed over the
+// parent's cover.
 type extChecker struct {
 	maximal bool
 	smin    tract.Supp
@@ -83,6 +86,17 @@ type extChecker struct {
 	cnt      []tract.Supp // maximal: supp(X ∪ {i}) so far
 	cand     []tract.Item // candidates / touched items
 	setStamp uint32
+
+	// Sibling rows of the maximal check (extsib.go), one per path level.
+	sibs     []sibLevel
+	sib      sibHook
+	sibStat  sibStats
+	nFreq    int          // items with freq >= smin
+	sibCap   int          // words the sibling rows of all levels may hold
+	sibSlot  []int32      // build scratch: row number + 1 per item
+	sibSupp  []tract.Supp // build scratch: supp(P ∪ {i})
+	sibTouch []tract.Item // build scratch: items with a row, in touch order
+	work     int64        // actual work of the last ordinary maximal check
 }
 
 // coverLevel is a cover in compact form: the non-zero words cover[i] of
@@ -164,6 +178,16 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		return 0
 	})
 	c.makeBits(rows)
+	for _, f := range c.freq {
+		if f >= smin {
+			c.nFreq++
+		}
+	}
+	c.sibCap = sibBudget * len(c.txItems)
+	if c.maximal {
+		c.sibSlot = make([]int32, k)
+		c.sibSupp = make([]tract.Supp, k)
+	}
 	return c, nil
 }
 
@@ -414,6 +438,7 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 	for len(c.path) < len(prefix) {
 		c.path = append(c.path, coverLevel{})
 	}
+	c.sibReset(k) // the sibling rows of the recomputed levels are stale
 	for ; k < len(prefix); k++ {
 		lv := &c.path[k]
 		lv.item = prefix[k]
@@ -427,6 +452,18 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 	lv := &c.path[len(prefix)-1]
 	c.nz, c.cover = lv.nz, lv.cover
 	c.markSet(set)
+	if c.maximal && len(prefix) >= 2 && c.sib.mode != sibOff {
+		ok, done := c.sibCheck(prefix, lv.n)
+		if done {
+			return ok
+		}
+		c.work = 0
+		ok = c.decide(lv.n, supp)
+		if s := &c.sibs[len(prefix)-2]; !s.built {
+			s.work += c.work
+		}
+		return ok
+	}
 	return c.decide(lv.n, supp)
 }
 
@@ -613,6 +650,7 @@ scan:
 		for x := c.cover[i]; x != 0; x &= x - 1 {
 			t := w*64 + int32(bits.TrailingZeros64(x))
 			wt := c.txW[t]
+			c.work += int64(c.txOff[t+1] - c.txOff[t])
 			for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
 				if c.inSet[it] == c.setStamp {
 					continue
@@ -689,6 +727,10 @@ func (c *extChecker) covers(j tract.Item) bool {
 // vertMaximal computes supp(X ∪ {j}) for every frequent item j (most
 // frequent first) by weighted population counts over the cover.
 func (c *extChecker) vertMaximal() bool {
+	pl := int64(1) // word tests per item and cover word
+	if c.planes != nil {
+		pl = int64(len(c.planes) / c.words)
+	}
 	for _, j := range c.order {
 		if c.freq[j] < c.smin {
 			return true // the remaining items are infrequent
@@ -696,6 +738,7 @@ func (c *extChecker) vertMaximal() bool {
 		if c.inSet[j] == c.setStamp {
 			continue
 		}
+		c.work += int64(len(c.nz)) * pl
 		var s tract.Supp
 		if b := c.row(j); b != nil && c.planes == nil { // suppWith(j), inlined
 			n := 0

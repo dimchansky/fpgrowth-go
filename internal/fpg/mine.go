@@ -61,6 +61,11 @@ type testHooks struct {
 	// rows selects the form of the extension checker's bit sets
 	// (rowsAuto by default).
 	rows rowMode
+	// sib selects when the maximal check builds sibling rows (sibAuto by
+	// default) and whether it verifies them.
+	sib sibHook
+	// checker, if set, is called with the run's extension checker.
+	checker func(*extChecker)
 }
 
 // mineItemSets runs the item set variant selected by c (fpgvars[algo]).
@@ -85,6 +90,10 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		chk, err := newExtChecker(bag, c.Target, supp, h.rows, m.aborted)
 		if err != nil {
 			return err
+		}
+		chk.sib = h.sib
+		if h.checker != nil {
+			h.checker(chk)
 		}
 		m.limited, m.zmax = true, c.ZMax
 		fn := func(set []tract.Item, supp tract.Supp) bool {

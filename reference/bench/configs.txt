@@ -81,3 +81,6 @@ m5-d20000-m-n3*    d20000x200d30.tab -tm -s2 -n3
 m5-d20000-m-n3-As* d20000x200d30.tab -tm -s2 -n3 -As
 m5-d20000-m-n3-At* d20000x200d30.tab -tm -s2 -n3 -At
 m5-d20000-m-n4*    d20000x200d30.tab -tm -s1 -n4
+# smin 2 transactions: every check stops at its first frequent extension,
+# so sibling rows (issue #19) must not be built (design review F1)
+m5-d20000-m-n2-s2* d20000x200d30.tab -tm -s-2 -n2
