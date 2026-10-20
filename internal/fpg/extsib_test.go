@@ -3,6 +3,7 @@ package fpg
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"slices"
@@ -242,7 +243,7 @@ func TestExtCheckSiblingSupp(t *testing.T) {
 		smin := tract.Supp(1 + r.IntN(max(n/8, 1)))
 		c, _ := newTestChecker(t, txs, report.TargetMaximal, smin, rowMode(iter%3))
 		c.sib = sibHook{mode: sibForce}
-		c.sibCap = 1 << 40 // small bags: rows may exceed 2 words per occurrence
+		c.sibCap = math.MaxInt // small bags: rows may exceed 2 words per occurrence
 		k := tract.Item(len(c.freq))
 		if k < 3 {
 			continue
