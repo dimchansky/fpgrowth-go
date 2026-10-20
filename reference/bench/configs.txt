@@ -73,7 +73,7 @@ m5-d5000-m-n3*  d5000x60d40.tab   -tm -s5 -n3
 # no 4-set is, so -tm -n3 reports all C(200,3) = 1,313,400 3-sets, each
 # after a check that counts its whole cover. Slow (Go about 100 s, C
 # about 40 s per -n3 run); select the other M5 rows with an id filter,
-# e.g. '^(m5-d[125]000-|large-[cm]-n)'.
+# e.g. '^(m5-d[125]000-|m5-tier-|large-[cm]-n)'.
 m5-d20000-c-n2*    d20000x200d30.tab -tc -s2 -n2
 m5-d20000-m-n2*    d20000x200d30.tab -tm -s2 -n2
 m5-d20000-c-n3*    d20000x200d30.tab -tc -s2 -n3

@@ -38,9 +38,11 @@ The release workflow publishes the section whose heading matches the tag
   parent's transactions, instead of scanning each child's cover. On the
   audit's dense workload (`d20000x200d30 -tm -s2 -n3`, 1,313,400 sets)
   the run takes about 20 s instead of 97 s (C: 39 s), with the same peak
-  memory. The output is unchanged. The rows are built only after the
-  children's actual check work reaches half their cost, so other
-  workloads keep their speed (#19, audit M5A-1).
+  memory. The output is unchanged. A parent's rows are built only when
+  two conditions hold. First, its children's actual check work has
+  reached half the build cost. Second, the children still to come (a
+  bound from the miner) would save at least that cost. Data with few
+  children per parent therefore keeps its speed (#19, audit M5A-1).
 - The values of the information (`i`) and the G-test p-value (`g`), and
   of the Fisher tests (`f h m s`) for total weights above 170, differ from
   upstream's (and v0.1.0's) in the last bits on ordinary data: they are

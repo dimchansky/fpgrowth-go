@@ -485,31 +485,61 @@ proof is in §3.2, last bullet):
   children's own subtrees between two children (all miners report in
   post-order). A single cache for the deepest parent was reset after
   every child at `-n4` (design review F2).
-- **When to build (ski rental on actual work).** The ordinary maximal
-  check counts its actual work: item visits in `scanMaximal`, word tests
-  (times the weight planes) in `vertMaximal`, up to its stop. The work
-  of the children's ordinary checks is accumulated per level. The build
-  cost B is Σ_{t ∈ cover(P)} |t| plus the words to clear. It is
-  computed by one pass over the cover's transaction lengths, but only
-  once the work has reached 4·(L+1)·|cover(P)|; every cover transaction
-  has at least L+1 items, so that pass costs at most a quarter of the
-  work. The rows are built once the work reaches B/2.
-  - Further gates: the rows must be estimated cheaper per child than
-    the child's ordinary check (frequent items · words · planes < `decide`'s
-    estimate), and they must fit the memory budget below. After the
-    build, a child uses the rows only if |entries| · words · planes ≤
-    its ordinary estimate.
-  - Bound: the build and the cost pass take at most 2.25 times the
-    ordinary-check work already spent at that level. A level whose rows
-    never pay off costs at most 3.25 times its ordinary checks.
-  - An estimated rather than actual cost was rejected (design review
-    F1). A scan of a non-maximal set stops at its first frequent
-    extension, so the estimate can exceed the work by orders of
-    magnitude: on `d20000x200d30 -tm -s-2 -n2` the review's prototype
-    built rows 187 times and the run became 27 % slower. With actual
-    work it builds none.
-  - Threshold B/2 instead of B: target 19.8 s instead of 22.3 s (2
-    runs each).
+- **When to build (actual work and the children that remain).** The
+  costs are in units of item visits and word tests; a build visit counts
+  like a scan visit (on the target profile 1.9 vs 2.1 ns).
+  - The ordinary maximal check counts its actual work: item visits in
+    `scanMaximal`, and word tests (times the weight planes) in
+    `vertMaximal`, up to its stop. The work of the children's ordinary
+    checks is accumulated per level.
+  - The build cost B is Σ_{t ∈ cover(P)} |t| plus the words to clear. It
+    is computed by one pass over the cover's transaction lengths, but
+    only once the work has reached 4·(L+1)·|cover(P)|. Every cover
+    transaction has at least L+1 items, so that pass costs at most a
+    quarter of the work. The gate delays a build until the work reaches
+    max(B/2, 4·(L+1)·|cover(P)|), i.e. by up to a factor of 8 on
+    transactions of about L+1 items.
+  - **The rule.** For the child h, the rows are built iff
+    1. the work reached B/2, and
+    2. (r + 1) · (w̄ − c_row) ≥ B, where w̄ is the average actual work of
+       the level's children so far, c_row = frequent items · words ·
+       planes is the rows' cost per child, and r bounds the children
+       that still follow h.
+  - **The bound r** is the minimum of two upper bounds:
+    - the miner's: the entries left in its loop over the parent's
+      conditional items (`recSimple`, `recSmp16` plus the packed items,
+      `recCmplx`, `recSingle` plus the packed items, `recTopDown`), or
+      the item count of the 16-items machine for every set it reports;
+      passed as `miner.left` on every check;
+    - the frequent items with a code below h, because every variant
+      checks a parent's children in descending code order (§3.3).
+
+    `TestExtCheckSiblingLeft` checks the miner's bound against the
+    actual later siblings in every variant (34,687 checks, 15,931 of them
+    exact). The bounds steer only the cost decision, never a verdict.
+  - Further gates: the rows must be estimated cheaper per child than the
+    child's ordinary check (c_row < `decide`'s estimate, the shared
+    helper `costs`), and they must fit the memory budget below. After
+    the build, a child uses the rows only if |entries| · words · planes
+    ≤ its ordinary estimate.
+  - Bound: a build costs at most twice the ordinary-check work already
+    spent at its level, plus the cost pass (a quarter of it). Condition 2
+    makes such a build an expected gain, not a bet on later children.
+  - History:
+    - An estimated rather than actual cost was rejected (design review
+      F1). A scan of a non-maximal set stops at its first frequent
+      extension, so the estimate can exceed the work by orders of
+      magnitude: on `d20000x200d30 -tm -s-2 -n2` the review's prototype
+      built rows 187 times and the run became 27 % slower. With actual
+      work it builds none.
+    - Threshold B/2 instead of B: target 19.8 s instead of 22.3 s (2
+      runs each).
+    - Condition 2 was added after the PR review (performance finding
+      F1). Without it, two-tier data became 23–34 % slower than `main`:
+      each pair of rare items is a parent whose 4–5 maximal children
+      are the common items, the work reached B/2 before the last child,
+      and the rows then answered one child. Those parents now build
+      nothing (§7.2).
 - **Memory budget.** The rows and planes of all levels together hold at
   most 2 words per item occurrence of the horizontal form (16·O bytes).
   A build that does not fit first releases the buffers of levels without
@@ -523,8 +553,8 @@ proof is in §3.2, last bullet):
   number m, or by the production rule. A verify mode also runs the
   ordinary check and panics on a different verdict. The statistics
   (`sibStats`: builds, builds with several words, with planes, checks
-  answered from rows, refusals, peak words) are asserted by the tests
-  (§6).
+  answered from rows, refusals, releases, peak words) are asserted by
+  the tests (§6). The memory budget applies in every mode.
 
 ## 5. Memory and cost of the check
 
@@ -583,7 +613,8 @@ All on the final code, re-run after fix S3-1 with the same counts
 | `TestReporter_BoundaryPexNotEnough` (report) | minimized case on the reporter simulator: boundary pex alone reports `{b,c}`; with the complete check equal to brute force | pass |
 | `TestReporter_PropertyClosedMaximalZmax` (report) | 1,600 random simulator runs without the chain shortcut, with the complete check | pass |
 
-*Sibling rows (issue #19, 2026-10-20).* The table's tests were re-run
+*Sibling rows (issue #19, 2026-10-20; numbers after the PR review's
+round 1).* The table's tests were re-run
 with `FPG_M5_CASES=20000 FPG_ORACLE_CASES=5000 FPG_M5_UNLIMITED=300
 FPG_SIB_CASES=2000`: `TestExtCheckOracle` 440,000 comparisons, 0
 differences; `TestOracle` 220,000 comparisons, 0 differences;
@@ -594,11 +625,13 @@ differ, as before) and `TestDeviations` pass. New tests
 
 | test | what | result |
 | --- | --- | --- |
-| `TestExtCheckSiblingRows` | 2,000 dense datasets of 65–400 transactions (rows of up to 7 words, ragged last word; a third with independent items and unit weights, the rest with merged or random weights, i.e. planes), 4–20 items, zmax 2–4, `-x` in a third; maximal × 11 variants; rows built at the first child, at child m (random 0–5) and by the production rule, every verdict from rows verified against the ordinary check; a quarter also through `bruteCheck` (every call against the source transactions); counters asserted | 63,459 runs, 729,482 builds (245,991 with several words, 507,263 with planes, 272,015 under `-x`), 2,900,118 checks from rows, 0 differences |
-| `TestExtCheckSiblingRowsOracle` | `TestExtCheckOracle`'s first 600 generator cases, rows forced at the first child and at child seed mod 4 | 6,094 runs, 22,554 builds, 0 differences |
+| `TestExtCheckSiblingRows` | 2,000 dense datasets of 65–400 transactions (rows of up to 7 words, ragged last word; a third with independent items and unit weights, the rest with merged or random weights, i.e. planes), 4–20 items, zmax 2–4, `-x` in a third; maximal × 11 variants; rows built at the first child, at child m (random 0–5) and by the production rule, every verdict from rows verified against the ordinary check; a quarter also through `bruteCheck` (every call against the source transactions); counters asserted | 63,459 runs, 701,132 builds (230,784 with several words, 490,097 with planes, 261,037 under `-x`), 2,790,166 checks from rows, 0 differences |
+| `TestExtCheckSiblingRowsOracle` | `TestExtCheckOracle`'s first 600 generator cases, rows forced at the first child and at child seed mod 4 | 6,094 runs, 22,526 builds, 0 differences |
 | `TestExtCheckSiblingSupp` | random parents and children over 1–1,400 transactions (up to 22 words), weights 1, 0–3, 0–9: every row's supp(P ∪ {j}) and every child's row popcount against `suppWith`; every item without a row is infrequent with P | pass |
 | `TestExtCheckSiblingInvalidate` | 40 datasets × 400 `checkPath` steps: deeper, next sibling, shrink and regrow, the same last item under a different earlier item, jumps, interleaved `check` and one-item prefixes, random subsets of perfect extensions, wrapping set stamp; against a checker without rows | pass |
 | `TestExtCheckSiblingWork` | production rule: children that stop at once build nothing; 39 maximal children build after child 7 and use the rows; a budget below one level's rows refuses the build with the same verdicts | pass |
+| `TestExtCheckSiblingLeft` | the miner's bound of the later siblings (`miner.left`) against the later checks with the same parent, 40 dense datasets × 11 variants | 34,687 checks bounded (15,931 exactly), none exceeded |
+| `TestExtCheckSiblingRelease` | the memory budget's release branch: level 0 holds rows, level 2 an old buffer, the build at level 1 fits only after releasing that buffer; level 0's rows survive and keep the ordinary verdicts | pass |
 
 Mutants of the sibling rows, each run against the default `go test
 ./internal/fpg` (no environment variables): row filter `>` instead of
@@ -606,9 +639,11 @@ Mutants of the sibling rows, each run against the default `go test
 k+1, no invalidation, rows with supp(P ∪ {j}) = supp(P) dropped (assumed
 perfect extensions), build scratch reset only for kept items, perfect
 extensions of the child counted (only h skipped), support test `>`
-instead of `≥` smin, last word of the rows dropped: **all caught** (by
-`TestExtCheckSiblingInvalidate`, `TestExtCheckSiblingRowsOracle`,
-`TestExtCheckSiblingSupp` or `TestExtCheckSiblingRows`). The mutant
+instead of `≥` smin, last word of the rows dropped, the budget release
+also freeing built levels (review mutant M15), the release freeing
+nothing: **all caught** (by `TestExtCheckSiblingInvalidate`,
+`TestExtCheckSiblingRowsOracle`, `TestExtCheckSiblingSupp`,
+`TestExtCheckSiblingRows` or `TestExtCheckSiblingRelease`). The mutant
 "bit (r+1) mod 64 instead of r mod 64" survives; it is equivalent (a
 permutation of the positions within each word, applied to every row
 and plane alike).
@@ -618,8 +653,8 @@ the archive) against the branch: with the production rule `bf -big -n
 2500` seeds 11 and 12, `-focus -big -eval 6 -n 2500` seed 21, `-focus
 -eval 6 -n 4000` seed 22, `-wide -focus -big -eval 8 -n 2500` seed 41,
 `-wide -eval 8 -n 3000` seed 42 and `bfs -n 400` seed 51: 189,000 runs,
-0 failures (16,191 builds in 859 runs, from a statistics build of the
-same code). With rows forced at the first child (`-big` seed 13,
+0 failures (4,119 builds in 287 runs, from a statistics build of the
+same code; 16,191 builds in 859 runs before the round-1 rule). With rows forced at the first child (`-big` seed 13,
 `-focus -big` seed 23, `-wide -focus -big` seed 43, plain `-n 4000` seed
 14, `bfs -n 200` seed 52) and at the third child (`-big` seed 15,
 `-focus -n 4000` seed 24), both verifying every verdict against the
@@ -827,6 +862,73 @@ at load 4.2–4.8. benchstat, branch against `main`:
   are noise.
 - Everything else is `~`.
 
+### 7.3 Review round 1: few children per parent (issue #19)
+
+The PR review found a shape that the first build rule (B/2 ski rental
+alone) made slower. It is two-tier independent data: a few common items
+and many rare ones, where every pair of rare items is a parent whose
+4–5 maximal children are the common items. The children's work reached
+B/2 just before the last child, the rows answered one child, and
+`-tm -n3` became 23–34 % slower than `main` (the reviewer's runs, 5
+each, ranges separated; −As, −At and the default variant alike).
+
+The fix is condition 2 of §4.1: build only if the children still to
+come save the build cost, with the miner's bound of those children.
+Re-measured on the pinned `t100000x204c4` (`m5-tier-*` rows) and on the
+reviewer's shape at 200,000 transactions (`w1`: 200 rare items at 10 %,
+4 common ones at 20 %). `blk1` is an adversary for a code-order bound
+alone: half the transactions hold 50 frequent items that never occur
+with the rare/common block. Median wall s:
+
+| data, options | n | `main` | v0.1.0 | before the fix | branch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `t100000x204c4 -tm -s-180 -n3` | 7 | 3.42 | 3.48 | 4.28 (1 run) | 3.42 |
+| `… -As` | 7 | 3.33 | 3.15 | 4.09 (1 run) | 3.27 |
+| `… -At` | 7 | 5.60 | 5.82 | 6.79 (1 run) | 5.69 |
+| `… -Ad` | 7 | 3.31 | 3.25 | — | 3.30 |
+| `t100000x204c4 -tc -s-180 -n3` (control) | 7 | 2.14 | 2.21 | — | 2.14 |
+| `w1 -tm -s-360 -n3` | 10 | 9.26 | — | 12.23 (1 run) | 9.46 |
+| `blk1 -tm -s-180 -n3` | 10 | 6.75 | — | 7.76 (1 run) | 6.76 |
+
+benchstat finds no significant difference between the branch and
+`main` on these rows. A statistics build shows 0 sibling-row builds on
+all three datasets. The machine was loaded (1-minute load average
+5–30 in the `w1`/`blk1` rounds), so the ranges are wide: `w1` 8.96–12.97
+(main) and 9.11–12.16 s (branch). The target and its neighbours keep
+their gain (n = 5 / 3, the same rounds):
+
+| `d20000x200d30` | `main` | branch | C |
+| --- | ---: | ---: | ---: |
+| `-tm -s2 -n3` | 97.35 | 19.81 | 39.23 |
+| `-tm -s1 -n4` | 132.82 | 67.81 | — |
+| `-tm -s2 -n3 -As` | 96.30 | 18.40 | — |
+| `-tm -s2 -n3 -At` | 119.88 | 42.17 | — |
+| `-tc -s2 -n3` (n = 7) | 10.32 | 10.24 | — |
+
+The 28 fast configurations of §7.2 (7 runs each, benchstat against
+`main`) show only improvements: `dense -tm -s2 -n3` −14.6 %,
+`d5000x60d40 -tm -s5 -n3` −8.3 %, and two 10 ms-resolution artefacts
+(`d1000x30d80 -tm -n2`, `weighted -w -tc`).
+
+The full root `BenchmarkSuite*` (99 rows) and `internal/fpg`
+`CloMaxLimited`/`Mine` ran in 6 interleaved rounds at load 5–9:
+
+- `SuiteMaxSize/dense/s=2/maximal/n=3`: −13.6 %.
+- Three rows without a maximum size, where the checker is not
+  installed: +2.2 % to +9.1 % (two of them CSV sources at ±13 %).
+- `CloMaxLimited/dense2000x40d60/tm/n3`: +2.6 % (p = 0.015). After the
+  work counter was moved out of the scan's inner loop, it was re-run
+  with 10 interleaved rounds: all 12 `CloMaxLimited` rows are `~`.
+
+**Worst case.** A level whose rows are built and then not used costs
+at most about 3.25 times its ordinary checks: the build is at most
+twice the work already spent, and the cost pass a quarter. Condition 2
+allows a build only if the children still to come are expected to
+save B at the average work of the children so far. A loss therefore
+needs the later children to stop much earlier than the earlier ones,
+or fewer of them than the miner's bound. No measured configuration
+shows one.
+
 ## 8. Decision
 
 The size-limited search with the complete extension check is exactly
@@ -865,8 +967,11 @@ extensions); it is deferred.
 from re-indexing the parent's cover, so that a child's check counts
 over the parent's transactions in sequential words. The run takes
 19.8 s instead of 97.1 s (C 39.1 s), with the same peak memory. `-n4` is
-2× faster, and `dense -tm -s2 -n3` 15 % faster. No measured
-configuration got slower (§7.2). Closed checks are unchanged.
+2× faster, and `dense -tm -s2 -n3` 15 % faster. After the review fix
+for parents with few children (§7.3), no measured configuration is
+significantly slower than `main`. The worst case is bounded, not zero:
+a level whose rows go unused costs at most about 3.25× its ordinary
+checks. Closed checks are unchanged.
 
 Reusing covers along the search path (`checkPath`, the cover of a set
 is the cover of its prefix) was implemented after this report's first
