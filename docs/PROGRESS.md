@@ -46,10 +46,17 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  `fpgpsp` and `-z`, faster
-  dense maximal checks near the size limit (M5A-1), skipping perfect
-  extensions that cannot affect a result (NEW-1, quadratic in upstream
-  too), the remaining quadratic closed-check shape (NEW-3).
+  the remaining quadratic closed-check shape (NEW-3, #20), skipping
+  perfect extensions that cannot affect a result (NEW-1, #21, quadratic
+  in upstream too), `-z` (#22) and `fpgpsp` (#23).
+- M5A-1 (dense maximal checks near the size limit), issue #19 (PR #33):
+  parent-condensed sibling bit rows answer the children's maximal checks
+  by popcount; built by an actual-work rule with a history-scaled bound
+  on the remaining checked children; target `d20000x200d30 -tm -s2 -n3`
+  97 s → about 20 s (C 39 s), no measured regression, worst case bounded
+  at 3.25× a level's ordinary checks (M5 §7.3–§7.4). To re-check before
+  a release: `CloMaxLimited/dense2000x40d60/tm/n3` (+2.3 % in one of
+  three benchstat rounds, review R3-1).
 - Resolved after v0.1.0: RC-2 (Info, `docs/audit/rc1-verification.md`),
   mining returned nil instead of `ctx.Err()` when the context was
   canceled inside `OnStart` and nothing was left to mine; fixed by
