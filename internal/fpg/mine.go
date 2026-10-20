@@ -103,16 +103,19 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 			h.checker(chk)
 		}
 		m.limited, m.zmax = true, c.ZMax
+		// chk.left: the siblings that can follow the set (cost only)
 		fn := func(set []tract.Item, supp tract.Supp) bool {
+			chk.left = m.left
 			return chk.checkPath(rep.Items(), set, supp)
 		}
 		if h.cloMaxCheck != nil {
-			fn = h.cloMaxCheck(chk, rep)
+			hook := h.cloMaxCheck(chk, rep)
+			fn = func(set []tract.Item, supp tract.Supp) bool {
+				chk.left = m.left
+				return hook(set, supp)
+			}
 		}
-		rep.SetCloMaxCheck(func(set []tract.Item, supp tract.Supp) bool {
-			chk.left = m.left // the siblings that can follow (cost only)
-			return fn(set, supp)
-		})
+		rep.SetCloMaxCheck(fn)
 	}
 	if m.done != nil {
 		// Recursion entries alone do not bound the work after a

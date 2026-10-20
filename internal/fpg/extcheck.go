@@ -661,12 +661,13 @@ func (c *extChecker) keepCand(t int32) {
 func (c *extChecker) scanMaximal() bool {
 	touched := c.cand[:0]
 	ok := true
+	work := 0 // item visits (whole transactions), for the sibling rows
 scan:
 	for i, w := range c.nz {
 		for x := c.cover[i]; x != 0; x &= x - 1 {
 			t := w*64 + int32(bits.TrailingZeros64(x))
 			wt := c.txW[t]
-			c.work += int64(c.txOff[t+1] - c.txOff[t])
+			work += int(c.txOff[t+1] - c.txOff[t])
 			for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
 				if c.inSet[it] == c.setStamp {
 					continue
@@ -685,6 +686,7 @@ scan:
 		c.cnt[it] = 0
 	}
 	c.cand = touched
+	c.work += int64(work)
 	return ok
 }
 
