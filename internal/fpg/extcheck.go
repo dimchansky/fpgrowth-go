@@ -86,6 +86,10 @@ type extChecker struct {
 	cnt      []tract.Supp // maximal: supp(X ∪ {i}) so far
 	cand     []tract.Item // candidates / touched items
 	setStamp uint32
+	setLen   int // items of the checked set (len(set) of markSet)
+
+	scanParams           // thresholds of scanClosed
+	scanStat   scanStats // use of the paths of scanClosed
 
 	// Sibling rows of the maximal check (extsib.go), one per path level.
 	sibs      []sibLevel
@@ -136,6 +140,8 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		freq:    make([]tract.Supp, k),
 		inSet:   make([]uint32, k),
 		cnt:     make([]tract.Supp, k),
+
+		scanParams: scanDefaults,
 	}
 	c.txItems = make([]tract.Item, 0, presize(bag.Extent()))
 	c.txOff = append(make([]int, 0, bag.Len()+1), 0)
@@ -306,7 +312,7 @@ func (c *extChecker) sparseWords(i tract.Item) []uint64 {
 
 // seek returns the smallest index j >= i with idx[j] >= w (len(idx) if
 // there is none), searching exponentially from i (idx ascending).
-func seek(idx []int32, i int, w int32) int {
+func seek[T ~int32](idx []T, i int, w T) int {
 	if i >= len(idx) || idx[i] >= w {
 		return i
 	}
@@ -485,7 +491,7 @@ func (c *extChecker) decide(n int, supp tract.Supp) bool {
 		if c.maximal {
 			return c.scanMaximal()
 		}
-		return c.scanClosed()
+		return c.scanClosed(n)
 	}
 	if c.maximal {
 		return c.vertMaximal()
@@ -516,6 +522,7 @@ func (c *extChecker) markSet(set []tract.Item) {
 	for _, it := range set {
 		c.inSet[it] = c.setStamp
 	}
+	c.setLen = len(set)
 }
 
 // bitCover computes the cover of set into c.nz and c.cover and returns
@@ -540,18 +547,31 @@ func (c *extChecker) bitCover(set []tract.Item) int {
 	return a.n
 }
 
-// scanClosed decides the marked set from its cover transactions (the
+// scanClosed decides the marked set from its n cover transactions (the
 // bits of c.cover, enumerated lazily): an item has the support of the
 // set iff it is in every cover transaction, so the candidates are the
-// items of the first one, and the set is closed as soon as no candidate
-// is left.
+// items of one of them, intersected with all the others, and the set is
+// closed as soon as no candidate is left.
 //
 // The transactions are numbered in bag order (lexicographic), where
 // neighbors share most of their items, so candidates survive a scan in
 // order for long. The scan therefore intersects the first transactions
-// of scanProbes cover words spread over the cover first (intersecting
-// with a transaction twice changes nothing), then all of them in order.
-func (c *extChecker) scanClosed() bool {
+// t_p of scanProbes cover words spread over the cover first, then all of
+// them in order.
+//
+// The candidates come from a short cover transaction t*, not
+// necessarily the first one t0 (issue #20, docs/m5-investigation.md §4):
+// a long t0 followed by short transactions made every check copy t0.
+// t* is the shortest of t0 and the t_p (stage a); if t* still has more
+// than guard (4) candidates per cover transaction, one pass over the
+// cover's transaction lengths finds the shortest cover transaction
+// (stage b), which costs n steps, at most a quarter of copying t*.
+// The intersection is the same for any start and any order, repeats
+// change nothing, and t0, the t_p and t* are each intersected (t0 and
+// the t_p before the full scan, which skips t0 and repeats the others),
+// so the verdict is the one of the plain scan. A long transaction is
+// intersected with few candidates by exponential search (keepSeek).
+func (c *extChecker) scanClosed(n int) bool {
 	nz, cover := c.nz, c.cover
 	if len(nz) == 0 {
 		return true // an empty cover (support 0) cannot occur for a reported set
@@ -560,23 +580,114 @@ func (c *extChecker) scanClosed() bool {
 	if c.probeCand(t0) {
 		return false
 	}
-	c.initCand(t0)
-	for p, last := 1, 0; p < scanProbes && len(c.cand) > 0; p++ {
+	// stage a: the shortest of t0 and the spread transactions
+	var tp [scanProbes - 1]int32
+	np := 0
+	ts, ls := t0, c.txLen(t0)
+	for p, last := 1, 0; p < scanProbes; p++ {
 		if i := p * len(nz) / scanProbes; i != last { // small covers: words repeat
-			c.keepCand(nz[i]*64 + int32(bits.TrailingZeros64(cover[i])))
+			t := nz[i]*64 + int32(bits.TrailingZeros64(cover[i]))
+			tp[np] = t
+			np++
+			if l := c.txLen(t); l < ls {
+				ts, ls = t, l
+			}
 			last = i
+		}
+	}
+	// stage b: the shortest cover transaction, if t* is long for the cover
+	if ls-c.setLen > c.guard*n {
+		c.scanStat.stageB++
+	stageB:
+		for i, w := range nz {
+			for x := cover[i]; x != 0; x &= x - 1 {
+				t := w*64 + int32(bits.TrailingZeros64(x))
+				if l := c.txLen(t); l < ls {
+					ts, ls = t, l
+					if l <= c.setLen {
+						break stageB // t = X: no candidate (initCand)
+					}
+				}
+			}
+		}
+	}
+	if ts != t0 {
+		c.scanStat.moved++
+		if c.probeCand(ts) {
+			return false
+		}
+	}
+	c.initCand(ts)
+	if ts != t0 && len(c.cand) > 0 {
+		if c.gallop(t0) {
+			c.keepSeek(t0)
+		} else {
+			c.keepCand(t0)
+		}
+	}
+	for _, t := range tp[:np] {
+		if len(c.cand) == 0 {
+			break
+		}
+		if t == ts {
+			continue
+		}
+		if c.gallop(t) {
+			c.keepSeek(t)
+		} else {
+			c.keepCand(t)
 		}
 	}
 	for i, w := range nz {
 		x := cover[i]
 		if i == 0 {
-			x &= x - 1 // the first transaction gave the candidates
+			x &= x - 1 // t0: intersected above (or it gave the candidates)
 		}
 		for ; x != 0 && len(c.cand) > 0; x &= x - 1 {
-			c.keepCand(w*64 + int32(bits.TrailingZeros64(x)))
+			t := w*64 + int32(bits.TrailingZeros64(x))
+			if c.gallop(t) {
+				c.keepSeek(t)
+			} else {
+				c.keepCand(t)
+			}
 		}
 	}
 	return len(c.cand) == 0
+}
+
+// txLen returns the number of items of transaction t.
+func (c *extChecker) txLen(t int32) int {
+	return c.txOff[t+1] - c.txOff[t]
+}
+
+// gallop reports whether transaction t is to be intersected with the
+// candidates by exponential search (keepSeek) instead of a merge
+// (keepCand): if t has at least gallopMin items and at least
+// gallopRatio times as many as there are candidates. The decision is
+// made by the callers so that keepCand stays small enough to be inlined.
+func (c *extChecker) gallop(t int32) bool {
+	l := c.txLen(t)
+	return l >= c.gallopMin && l >= c.gallopRatio*len(c.cand)
+}
+
+// scanParams are the thresholds of scanClosed.
+type scanParams struct {
+	gallopMin, gallopRatio int // keepSeek: |t| >= gallopMin, gallopRatio·|candidates|
+	guard                  int // stage b: more than guard candidates per cover transaction
+}
+
+// scanDefaults are the production thresholds of scanClosed (a build
+// with the tag fpgforce lowers them, extcheck_force.go). A ratio of 16
+// is where the exponential search and the merge cost the same on
+// uniformly spread candidates; 128 keeps the search off on ordinary
+// data (transactions of up to about 100 items).
+var scanDefaults = scanParams{gallopMin: 128, gallopRatio: 16, guard: 4}
+
+// scanStats counts the use of the paths of scanClosed (tests, docs).
+type scanStats struct {
+	moved   int // candidates from a transaction other than t0
+	stageB  int // passes over the cover for the shortest transaction
+	gallops int // intersections by exponential search
 }
 
 // scanProbes is the number of spread cover transactions that scanClosed
@@ -646,6 +757,25 @@ func (c *extChecker) keepCand(t int32) {
 			i++
 		}
 		if i == len(items) {
+			break
+		}
+		if items[i] == it {
+			c.cand[n] = it
+			n++
+		}
+	}
+	c.cand = c.cand[:n]
+}
+
+// keepSeek is keepCand for a transaction t that is long compared to the
+// candidates: each candidate is searched exponentially from the position
+// of the previous one, O(|cand|·log(|t|/|cand|)) instead of O(|t|).
+func (c *extChecker) keepSeek(t int32) {
+	c.scanStat.gallops++
+	items := c.txItems[c.txOff[t]:c.txOff[t+1]]
+	n, i := 0, 0
+	for _, it := range c.cand {
+		if i = seek(items, i, it); i == len(items) {
 			break
 		}
 		if items[i] == it {

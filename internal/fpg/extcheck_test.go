@@ -313,8 +313,8 @@ func bruteCheck(c *extChecker, rep *report.Reporter, src *m5Source) report.CloMa
 		}
 		if len(set) > 0 { // both decisions
 			c.markSet(set)
-			c.bitCover(set)
-			h, v := c.scanClosed(), c.vertClosed(supp)
+			n := c.bitCover(set)
+			h, v := c.scanClosed(n), c.vertClosed(supp)
 			if c.maximal {
 				h, v = c.scanMaximal(), c.vertMaximal()
 			}
@@ -797,8 +797,8 @@ func TestExtCheckSingleCover(t *testing.T) {
 					}
 					got := c.check(set, s)
 					c.markSet(set)
-					c.bitCover(set)
-					h, v := c.scanClosed(), c.vertClosed(s)
+					n := c.bitCover(set)
+					h, v := c.scanClosed(n), c.vertClosed(s)
 					if tg == report.TargetMaximal {
 						h, v = c.scanMaximal(), c.vertMaximal()
 					}
