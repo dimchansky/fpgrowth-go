@@ -724,7 +724,11 @@ The claim is for `-n1`: with `-n2`/`-n3` the projection, with `-At` the
 top-down tree build stay quadratic on this data (lp50000 `-n3`: 12.07 →
 5.26 s, C 3.43 s; `-At`: 10.22 → 3.42 s, C 11.61 s), and `-tm` is
 unchanged (5.68 s, C 3.42 s). Every other `-tc` row of `configs.txt`
-is unchanged within noise (instructions at most +0.6 %).
+is unchanged within noise (instructions at most +0.65 %). Generated data
+with long transactions (PR #35 review): the corrected exponential-search
+rule is −2.2 % to +0.2 % against `main`; the worst case of the pass over
+the cover (it runs on most scans and never finds a shorter transaction)
+is +1.1 % (M5 §7.5).
 
 ### Profiles after optimization
 

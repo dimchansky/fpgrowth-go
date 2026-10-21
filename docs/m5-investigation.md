@@ -1171,9 +1171,36 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
   skipping the last item or not advancing, stage b's guard inverted,
   missing the last cover word or choosing a non-cover transaction, t0
   not intersected, probes of t* only (the trap), and PR #6's W1, W2,
-  W4: all caught. Two survive and are equivalent in the verdict:
+  W4; after review round 1 also the full scan skipping the first
+  transaction of every cover word (K10) and the gallop rule without
+  its span test: all caught. Two survive and are equivalent in the verdict:
   probing t0 twice, and skipping the spread transactions (the full
   scan intersects them anyway).
+- **Review round 1 (PR #35).** The performance review generated
+  adversaries with long transactions (`gen.py` of the review: 200–1,000
+  random items plus a block of common items). With the first gallop
+  rule (|t| ≥ 16·|cand|) the search ran on candidates clustered at the
+  start of long transactions, where the merge stops early: up to
+  +10.3 % instructions against `main`. The span rule of §4 fixes it.
+  Instructions, 6 interleaved runs (load 4–7):
+
+  | data (`-tc -s-2 -n1`) | `main` | first rule | span rule |
+  | --- | ---: | ---: | ---: |
+  | `g6-60-0.9` (1,000 lines of 1,000 items, 60 block items at 90 %) | 4.36 G | 4.80 G | 4.36 G |
+  | `g6-200-0.9` | 6.02 G | 6.64 G | 5.95 G |
+  | `g6-200-0.95` | 4.89 G | 5.29 G | 4.78 G |
+  | `g6-400-0.95` | 7.27 G | 7.56 G | 7.11 G |
+  | `g1` (stage b on 75 % of the scans, never shorter) | 12.28 G | 12.46 G | 12.41 G (+1.1 %) |
+  | `g2` / `g3` | 15.57 / 12.45 G | — | 15.62 / 12.36 G |
+
+  `g1` is stage b's worst case: it runs on most scans, finds no
+  shorter transaction, and the candidates die after one merge, so its
+  pass over the cover is pure overhead, about +1 to +1.5 % of all
+  instructions (bounded by a quarter of the copies, §4). The
+  correctness review found a verdict-changing mutant that no test
+  caught (the full scan skipping the first transaction of every cover
+  word once the start moved, K10); `TestExtCheckFirstOfWord` (18 cover
+  words, every transaction lacking one item of all others) catches it.
 
 ## 8. Decision
 
