@@ -98,3 +98,31 @@ m5-tier-c-n3*      t100000x204c4.tab -tc -s-180 -n3
 m5-split-m-n3*     s50000x414.tab    -tm -s-1350 -n3
 m5-split-m-n3-As*  s50000x414.tab    -tm -s-1350 -n3 -As
 m5-split-m-n3-At*  s50000x414.tab    -tm -s-1350 -n3 -At
+
+# Long and short transactions (issue #20, NEW-3, review PR6-2 "lp2"):
+# every item's cover is one long line and short ones, so each closed
+# check of an item copies the long line (quadratic in Go and C).
+# lpN: one N-item line plus N one-item lines; select with '^lp-'.
+lp-12500-c-As*     lp12500.tab       -As -tc -s-2 -n1
+lp-25000-c-As*     lp25000.tab       -As -tc -s-2 -n1
+lp-50000-c-As*     lp50000.tab       -As -tc -s-2 -n1
+lp-50000-c-Ac*     lp50000.tab       -Ac -tc -s-2 -n1
+lp-50000-c-Ad*     lp50000.tab       -Ad -tc -s-2 -n1
+lp-50000-c-At*     lp50000.tab       -At -tc -s-2 -n1
+lp-50000-c-As-l0*  lp50000.tab       -As -l0 -tc -s-2 -n1
+lp-50000-c-n3*     lp50000.tab       -As -tc -s-2 -n3
+lp-50000-m-As*     lp50000.tab       -As -tm -s-2 -n1
+lp-50000s2-c-n1*   lp50000s2.tab     -As -tc -s-2 -n1
+lp-50000s2-c-n2*   lp50000s2.tab     -As -tc -s-2 -n2
+lp-50000w-c*       lp50000w.tab      -w -As -tc -s-2 -n1
+lp-c20000-c*       lpc20000.tab      -As -tc -s-2 -n1
+# (lp-50000-m-As is the maximal control: its maximal checks count the
+# long line, quadratic as well.)
+# Slow: lp100000 for the scaling (Go about 27 s, C about 14 s), and
+# lpc20000 without item sorting (-q0; -q-1 and -q-2 alike), where long
+# suffix chains come first in the cover words, so that neither the
+# first transaction nor the spread probes are short (Go about 58 s; the
+# C program grew to a 169 GB memory footprint and was killed after
+# 541 s, so compare.sh cannot complete this row).
+lp-100000-c-As*    lp100000.tab      -As -tc -s-2 -n1
+lp-c20000-c-q0*    lpc20000.tab      -As -tc -s-2 -n1 -q0

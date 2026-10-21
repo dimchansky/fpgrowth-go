@@ -65,6 +65,25 @@ type benchSpec struct {
 	// of them, chosen by the next PCG value modulo Slices (a categorical
 	// attribute). The Common items follow them, then the others.
 	Slices, SliceDensity int
+	// Short > 0 selects long and short transactions instead (MinLen,
+	// MaxLen, Skew, Patterns and Density must be 0; MaxWeight is
+	// allowed): first the long transactions, items in ascending order,
+	// then for every item i one short transaction of the Short items
+	// i, i+1, …, i+Short−1 (modulo Items). With Step = 0 there is one
+	// long transaction of all items; with Step > 0 there are
+	// ⌈Items/Step⌉ suffix chains, chain j holding the items j·Step to
+	// Items−1. Transactions must equal the resulting count. The closed
+	// check of a single item then has a long first cover transaction and
+	// short others (issue #20).
+	Short, Step int
+}
+
+// longShortCount returns the number of transactions of a Short > 0 spec.
+func (s benchSpec) longShortCount() int {
+	if s.Step == 0 {
+		return 1 + s.Items
+	}
+	return (s.Items+s.Step-1)/s.Step + s.Items
 }
 
 // benchSpecs are the datasets of the benchmark suite and of the C
@@ -112,6 +131,23 @@ var benchSpecs = []benchSpec{
 	// supersets below them): sibling rows must not be built for them.
 	{Name: "s50000x414", Seed: 7, Transactions: 50000, Items: 414, Density: 15, Common: 10, CommonDensity: 65,
 		Slices: 4, SliceDensity: 80},
+	// Long and short transactions (issue #20, review PR6-2 "lp2"): one
+	// line of all N items, then N one-item lines, so with -tc -s-2 -n1
+	// every item's cover is the long line and one short line. lpN equals
+	// the awk reproducer of the issue with n = N byte for byte; the four
+	// sizes show the scaling. lp50000s2: short lines of 2 items (the
+	// candidates of a short line must not be intersected with the long
+	// one item by item). lp50000w: weights 1..20. lpc20000: suffix
+	// chains every 64 items, so that a long transaction leads every
+	// cover word (the shortest cover transaction is never the first of
+	// a word).
+	{Name: "lp12500", Transactions: 12501, Items: 12500, Short: 1},
+	{Name: "lp25000", Transactions: 25001, Items: 25000, Short: 1},
+	{Name: "lp50000", Transactions: 50001, Items: 50000, Short: 1},
+	{Name: "lp100000", Transactions: 100001, Items: 100000, Short: 1},
+	{Name: "lp50000s2", Transactions: 50001, Items: 50000, Short: 2},
+	{Name: "lp50000w", Seed: 8, Transactions: 50001, Items: 50000, Short: 1, MaxWeight: 20},
+	{Name: "lpc20000", Transactions: 20313, Items: 20000, Short: 1, Step: 64},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -155,6 +191,10 @@ func (s benchSpec) validate() error {
 	case s.Slices < 0 || s.Slices+s.Common > s.Items || s.Slices > 0 && s.Density == 0 ||
 		s.SliceDensity < 0 || s.SliceDensity > 100:
 		return fmt.Errorf("benchgen %s: invalid slices", s.Name)
+	case s.Short < 0 || s.Step < 0 || s.Step > 0 && s.Short == 0 || s.Short > 0 &&
+		(s.Short > s.Items || s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 ||
+			s.Density != 0 || s.Transactions != s.longShortCount()):
+		return fmt.Errorf("benchgen %s: invalid long and short transactions", s.Name)
 	}
 	return nil
 }
@@ -167,6 +207,9 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	if s.Density > 0 {
 		return benchIndependent(s, fn)
+	}
+	if s.Short > 0 {
+		return benchLongShort(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -256,6 +299,42 @@ func benchIndependent(s benchSpec, fn func(tx benchTx) error) error {
 			}
 		}
 		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// benchLongShort generates a dataset of long and short transactions
+// (benchSpec.Short).
+func benchLongShort(s benchSpec, fn func(tx benchTx) error) error {
+	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
+	weight := func() int64 {
+		if s.MaxWeight > 0 {
+			return 1 + int64(r.intN(s.MaxWeight))
+		}
+		return 1
+	}
+	items := make([]int32, 0, s.Items)
+	step := s.Step
+	if step == 0 {
+		step = s.Items // one chain
+	}
+	for first := 0; first < s.Items; first += step {
+		items = items[:0]
+		for i := first; i < s.Items; i++ {
+			items = append(items, int32(i))
+		}
+		if err := fn(benchTx{Items: items, Weight: weight()}); err != nil {
+			return err
+		}
+	}
+	for i := range s.Items {
+		items = items[:0]
+		for k := range s.Short {
+			items = append(items, int32((i+k)%s.Items))
+		}
+		if err := fn(benchTx{Items: items, Weight: weight()}); err != nil {
 			return err
 		}
 	}

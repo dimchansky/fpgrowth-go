@@ -63,6 +63,21 @@ are maximal and checked. Its other children have frequent supersets
 and are never checked. The `m5-split-*` rows guard the later-sibling
 bound of the same rule.
 
+The `lp*` datasets (`benchSpec.Short`, no randomness except the weights
+of `lp50000w`) are the long-and-short shape of issue #20 (NEW-3, review
+PR6-2 `lp2`): one line of all N items, then for every item a short
+line, so that with `-tc -s-2 -n1` every item's cover is the long line
+plus short ones and each closed check of an item copies the long line
+into its candidates (quadratic in Go and in C). `lp12500` … `lp100000`
+are the issue's awk reproducer byte for byte at four sizes (the
+scaling); `lp50000s2` has two-item short lines (a candidate survives
+the short line and must be intersected with the long one);
+`lp50000w` has weights 1..20; `lpc20000` replaces the long line by
+313 suffix chains (chain j holds the items 64·j to 19,999), so that
+with `-q0` a long chain comes first in every cover word and neither the
+first cover transaction nor the spread probes of the closed scan are
+short. Its `-q0` row and `lp100000` are slow (see `configs.txt`).
+
 ```bash
 cd reference
 go run ./bench/gen -dataset d2000x40d60 -o d2000x40d60.tab
@@ -71,6 +86,8 @@ go run ./bench/gen -dataset d5000x60d40 -o d5000x60d40.tab
 go run ./bench/gen -dataset d20000x200d30 -o d20000x200d30.tab
 bench/compare.sh -m devnull '^(m5-d[125]000-|m5-tier-|m5-split-|large-[cm]-n)'   # the fast M5 configurations
 bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slow)
+bench/compare.sh -n 5 -m devnull '^lp-(12500|25000|50000|c20000-c\*)'   # issue #20, fast rows
+bench/compare.sh -n 3 -m devnull '^lp-(100000|c20000-c-q0)'   # issue #20, slow rows
 ```
 `go test ./bench/...` checks that
 
@@ -81,7 +98,7 @@ bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slo
 - the SHA-256 of every dataset is unchanged (`TestDatasetsPinned`).
 
 Datasets are generated on demand into a temporary directory and never
-committed (the largest is 8.5 MB).
+committed (the largest is `lpc20000`, 18.1 MB).
 
 ## Comparison with the C program
 
