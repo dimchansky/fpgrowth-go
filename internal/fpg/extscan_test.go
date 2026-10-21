@@ -99,13 +99,17 @@ func mixedTxs(r *rand.Rand, k int) []oracle.Transaction {
 // that each new path of the scan ran at the production thresholds.
 func TestExtCheckMixedCover(t *testing.T) {
 	params := []scanParams{
-		scanDefaults,
+		scanDefaults(),
 		{gallopMin: 128, gallopRatio: 16, guard: 0},
 		{gallopMin: 2, gallopRatio: 1, guard: 4},
 		{gallopMin: 1, gallopRatio: 0, guard: 0},
 	}
 	var used [4]scanStats
-	for seed := range uint64(24) {
+	seeds := uint64(24)
+	if testing.Short() || raceEnabled {
+		seeds = 4
+	}
+	for seed := range seeds {
 		r := rand.New(rand.NewPCG(seed, 20))
 		k := 150 + r.IntN(250)
 		txs := mixedTxs(r, k)
@@ -176,10 +180,12 @@ func TestExtCheckMixedCover(t *testing.T) {
 	t.Logf("paths per setting: %+v", used)
 }
 
-// TestExtCheckZeroWeightSet: a transaction of weight 0 that equals the
-// checked set X, first in bag order and the shortest of all, is not in
-// the cover, so it must not end stage b or give the candidates: X is not
-// closed (b is in every transaction of positive weight with a).
+// TestExtCheckZeroWeightSet guards the precondition of stages a and b
+// that every transaction the scan can choose is in the cover: a
+// transaction of weight 0 that equals the checked set X (first in bag
+// order and the shortest of all) is dropped when the checker is built
+// (newExtChecker), so neither stage can pick it, and X is not closed (b
+// is in every transaction of positive weight with a).
 func TestExtCheckZeroWeightSet(t *testing.T) {
 	long := []string{"a", "b"}
 	for i := range 300 {
@@ -195,7 +201,7 @@ func TestExtCheckZeroWeightSet(t *testing.T) {
 		txs = append(txs, oracle.Transaction{Items: []string{"z"}, Weight: 1}) // the scan is cheaper
 	}
 	for _, rows := range []rowMode{rowsAuto, rowsSparse, rowsMixed} {
-		for _, p := range []scanParams{scanDefaults, {gallopMin: 1, gallopRatio: 0, guard: 0}} {
+		for _, p := range []scanParams{scanDefaults(), {gallopMin: 1, gallopRatio: 0, guard: 0}} {
 			c, ib := newTestChecker(t, txs, report.TargetClosed, 1, rows)
 			c.scanParams = p
 			a, _ := ib.Code("a")

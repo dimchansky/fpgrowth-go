@@ -427,11 +427,20 @@ reached, accepted by the repository (3.4) and passes the check.
     - if t* ≠ t0, the probes are also run on t* (same guard), then t0
       is intersected; the spread transactions other than t* follow,
       then the full scan, which skips t0 as before;
-    - a transaction of at least 128 items and at least 16 times as
-      many items as there are candidates is intersected by exponential
-      search for each candidate (`keepSeek`, the `seek` of the bit
-      sets) instead of a merge; the decision is made by the callers,
-      so that the merge (`keepCand`) stays inlined.
+    - a transaction of at least 128 items is intersected by
+      exponential search for each candidate (`keepSeek`, the `seek`
+      of the bit sets) instead of a merge if the merge would walk more
+      than 16 of its items per candidate: the merge stops at the last
+      candidate, so the rule tests in O(1) whether item 16·|cand| of
+      the transaction is still below the last candidate. (The first
+      rule compared |t| with 16·|cand|; with candidates clustered at
+      the start of long transactions the search was 1.6–2.1× slower
+      than the merge and such data took up to 10 % more instructions
+      than `main`, PR #35 review P1.) The decision is made by the
+      callers, so that the merge (`keepCand`) stays inlined. The
+      thresholds are constants (`extcheck_thresh.go`); the build tag
+      `fpgforce` replaces them (`extcheck_force.go`) for brute-force
+      runs, and tests can set them on a checker.
 
     Exactness: the closure of X is the intersection of its cover
     transactions minus X (§3), which does not depend on the start,

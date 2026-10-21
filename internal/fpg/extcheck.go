@@ -141,7 +141,7 @@ func newExtChecker(bag *tract.Bag, target report.Target, smin tract.Supp,
 		inSet:   make([]uint32, k),
 		cnt:     make([]tract.Supp, k),
 
-		scanParams: scanDefaults,
+		scanParams: scanDefaults(),
 	}
 	c.txItems = make([]tract.Item, 0, presize(bag.Extent()))
 	c.txOff = append(make([]int, 0, bag.Len()+1), 0)
@@ -666,26 +666,36 @@ func (c *extChecker) txLen(t int32) int {
 
 // gallop reports whether transaction t is to be intersected with the
 // candidates by exponential search (keepSeek) instead of a merge
-// (keepCand): if t has at least gallopMin items and at least
-// gallopRatio times as many as there are candidates. The decision is
-// made by the callers so that keepCand stays small enough to be inlined.
+// (keepCand). The merge walks the items of t up to the last candidate,
+// the search costs about log(|t|/|cand|) steps per candidate, so the
+// search is chosen if t has at least gallopMin items and the merge
+// would walk more than k = gallopRatio·|cand| of them: the k-th item of
+// t is below the last candidate (O(1); candidates clustered at the
+// start of a long transaction keep the merge, PR #35 review P1). The
+// decision is made by the callers so that keepCand stays small enough
+// to be inlined.
 func (c *extChecker) gallop(t int32) bool {
-	l := c.txLen(t)
-	return l >= c.gallopMin && l >= c.gallopRatio*len(c.cand)
+	l, k := c.txLen(t), c.gallopRatio*len(c.cand)
+	if l < c.gallopMin || l < k {
+		return false
+	}
+	return k == 0 || c.txItems[c.txOff[t]+k-1] < c.cand[len(c.cand)-1]
 }
 
-// scanParams are the thresholds of scanClosed.
+// scanParams are the thresholds of scanClosed, set from the constants
+// scanGallopMin, scanGallopRatio and scanGuard when the checker is
+// built (tests may change them on a checker).
 type scanParams struct {
-	gallopMin, gallopRatio int // keepSeek: |t| >= gallopMin, gallopRatio·|candidates|
+	gallopMin, gallopRatio int // keepSeek: |t| >= gallopMin, walk > gallopRatio·|candidates|
 	guard                  int // stage b: more than guard candidates per cover transaction
 }
 
-// scanDefaults are the production thresholds of scanClosed (a build
-// with the tag fpgforce lowers them, extcheck_force.go). A ratio of 16
-// is where the exponential search and the merge cost the same on
-// uniformly spread candidates; 128 keeps the search off on ordinary
-// data (transactions of up to about 100 items).
-var scanDefaults = scanParams{gallopMin: 128, gallopRatio: 16, guard: 4}
+// scanDefaults returns the thresholds of a build: the production
+// constants (extcheck_thresh.go) or, with the build tag fpgforce, the
+// lowered ones of extcheck_force.go.
+func scanDefaults() scanParams {
+	return scanParams{gallopMin: scanGallopMin, gallopRatio: scanGallopRatio, guard: scanGuard}
+}
 
 // scanStats counts the use of the paths of scanClosed (tests, docs).
 type scanStats struct {
