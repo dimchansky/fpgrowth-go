@@ -28,8 +28,24 @@ The release workflow publishes the section whose heading matches the tag
   comparison has `m5-d20000-*` rows for it (`-tc`/`-tm` with `-n2` to
   `-n4`), so the size-limited maximal check can be measured from
   committed code (#19).
+- Benchmarks: the long-and-short shapes of the closed check (`lp12500`
+  to `lp100000`, `lp50000s2`, `lp50000w`, `lpc20000`) and the probe
+  trap of its design review (`adv5-20000`, `adv5-40000`) are pinned
+  datasets with `lp-*` and `adv5-*` rows in the Go-vs-C comparison
+  (#20).
 
 ### Changed
+
+- Closed item sets with a maximum size (`-tc -n`, `TargetClosed` with
+  `MaxSize`) no longer take quadratic time when a long transaction and
+  many short ones contain the same items. The complete extension check
+  starts from a short cover transaction instead of the first one, and
+  searches long transactions instead of merging them. One line of
+  50,000 items plus 50,000 one-item lines (`-As -tc -s-2 -n1`) now
+  takes 0.06 s instead of 7.0 s (C: 3.7 s), and the time grows
+  linearly with the size. The output is unchanged. With `-n2` or more,
+  or with `-At`, such data stays quadratic in the mining itself, not
+  in the check (#20, audit NEW-3).
 
 - Maximal item sets with a maximum size (`-tm -n`, `TargetMaximal` with
   `MaxSize`) are much faster on dense data with many maximal sets of the

@@ -569,8 +569,12 @@ func (c *extChecker) bitCover(set []tract.Item) int {
 // The intersection is the same for any start and any order, repeats
 // change nothing, and t0, the t_p and t* are each intersected (t0 and
 // the t_p before the full scan, which skips t0 and repeats the others),
-// so the verdict is the one of the plain scan. A long transaction is
-// intersected with few candidates by exponential search (keepSeek).
+// so the verdict is the one of the plain scan. The probes (probeCand)
+// of t0 run first and unchanged, then those of t* if it differs: the
+// probes of t* alone can miss a covering item that t0's find (they
+// test the first items of another transaction; the adv5 trap of
+// reference/bench). A long transaction is intersected with few
+// candidates by exponential search (keepSeek).
 func (c *extChecker) scanClosed(n int) bool {
 	nz, cover := c.nz, c.cover
 	if len(nz) == 0 {
