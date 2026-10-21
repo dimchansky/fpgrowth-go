@@ -76,6 +76,16 @@ type benchSpec struct {
 	// check of a single item then has a long first cover transaction and
 	// short others (issue #20).
 	Short, Step int
+	// Trap > 0 selects the probe trap of issue #20 instead (every other
+	// field but Name, Items and Transactions must be 0): with N = Items,
+	// the lines {m1 m2 m3 r1 r2 r3 r4}, {m1 m2 m3 a0 … a(N−1)},
+	// {r1 … r4 a0 … a(N−3)}, {a(N−1)}, {a(N−2)}, then Trap filler lines
+	// {x(k mod 7)} (so that the closed check scans). Items are numbered
+	// in this order of first appearance (m1 = 0, r1 = 3, a0 = 7,
+	// x0 = N+7). With -q0 -tc -s-2 -n1 the first cover transaction of
+	// {a_i} has a covering item among its first 4 probes, the shortest
+	// one has not. Transactions must be Trap+5.
+	Trap int
 }
 
 // longShortCount returns the number of transactions of a Short > 0 spec.
@@ -148,6 +158,12 @@ var benchSpecs = []benchSpec{
 	{Name: "lp50000s2", Transactions: 50001, Items: 50000, Short: 2},
 	{Name: "lp50000w", Seed: 8, Transactions: 50001, Items: 50000, Short: 1, MaxWeight: 20},
 	{Name: "lpc20000", Transactions: 20313, Items: 20000, Short: 1, Step: 64},
+	// The probe trap (issue #20, challenge H1): the candidates of {a_i}
+	// must not move to the shortest cover transaction before the first
+	// one is probed. adv5-N is the challenge's gen5.py with renamed
+	// items (the same order of first appearance).
+	{Name: "adv5-20000", Transactions: 200005, Items: 20000, Trap: 200000},
+	{Name: "adv5-40000", Transactions: 200005, Items: 40000, Trap: 200000},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -195,6 +211,9 @@ func (s benchSpec) validate() error {
 		(s.Short > s.Items || s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 ||
 			s.Density != 0 || s.Transactions != s.longShortCount()):
 		return fmt.Errorf("benchgen %s: invalid long and short transactions", s.Name)
+	case s.Trap < 0 || s.Trap > 0 && (s.Items < 3 || s.Transactions != s.Trap+5 || s.MinLen != 0 ||
+		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 || s.MaxWeight != 0):
+		return fmt.Errorf("benchgen %s: invalid probe trap", s.Name)
 	}
 	return nil
 }
@@ -210,6 +229,9 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	if s.Short > 0 {
 		return benchLongShort(s, fn)
+	}
+	if s.Trap > 0 {
+		return benchTrap(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -335,6 +357,45 @@ func benchLongShort(s benchSpec, fn func(tx benchTx) error) error {
 			items = append(items, int32((i+k)%s.Items))
 		}
 		if err := fn(benchTx{Items: items, Weight: weight()}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// benchTrap generates the probe trap of issue #20 (benchSpec.Trap).
+func benchTrap(s benchSpec, fn func(tx benchTx) error) error {
+	n := int32(s.Items)
+	a := func(i int32) int32 { return 7 + i }
+	items := make([]int32, 0, s.Items+3)
+	emit := func() error { return fn(benchTx{Items: items, Weight: 1}) }
+	items = append(items, 0, 1, 2, 3, 4, 5, 6) // m1 m2 m3 r1 r2 r3 r4
+	if err := emit(); err != nil {
+		return err
+	}
+	items = append(items[:0], 0, 1, 2) // m1 m2 m3 and every a
+	for i := range n {
+		items = append(items, a(i))
+	}
+	if err := emit(); err != nil {
+		return err
+	}
+	items = append(items[:0], 3, 4, 5, 6) // r1 … r4 and a0 … a(N−3)
+	for i := range n - 2 {
+		items = append(items, a(i))
+	}
+	if err := emit(); err != nil {
+		return err
+	}
+	for _, i := range []int32{n - 1, n - 2} {
+		items = append(items[:0], a(i))
+		if err := emit(); err != nil {
+			return err
+		}
+	}
+	for k := range s.Trap {
+		items = append(items[:0], n+7+int32(k%7))
+		if err := emit(); err != nil {
 			return err
 		}
 	}
