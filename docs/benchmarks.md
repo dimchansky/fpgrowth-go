@@ -730,6 +730,43 @@ rule is −2.2 % to +0.2 % against `main`; the worst case of the pass over
 the cover (it runs on most scans and never finds a shorter transaction)
 is +1.1 % (M5 §7.5).
 
+*Update (2026-10-22, issue #21):* frequent item sets and generators with
+a small maximum size were quadratic on long single paths in Go and C
+(audit NEW-1, T4): the perfect extensions of sets with zmax items were
+collected, expanded and rejected against the size limit. The miners now
+skip them (`Reporter.PexUseful`), and `Report`/`expand` ignore the
+extensions of a set of zmax items. Instructions retired (`/usr/bin/time
+-l`, minimum of 2 runs, load average 3.3–4.8; the outputs of all four
+programs are md5-identical):
+
+| row | Go `main` | Go v0.1.0 | C 6.21 | Go branch |
+| --- | ---: | ---: | ---: | ---: |
+| `t4-6250 -s-17 -n1` | 2.111 G | 2.100 G | 1.290 G | 0.245 G |
+| `t4-12500 -s-17 -n1` | 7.930 G | 7.926 G | 5.005 G | 0.496 G |
+| `t4-25000 -s-17 -n1` | 30.703 G | 30.689 G | 19.771 G | 1.000 G |
+| `t4-12500 … -As` | 8.401 G | 8.395 G | 5.240 G | 0.508 G |
+| `t4-12500 … -Ad` | 8.393 G | 8.395 G | 5.162 G | 0.503 G |
+| `t4-12500 … -As -l0` | 8.244 G | 8.247 G | 5.086 G | 0.505 G |
+| `t4-12500 … -x` | 7.929 G | 7.929 G | 5.005 G | 0.510 G |
+| `t4-12500 -tg -s-17 -n1` | 2.150 G | 2.151 G | 1.260 G | 0.512 G |
+| `one-6250 -s-1 -n1` | 0.560 G | 0.558 G | 0.491 G | 0.071 G |
+| `one-12500 -s-1 -n1` | 2.106 G | 2.101 G | 1.907 G | 0.154 G |
+| `t4b-3000 -s-1 -n1` | 0.764 G | 0.764 G | 0.559 G | 0.078 G |
+| `t4b-6000 -s-1 -n1` | 2.901 G | 2.899 G | 2.177 G | 0.156 G |
+
+Per doubling of the size `main` and C grow 3.6–3.9×, the branch 2.0×
+(linear). On 20 ordinary rows whose chain walks the change touches
+(`sparse`, `dense`, `long`, `weighted`, `d2000x40d60`, `d5000x60d40`,
+`t100000x204c4`; default target and `-tg`, with and without `-n`,
+variants `-As -Ac -Ad -l0 -j`) the instructions differ from `main` by
+−0.35 % to +0.33 %. `internal/fpg` `BenchmarkMine` (benchstat, 6
+interleaved runs): geomean −0.19 %, one row +2.4 % (`m/c-j-l0`, a
+maximal-set row where the guard is constant), one −1.5 %.
+`internal/report` `BenchmarkReporter`: +4.6 % on `frequent` and +4.0 %
+on `pex-hypercube-8` (+2.5 % and +2.6 % instructions: the two new
+compares per `Report` and per `expand` call, a few instructions each),
+`closed` and `count-only` unchanged.
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package

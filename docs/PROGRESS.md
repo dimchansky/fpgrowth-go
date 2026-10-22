@@ -52,7 +52,7 @@ linked documents.
   `Reporter.PexUseful` says they cannot change a result (generators, or
   a set of zmax items for targets other than closed/maximal), and
   `Report`/`expand` ignore the extensions of a set of zmax items. T4
-  (`t4-12500 -s-17 -n1`) 7.94 G → 0.52 G instructions (C 5.01 G),
+  (`t4-12500 -s-17 -n1`) 7.93 G → 0.50 G instructions (C 5.01 G; 25,000 items: 30.7 G → 1.0 G, C 19.8 G),
   linear; the review's further shapes `one-N`, `t4b-N` linear too;
   output identical. Closed/maximal excluded (not needed: `-tc -n1` on
   T4 was already linear).

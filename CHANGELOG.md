@@ -50,9 +50,9 @@ The release workflow publishes the section whose heading matches the tag
   such a set (also those inherited from smaller sets, and those of the
   empty set's hypercube) are no longer expanded only to be rejected
   against the size limit. The audit's T4 input (17 lines of a 12,500-item
-  chain plus 12,510 one-item lines, `-s-17 -n1`) now takes 0.52 G
-  instead of 7.94 G instructions (C: 5.01 G) and grows linearly; one
-  line of 12,500 items with `-s-1 -n1` 0.16 G instead of 2.11 G. The
+  chain plus 12,510 one-item lines, `-s-17 -n1`) now takes 0.50 G
+  instead of 7.93 G instructions (C: 5.01 G) and grows linearly; one
+  line of 12,500 items with `-s-1 -n1` 0.15 G instead of 2.11 G (C: 1.91 G). The
   output is unchanged; closed and maximal item sets are not affected
   (#21, audit NEW-1).
 
