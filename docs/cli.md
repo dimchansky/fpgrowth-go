@@ -112,6 +112,7 @@ backslash. They apply to the input file and the
 | `-Z` | off | Print the number of item sets (rules) per size to standard output after the results. |
 | `-N` | pre-format | Do not pre-format integers. Accepted for compatibility; it changes nothing in the Go program (upstream: speed only). |
 | `-g` | off | Write item names in scanable form (quote special characters). |
+| `-z` | off | Compress the item set/rule output with zlib (see [Compressed output](#compressed-output--z)). |
 | `-h#` | `""` | Record header written before every output line. |
 | `-k#` | `" "` | Item separator. |
 | `-I#` | `" <- "` | Implication sign for rules (`head <- body`). |
@@ -132,9 +133,34 @@ escape decoding.
 | --- | --- |
 | `-!` | Print additional option information and exit. |
 
-`-z` (zlib-compressed output) is not supported, as in upstream's default
-build, which does not define `USE_ZLIB`: it is an unknown option (exit
-status 6). Support is deferred past v0.1.0.
+### Compressed output (`-z`)
+
+`-z` compresses the item set or rule output (`outfile`, also standard
+output with `-`) into one zlib stream (RFC 1950: a 2-byte header, deflate
+data, an Adler-32 checksum; not gzip) at the default compression level,
+like upstream's build with `USE_ZLIB`. It takes no value and can be
+combined with other flags (`-zZ`). Decompress the output with any zlib
+decoder, for example `python3 -c 'import sys,zlib;
+sys.stdout.buffer.write(zlib.decompress(sys.stdin.buffer.read()))' <
+out.z`, or Go's `compress/zlib`; `gzip -d` does not read it.
+
+- Only the item set/rule output is compressed: the `-Z` statistics, the
+  `-P` pattern spectrum, the log and the error messages are plain text.
+  In count-only mode (no `outfile`) `-z` has no effect.
+- With `-Z` and the output on standard output, the statistics follow the
+  complete zlib stream; a zlib decoder stops at the end of the stream, and
+  the statistics are the bytes after it. Upstream prints them in the
+  middle of its output instead (deviation O12).
+- The decompressed output is byte for byte the output without `-z`. The
+  compressed bytes are those of Go's `compress/flate` and differ from
+  upstream's (zlib's deflate): compare decompressed outputs.
+- Write errors anywhere in the stream, including its last block and the
+  checksum written when the output is closed, give `write error on file
+  <name>` and exit status 4, as without `-z`.
+
+Upstream's default build does not define `USE_ZLIB` and rejects `-z` as
+an unknown option (exit status 6); this program behaves like the build
+with `USE_ZLIB` and lists `-z` in its usage text (deviation O12).
 
 ## Exit status
 
@@ -239,12 +265,13 @@ The full list with evidence and tests is in
   ratio for rules, `-p` prunes item sets as documented, `-s0` behaves like
   an absolute minimum support of 1, and closed/maximal results with `-n`
   are exact.
-- **Output** (O1-O10): `-h` and `-g` work; no spurious empty-set line on
+- **Output** (O1-O12): `-h` and `-g` work; no spurious empty-set line on
   upstream's fast output path; count-only mode honors `-n`; the binomial
   set count saturates instead of overflowing; `%d` prints the absolute
-  support for item sets; `-Z` statistics are written after the item sets;
-  `-P` write errors are reported. Number formatting reproduces upstream's
-  formatter byte for byte (O8).
+  support for item sets; `-Z` statistics are written after the item sets
+  (with `-z`, after the zlib stream); `-P` write errors are reported;
+  `-z` is always available, as in upstream's build with `USE_ZLIB` (O12).
+  Number formatting reproduces upstream's formatter byte for byte (O8).
 - **Input** (I1-I8): correct escape decoding, non-ASCII separators, no
   1024-byte field limit, the last record is kept when it ends in a field
   separator without a newline, correct file names in read errors, 64-bit

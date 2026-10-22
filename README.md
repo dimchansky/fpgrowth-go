@@ -960,6 +960,18 @@ all: 15
   3: 3
 ```
 
+zlib-compressed output (`-z`, RFC 1950 as in upstream's build with
+`USE_ZLIB`; not gzip). Only the item sets are compressed; the
+decompressed file equals the output without `-z`:
+
+```text
+$ fpgrowth -z -s30 test1.tab out.z
+$ python3 -c 'import sys,zlib; sys.stdout.buffer.write(zlib.decompress(sys.stdin.buffer.read()))' < out.z | head -n 3
+d (70)
+c d (40)
+c (70)
+```
+
 ## Input formats
 
 **Upstream flexible table format** (`TableFile`, `SpoolTable`, the CLI):
@@ -1219,10 +1231,10 @@ plus two upstream crashes that it avoids and five latent defects
   spectra from surrogate data for significance filtering with `-F`):
   `fpgpsp.c` is in the upstream archive, but it needs the modules
   `tars.c` and `pspest.c`, which the archive does not contain (it also
-  uses the system's pthreads library); and
-  zlib-compressed output (`-z`): it is not compiled into upstream's
-  default build, and the Go CLI rejects `-z` as an unknown option, like
-  that build.
+  uses the system's pthreads library).
+- zlib-compressed output (`-z`), which upstream has only in a build with
+  `USE_ZLIB`, is always available in the Go CLI (pure Go
+  `compress/zlib`); see the [Command-line program](#command-line-program).
 
 ## Testing
 

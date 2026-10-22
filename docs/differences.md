@@ -62,6 +62,8 @@ N2, upstream's relative threshold tolerance beyond 2^52 (a documented
 limit of v0.1.0), is replaced by a threshold contract that keeps
 upstream's arithmetic below 2^52 and is exact above; it is now a defect
 fix (policy) row (issue #17, 2026-10-19).
+O12, option `-z` (zlib-compressed output, upstream's optional `USE_ZLIB`
+build), is a new row (issue #22, 2026-10-22).
 
 ## Mining results
 
@@ -193,6 +195,7 @@ value and is not part of this contract (F-1).
 | O7 | defect fix | `-P` write errors are ignored (cli; `fpgrowth.c:2542-2545`, `patspec.c:832`) | Reported as errors (exit 4). A closed standard output is not detected by Go; see C10 | implemented in `internal/isrout` (`TestWriteSpectrumErrors`), `cmd/fpgrowth` (`TestOutputFiles`, failing in-process writer) |
 | O8 | preserved | Number formatting rounds half-to-odd and differs from `printf` (report B7/B8; `report.c:296-302, 349-350`) | **Preserved** for byte-compatible output (not a defect). Listed here as preserved behavior; the independent audit counted it among the platform differences, but it is upstream's own formatter, reproduced on every platform | implemented in `internal/isrout` (18,829-case numout corpus) |
 | O11 | defect fix | `isr_prefmt` pre-formats every integer from the minimum support to the largest item support; its byte count is an `int` and overflows above a support of about 2.2·10^8, so the program crashes or runs out of memory, and below that the table needs O(max support) memory (reference-build F5; `report.c:944-949, 963`, called from `fpgrowth.c:2004` unless `-N`): `printf 'a 1000000000\n'`, `-w`, exit 139 | No pre-format table; `-N` is accepted and changes nothing. The reproducer prints `a (100)` | implemented in `internal/isrout` (no table exists; CLI goldens `dev-prefmt`, the reproducer, and `prefmt-N`, the same with `-N`) |
+| O12 | new | Option `-z` (zlib output) exists only in a build with `USE_ZLIB` (`fpgrowth.c:2329-2332, 2393-2394`); the default build rejects it ("unknown option -z", exit 6) and does not list it in the usage text. In the `USE_ZLIB` build, `-Z` with the item sets on stdout prints the plain statistics with `fprintf` while the compressed sets are still buffered, so they land before the zlib stream or inside it (`fpgrowth.c:2528-2530`, `report.c:171-200, 1013-1020`; as O6) | `-z` is always available and listed in the usage text, byte for byte as in the `USE_ZLIB` build; the output is a zlib stream (RFC 1950) at the default level whose decompression equals the output without `-z`. The compressed bytes are Go's `compress/flate`, not zlib's, so only decompressed outputs compare. With `-Z` and the item sets on stdout, the statistics follow the complete stream. Write and close errors of the stream are reported (exit 4, as C6/O7) | implemented in `cmd/fpgrowth` (`TestZlibRoundTrip`, `TestZlibOtherOutputs`, `TestZlibWriteErrors`, `TestZlibClosedPipe`; CLI goldens `usage`, `err-z`); `reference/difftest` `TestZlib` (decompressed output vs `build.sh zlib`, both `-Z` layouts) |
 
 ## Input (CLI)
 

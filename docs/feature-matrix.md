@@ -74,7 +74,7 @@ All upstream rows were verified at the end of Stage 1 (review
 | Option grammar, defaults, messages, exit codes | `main` (fpgrowth.c) | 34 options, exit codes 0–24 [cli §2–§4] | `cmd/fpgrowth`, `internal/cconv` | golden CLI tests | verified |
 | stdin/stdout via `-` / empty name | `main`, `trd_open`, `isr_open` | [cli §3] | `cmd/fpgrowth` | CLI tests | verified |
 | `fpgpsp` program (pattern spectrum from surrogate data, for significance filtering via `-F`) | `fpgpsp.c` | `fpgpsp.c` is in the archive, but it needs `tars.c` (surrogate data) and `pspest.c` (spectrum estimation), which are not in the archive (it also uses the system's pthreads library) | — | — | deferred past v0.1.0 |
-| zlib output (`-z`) | `USE_ZLIB` | zlib (RFC 1950) compression of the item set/rule output; not compiled into upstream's default build, which rejects `-z` like the Go CLI | — | — | deferred past v0.1.0 |
+| zlib output (`-z`) | `USE_ZLIB`, `ISR_ZLIB` (`isr_open`, `isr_flushx`, `isr_close`) | zlib (RFC 1950) compression of the item set/rule output (file or stdout), default level; not `-P`, `-Z`, the log; no effect in count-only mode. Not compiled into upstream's default build, which rejects `-z` | `cmd/fpgrowth` (`compress/zlib` between `isrout` and the file) | `cmd/fpgrowth` `TestZlib*` (round trip, other outputs, write errors, closed pipe), `TestParseArgs`, `FuzzParseArgs`; `reference/difftest` `TestZlib` against `build.sh zlib` (decompressed output); deviation O12 | verified (#22) |
 
 ## New in the Go port (Stage 2 and later)
 
