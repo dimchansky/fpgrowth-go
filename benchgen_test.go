@@ -87,6 +87,15 @@ type benchSpec struct {
 	// {a_i} has a covering item among its first 4 probes, the shortest
 	// one has not. Transactions must be Trap+5.
 	Trap int
+	// Chain > 0 selects the perfect-extension chain of issue #21 instead
+	// (every other field but Name, Items and Transactions must be 0):
+	// Chain copies of the line of the items 0, 1, …, Items−2, then
+	// Transactions−Chain lines of the item Items−1. With N = Items−1,
+	// Chain 17 and Transactions N+27 this is the T4 input of
+	// docs/audit/t4-performance.md (17 lines of 0 … N−1, then N+10
+	// lines of x) with x named N; with -s-17 -n1 every item of the
+	// long line has all its predecessors as perfect extensions.
+	Chain int
 }
 
 // longShortCount returns the number of transactions of a Short > 0 spec.
@@ -165,6 +174,12 @@ var benchSpecs = []benchSpec{
 	// items (the same order of first appearance).
 	{Name: "adv5-20000", Transactions: 200005, Items: 20000, Trap: 200000},
 	{Name: "adv5-40000", Transactions: 200005, Items: 40000, Trap: 200000},
+	// The perfect-extension chain (issue #21, T4 of the performance
+	// audit): t4-N has a chain of N items with 17 copies and N+10 lines
+	// of one other item; the three sizes show the scaling.
+	{Name: "t4-6250", Transactions: 6277, Items: 6251, Chain: 17},
+	{Name: "t4-12500", Transactions: 12527, Items: 12501, Chain: 17},
+	{Name: "t4-25000", Transactions: 25027, Items: 25001, Chain: 17},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -215,6 +230,10 @@ func (s benchSpec) validate() error {
 	case s.Trap < 0 || s.Trap > 0 && (s.Items < 3 || s.Transactions != s.Trap+5 || s.MinLen != 0 ||
 		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 || s.MaxWeight != 0):
 		return fmt.Errorf("benchgen %s: invalid probe trap", s.Name)
+	case s.Chain < 0 || s.Chain > 0 && (s.Items < 2 || s.Transactions < s.Chain || s.MinLen != 0 ||
+		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 ||
+		s.Trap != 0 || s.MaxWeight != 0):
+		return fmt.Errorf("benchgen %s: invalid perfect-extension chain", s.Name)
 	}
 	return nil
 }
@@ -233,6 +252,9 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	if s.Trap > 0 {
 		return benchTrap(s, fn)
+	}
+	if s.Chain > 0 {
+		return benchChain(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -397,6 +419,27 @@ func benchTrap(s benchSpec, fn func(tx benchTx) error) error {
 	for k := range s.Trap {
 		items = append(items[:0], n+7+int32(k%7))
 		if err := emit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// benchChain generates the perfect-extension chain of issue #21
+// (benchSpec.Chain).
+func benchChain(s benchSpec, fn func(tx benchTx) error) error {
+	items := make([]int32, 0, s.Items-1)
+	for i := range int32(s.Items - 1) {
+		items = append(items, i)
+	}
+	for range s.Chain {
+		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
+			return err
+		}
+	}
+	items = append(items[:0], int32(s.Items-1))
+	for range s.Transactions - s.Chain {
+		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
 			return err
 		}
 	}

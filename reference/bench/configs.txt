@@ -132,3 +132,16 @@ adv5-40000-c-At*   adv5-40000.tab    -At -q0 -tc -s-2 -n1
 # this row).
 lp-100000-c-As*    lp100000.tab      -As -tc -s-2 -n1
 lp-c20000-c-q0*    lpc20000.tab      -As -tc -s-2 -n1 -q0
+# The perfect-extension chain (issue #21, NEW-1, T4 of the performance
+# audit): every item of the chain has all its predecessors as perfect
+# extensions, which a maximum size of 1 makes useless; collecting,
+# expanding and removing them is quadratic in Go and C. (At 100,000
+# items C needs a raised stack limit, M10; these sizes do not.)
+t4-6250-s          t4-6250.tab       -s-17 -n1
+t4-12500-s         t4-12500.tab      -s-17 -n1
+t4-25000-s         t4-25000.tab      -s-17 -n1
+t4-12500-s-As      t4-12500.tab      -s-17 -n1 -As
+t4-12500-s-Ad      t4-12500.tab      -s-17 -n1 -Ad
+t4-12500-s-As-l0   t4-12500.tab      -s-17 -n1 -As -l0
+t4-12500-s-x       t4-12500.tab      -s-17 -n1 -x
+t4-12500-g         t4-12500.tab      -tg -s-17 -n1

@@ -87,6 +87,17 @@ holds a covering item among its 4 probes and the shortest cover
 transaction does not, so the closed scan must still probe the first
 one (0.05 s; 2.3 s and quadratic if only the shortest is probed).
 
+`t4-6250`, `t4-12500` and `t4-25000` (`benchSpec.Chain`) are the
+perfect-extension chain of issue #21 (NEW-1, T4 of the performance
+audit, `docs/audit/t4-performance.md`): 17 lines of the N items 0 … N−1,
+then N+10 lines of one more item (named N; the audit's awk reproducer
+calls it `x`, otherwise byte for byte). With `-s-17 -n1` the FP-tree is
+one chain, every item has all its predecessors as perfect extensions,
+and collecting, expanding and removing them is quadratic in Go and in
+C although a maximum size of 1 makes them useless. The three sizes
+show the scaling (C with the default 8 MB stack crashes at 100,000
+items, M10; these sizes need no raised stack).
+
 A build with `go build -tags fpgforce ./cmd/fpgrowth` lowers the
 closed scan's thresholds so that its rare paths (the pass over the
 cover for the shortest transaction, the exponential search) run on
@@ -104,6 +115,7 @@ bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slo
 bench/compare.sh -n 5 -m devnull '^lp-(12500|25000|50000|c20000-c\*)'   # issue #20, fast rows
 bench/compare.sh -n 5 -m devnull '^adv5-'              # issue #20, the probe trap
 bench/compare.sh -n 3 -m devnull '^lp-100000'          # issue #20, slow in C (lp-c20000-c-q0: C does not finish)
+bench/compare.sh -n 3 -m devnull '^t4-'                # issue #21, the perfect-extension chain
 ```
 `go test ./bench/...` checks that
 
