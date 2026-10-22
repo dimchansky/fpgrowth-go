@@ -89,6 +89,49 @@ func (p *Spectrum) add(a, b uint64) uint64 {
 	return s
 }
 
+// Merge is a port of psp_addpsp for integer supports: it adds every cell
+// of src to p (Add, so cells outside p's limits are ignored). The result
+// does not depend on the order of merges.
+func (p *Spectrum) Merge(src *Spectrum) {
+	for c := range src.All() {
+		p.Add(c.Size, c.Supp, c.Count)
+	}
+	p.saturated = p.saturated || src.saturated
+}
+
+// MaxSupport returns the largest support with a non-zero count for the
+// given size (psp_max4sz for a row with signatures) and whether there is
+// one.
+func (p *Spectrum) MaxSupport(size int) (tract.Supp, bool) {
+	i := size - p.minSize
+	if i < 0 || i >= len(p.rows) || len(p.rows[i]) == 0 {
+		return 0, false
+	}
+	var m tract.Supp
+	first := true
+	for s := range p.rows[i] {
+		if first || s > m {
+			m, first = s, false
+		}
+	}
+	return m, true
+}
+
+// MinSupp returns the smallest support counted by the spectrum
+// (psp_minsupp).
+func (p *Spectrum) MinSupp() tract.Supp { return p.minSupp }
+
+// MaxSize returns the largest size with a non-zero count (psp_max), or
+// the minimum size minus 1 for an empty spectrum.
+func (p *Spectrum) MaxSize() int {
+	for i := len(p.rows) - 1; i >= 0; i-- {
+		if len(p.rows[i]) > 0 {
+			return p.minSize + i
+		}
+	}
+	return p.minSize - 1
+}
+
 // Frequency is a port of psp_getfrq: the number of item sets with the given
 // size and support.
 func (p *Spectrum) Frequency(size int, supp tract.Supp) uint64 {

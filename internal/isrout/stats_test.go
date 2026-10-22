@@ -101,3 +101,20 @@ func TestWriteSpectrumErrors(t *testing.T) {
 		t.Errorf("write error %v, want %v", err, errDisk)
 	}
 }
+
+// TestWriteSpectrumScaled checks psp_report with fpgpsp's scale
+// 1/(number of surrogates); the expected lines are upstream fpgpsp's
+// output for these counts.
+func TestWriteSpectrumScaled(t *testing.T) {
+	p := report.NewSpectrum(1, report.MaxSize, 1, report.MaxSupp)
+	p.Add(2, 5, 1)
+	p.Add(2, 4, 5)
+	p.Add(3, 2, 7000000)
+	var out bytes.Buffer
+	if err := WriteSpectrumScaled(&out, p, 1.0/7); err != nil {
+		t.Fatal(err)
+	}
+	if want := "2 4 0.714286\n2 5 0.142857\n3 2 1e+06\n"; out.String() != want {
+		t.Errorf("got %q, want %q", out.String(), want)
+	}
+}

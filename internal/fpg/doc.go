@@ -58,7 +58,10 @@
 // FPG_NOFILTER, FPG_NOSORT, FPG_NOREDUCE, FPG_NOPACK (unreachable from the
 // fpgrowth program and partly broken upstream, core B8), the debug
 // printers, VISITED counters and FPG_ZLIB. Pre-formatting of supports
-// (isr_prefmt) belongs to text output.
+// (isr_prefmt) belongs to text output. The fpgpsp program, which uses
+// these data modes, is served by package psp: it prepares its data with
+// Data (and Thresholds) and mines every surrogate data set through the
+// normal pipeline.
 //
 // # Memory
 //

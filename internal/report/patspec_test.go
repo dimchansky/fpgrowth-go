@@ -80,3 +80,31 @@ func TestSpectrum_SparseMemory(t *testing.T) {
 		t.Fatalf("cells %v", got)
 	}
 }
+
+// TestSpectrum_Merge checks the port of psp_addpsp and the accessors used
+// by fpgpsp's decision border.
+func TestSpectrum_Merge(t *testing.T) {
+	t.Parallel()
+	a := NewSpectrum(1, 3, 2, 100)
+	a.Add(1, 5, 2)
+	a.Add(2, 3, 1)
+	b := NewSpectrum(0, 10, 0, 1000)
+	b.Add(1, 5, 3)
+	b.Add(3, 9, 1)
+	b.Add(4, 9, 1) // beyond a's maximum size: ignored
+	b.Add(2, 1, 1) // below a's minimum support: ignored
+	a.Merge(b)
+	want := []Cell{{1, 5, 5}, {2, 3, 1}, {3, 9, 1}}
+	if got := slices.Collect(a.All()); !slices.Equal(got, want) || a.SigCount() != 3 || a.Total() != 7 {
+		t.Fatalf("merged %v (sig %d, total %d), want %v", got, a.SigCount(), a.Total(), want)
+	}
+	if s, ok := a.MaxSupport(3); !ok || s != 9 {
+		t.Errorf("MaxSupport(3) = %d, %v", s, ok)
+	}
+	if _, ok := a.MaxSupport(0); ok {
+		t.Errorf("MaxSupport below the minimum size")
+	}
+	if a.MaxSize() != 3 || NewSpectrum(2, 5, 1, 9).MaxSize() != 1 || a.MinSupp() != 2 {
+		t.Errorf("MaxSize %d, empty %d, MinSupp %d", a.MaxSize(), NewSpectrum(2, 5, 1, 9).MaxSize(), a.MinSupp())
+	}
+}
