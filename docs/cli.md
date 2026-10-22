@@ -156,7 +156,10 @@ out.z`, or Go's `compress/zlib`; `gzip -d` does not read it.
   upstream's (zlib's deflate): compare decompressed outputs.
 - Write errors anywhere in the stream, including its last block and the
   checksum written when the output is closed, give `write error on file
-  <name>` and exit status 4, as without `-z`.
+  <name>` and exit status 4, as without `-z`. A broken pipe on the
+  program's standard output (`fpgrowth -z ... - | head -c1`) instead ends
+  the program with SIGPIPE (shell status 141), with or without `-z`, as
+  upstream does.
 
 Upstream's default build does not define `USE_ZLIB` and rejects `-z` as
 an unknown option (exit status 6); this program behaves like the build

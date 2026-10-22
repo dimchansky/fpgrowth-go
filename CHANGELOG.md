@@ -17,9 +17,10 @@ The release workflow publishes the section whose heading matches the tag
 - CLI: option `-z` writes the item set/rule output (a file or standard
   output) as one zlib stream (RFC 1950, default level, pure Go
   `compress/zlib`), like upstream's optional build with `USE_ZLIB`. The
-  decompressed output equals the output without `-z`; `-Z`, `-P`, the log
-  and count-only mode are unchanged, and write or close errors of the
-  stream give exit status 4. The usage text lists `-z` as that build does
+  decompressed output equals the output without `-z`; `-Z`, `-P` and the
+  log are not compressed (with `-Z` and the item sets on standard output
+  the statistics follow the stream), count-only mode is unchanged, and
+  write or close errors of the stream give exit status 4. The usage text lists `-z` as that build does
   (deviation O12). `reference/build.sh zlib` builds the C oracle with
   `USE_ZLIB`, and the reference test `TestZlib` compares decompressed
   outputs with it (#22).

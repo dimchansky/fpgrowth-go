@@ -298,3 +298,37 @@ func TestZlibClosedPipe(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", code, stderr)
 	}
 }
+
+// onceFailWriter fails only its write number failAt (1-based) and
+// accepts all others.
+type onceFailWriter struct {
+	failAt, n int
+	buf       bytes.Buffer
+}
+
+func (w *onceFailWriter) Write(p []byte) (int, error) {
+	w.n++
+	if w.n == w.failAt {
+		return 0, errClosed
+	}
+	return w.buf.Write(p)
+}
+
+// TestZlibStatsAfterFailedClose checks -z -Z with the item sets on
+// standard output when only finishing the zlib stream fails: the
+// statistics written after it succeed, but the truncated stream must
+// still give exit status 4.
+func TestZlibStatsAfterFailedClose(t *testing.T) {
+	t.Parallel()
+	in := writeFile(t, t.TempDir(), "t1.tab", test1)
+	// write 1: the zlib header; write 2: the compressed data, written
+	// when the stream is closed; then the checksum and the statistics
+	w := &onceFailWriter{failAt: 2}
+	_, stderr, code := invocation{args: []string{"-z", "-Z", in, "-"}, stdout: w}.run(t)
+	if code != exitWrite || !strings.HasSuffix(stderr, "fpgrowth: write error on file <stdout>\n") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
+	if w.n <= w.failAt || !strings.Contains(w.buf.String(), "all: 21\n") {
+		t.Errorf("the statistics were not written after the failed close (%d writes, %q)", w.n, w.buf.String())
+	}
+}
