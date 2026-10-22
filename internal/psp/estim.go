@@ -54,19 +54,34 @@ func Estimate(ctx context.Context, d *Data, psp *report.Spectrum, zmin int, c Es
 	if c.Alpha <= 0 { // equal item probabilities
 		return simpest(ctx, psp, cnts, zmin, n, smax, c.Equiv)
 	}
-	probs := make([]float64, n)
-	x := 1.0 / float64(d.Extent())
-	for z, f := range d.Frequencies() { // P5: frequencies of the filtered array
-		probs[z] = x * float64(f)
-	}
-	if c.Alpha != 1.0 { // contract the rate distribution
-		x = 1.0 / float64(n)
-		for z := range probs {
-			probs[z] = mulAdd(probs[z]-x, c.Alpha, x)
-		}
-	}
+	probs := itemProbs(d, c.Alpha)
 	rng := NewRNG(c.Seed) // rseed(seed): drand
 	return cplxest(ctx, psp, cnts, probs, zmin, n, smax, c.Equiv, c.Samples, rng)
+}
+
+// itemProbs returns the item probabilities of psp_tbgest: the item
+// frequencies divided by the number of item occurrences, contracted
+// towards 1/n by alpha (alpha != 1).
+//
+// Deviation from upstream (U13, patch P5): the frequencies are those of
+// the filtered transactions (fpg_data empties transactions with fewer than
+// -m items), so the probabilities sum to 1; upstream takes the item-base
+// frequencies counted while reading, which include the emptied
+// transactions.
+func itemProbs(d *Data, alpha float64) []float64 {
+	n := d.NItems
+	probs := make([]float64, n)
+	x := 1.0 / float64(d.Extent())
+	for z, f := range d.Frequencies() {
+		probs[z] = x * float64(f)
+	}
+	if alpha != 1.0 { // contract the rate distribution
+		x = 1.0 / float64(n)
+		for z := range probs {
+			probs[z] = mulAdd(probs[z]-x, alpha, x)
+		}
+	}
+	return probs
 }
 
 // lg is ln(Gamma(n)) of an integer argument.

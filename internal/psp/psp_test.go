@@ -2,6 +2,7 @@ package psp
 
 import (
 	"context"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -393,6 +394,133 @@ func TestEstimate_cancel(t *testing.T) {
 		p := report.NewSpectrum(1, report.MaxSize, 1, tract.Supp(d.Len()))
 		if err := Estimate(ctx, d, p, 1, EstimateConfig{Equiv: 10, Alpha: a, Samples: 10}); err != context.Canceled {
 			t.Errorf("alpha %g: err %v", a, err)
+		}
+	}
+}
+
+// TestItemProbs_filtered checks deviation U13: with transactions emptied
+// by the -m filter the item probabilities still sum to 1 (upstream divides
+// the unfiltered item frequencies by the filtered extent).
+func TestItemProbs_filtered(t *testing.T) {
+	// a transaction emptied by -m2 does not count for any item
+	d := &Data{NItems: 3, Tracts: [][]tract.Item{tr(), tr(0, 1), tr(1, 2), tr(0, 1, 2)}}
+	probs := itemProbs(d, 1)
+	if want := []float64{2.0 / 7, 3.0 / 7, 2.0 / 7}; !slices.Equal(probs, want) {
+		t.Errorf("probs %v, want %v", probs, want)
+	}
+	sum := 0.0
+	for _, p := range itemProbs(d, 0.5) {
+		sum += p
+	}
+	if math.Abs(sum-1) > 1e-15 {
+		t.Errorf("contracted probabilities sum to %v", sum)
+	}
+}
+
+// TestEstimate_sizeZero checks deviation U18: with -m0 and empty
+// transactions the estimation spreads size 0 over several supports
+// (upstream's single counter for size 0 overflows its buffer).
+func TestEstimate_sizeZero(t *testing.T) {
+	d := &Data{NItems: 4, Tracts: [][]tract.Item{tr(), tr(), tr(), tr(0), tr(1, 2), tr(0, 3), tr()}}
+	p := report.NewSpectrum(0, report.MaxSize, 1, tract.Supp(d.Len()))
+	if err := Estimate(context.Background(), d, p, 0, EstimateConfig{Equiv: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	var zero int
+	for c := range p.All() {
+		if c.Size == 0 {
+			zero++
+		}
+	}
+	if zero < 2 {
+		t.Errorf("%d size-0 cells, want several", zero)
+	}
+}
+
+// TestEstimate_duplicates checks deviation U4: equal transactions count
+// separately, so estimated supports can exceed the number of distinct
+// transactions (upstream estimates on the deduplicated transactions and
+// caps the support there).
+func TestEstimate_duplicates(t *testing.T) {
+	var ts [][]tract.Item
+	for range 50 {
+		ts = append(ts, tr(0, 1, 2), tr(0, 1), tr(1, 2), tr(0, 2))
+	}
+	d := &Data{NItems: 3, Tracts: ts}
+	sortTracts(d.Tracts)
+	p := report.NewSpectrum(1, report.MaxSize, 1, tract.Supp(d.Len()))
+	if err := Estimate(context.Background(), d, p, 1, EstimateConfig{Equiv: 1000, Alpha: 0.5, Samples: 100, Seed: 1}); err != nil {
+		t.Fatal(err)
+	}
+	var maxSupp tract.Supp
+	for c := range p.All() {
+		maxSupp = max(maxSupp, c.Supp)
+	}
+	if maxSupp <= 4 {
+		t.Errorf("largest estimated support %d, want far above the 4 distinct transactions", maxSupp)
+	}
+}
+
+// singletons returns the size-1 row of a spectrum.
+func singletons(p *report.Spectrum) map[tract.Supp]uint64 {
+	m := map[tract.Supp]uint64{}
+	for c := range p.All() {
+		if c.Size == 1 {
+			m[c.Supp] = c.Count
+		}
+	}
+	return m
+}
+
+// TestRunChain_keepsSingletons checks U1-U3 and U19 end to end: pair swaps
+// and column shuffles keep every item frequency, and so does transaction
+// randomization when its repair succeeds, so the single-item row of the
+// spectrum of k surrogates is k times that of the data itself, also with
+// equal transactions (upstream: weighted slots, stale frequencies) and
+// with the 16-items machine on unrecoded table data.
+func TestRunChain_keepsSingletons(t *testing.T) {
+	var dup [][]tract.Item
+	for i := range 60 {
+		dup = append(dup, [][]tract.Item{tr(0, 1, 2), tr(0, 1), tr(3), tr(1, 2, 3), tr(2)}[i%5])
+	}
+	d := &Data{NItems: 4, Tracts: dup}
+	sortTracts(d.Tracts)
+	r := rand.New(rand.NewPCG(9, 9))
+	table := &Data{NItems: 12}
+	for range 30 {
+		table.Tracts = append(table.Tracts, tr(tract.Item(r.IntN(3)), tract.Item(3+r.IntN(3)),
+			tract.Item(6+r.IntN(3)), tract.Item(9+r.IntN(3))))
+	}
+	for _, c := range []struct {
+		name string
+		d    *Data
+		m    Method
+		algo fpg.Algorithm
+	}{
+		{"swap duplicates", d, Swap, fpg.AlgoComplex},
+		{"random duplicates", d, Random, fpg.AlgoComplex},
+		{"swap 16-items machine", d, Swap, fpg.AlgoSimple},
+		{"shuffle 16-items machine", table, Shuffle, fpg.AlgoSimple},
+		{"shuffle single", table, Shuffle, fpg.AlgoSingle},
+	} {
+		cfg := fpg.DefaultConfig()
+		cfg.SMin, cfg.Algo = -2, c.algo
+		smin, smax := fpg.Thresholds(cfg, tract.Supp(c.d.Len()))
+		one, err := RunChain(context.Background(), c.d, Identity, Part{Seed: 1, Count: 1}, cfg, smin, smax, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const k = 7
+		got, err := RunChain(context.Background(), c.d, c.m, Part{Seed: 3, Count: k}, cfg, smin, smax, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := singletons(one)
+		for s := range want {
+			want[s] *= k
+		}
+		if g := singletons(got); !maps.Equal(g, want) {
+			t.Errorf("%s: singletons %v, want %v", c.name, g, want)
 		}
 	}
 }

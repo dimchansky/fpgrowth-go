@@ -64,6 +64,9 @@ shuffle -gs -s-2 -c30 -S1 -Z1 table.tab -
 shuffle-Z2 -gs -s-2 -c30 -S1 -Z2 table.tab -
 shuffle-m4 -gs -m4 -s-2 -c5 -S1 -Z1 table.tab -
 shuffle-D -gs -s-2 -c30 -S9 -Z1 -D table.tab -
+shuffle-As -gs -As -s-2 -c10 -S1 -Z1 table.tab -
+shuffle-Ad-Z2 -gs -Ad -s-2 -c10 -S2 -Z2 table.tab -
+rand-As-Z3 -gr -As -s-3 -c19 -S5 -Z3 basket.tab -
 # --- input and output ---
 onearg -gi -s-2 test1.tab
 outfile -gp -s-2 -c5 -S1 -Z1 test1.tab out.txt

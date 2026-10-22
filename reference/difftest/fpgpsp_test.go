@@ -291,9 +291,9 @@ func newPspCase(base uint64, i int) *pspCase {
 }
 
 // keepPspCase writes the files and the command of a failing case into
-// dir/case-<index>/ (DIFFTEST_FPGPSP_ARTIFACTS).
+// dir/fpgpsp-case-<index>/ (the test's artifact directory).
 func keepPspCase(t *testing.T, dir string, c *pspCase) {
-	d := filepath.Join(dir, fmt.Sprintf("case-%d", c.index))
+	d := filepath.Join(dir, fmt.Sprintf("fpgpsp-case-%d", c.index))
 	files := map[string]string{"data.tab": c.data, "command": "fpgpsp " + strings.Join(c.args, " ") + "\n"}
 	if c.sel != "" {
 		files["sel.txt"] = c.sel
@@ -601,8 +601,8 @@ func firstDifference(cr, gr pspResult, cerr, gerr string) string {
 // of such cells, and each program's -D line must be the border of its own
 // spectrum. DIFFTEST_FPGPSP_CASES sets the number of cases (default
 // 3000, -short 300), DIFFTEST_SEED the base seed; DIFFTEST_FPGPSP_ONLY
-// runs selected cases (comma-separated indices), and
-// DIFFTEST_FPGPSP_ARTIFACTS=<dir> keeps the files of failing cases.
+// runs selected cases (comma-separated indices); with -artifacts the
+// files and the command of every failing case are kept.
 func TestFpgpsp(t *testing.T) {
 	cBin, goBin := fpgpspBinaries(t)
 	base := uint64(envInt("DIFFTEST_SEED", 1))
@@ -625,6 +625,8 @@ func TestFpgpsp(t *testing.T) {
 		}
 	}
 	var equal, tolerated, estim, failed atomic.Int64
+	var artOnce sync.Once
+	var artDir string
 	work := make(chan int)
 	var wg sync.WaitGroup
 	for range runtime.GOMAXPROCS(0) {
@@ -651,9 +653,8 @@ func TestFpgpsp(t *testing.T) {
 				switch {
 				case err != nil:
 					failed.Add(1)
-					if a := os.Getenv("DIFFTEST_FPGPSP_ARTIFACTS"); a != "" {
-						keepPspCase(t, a, c)
-					}
+					artOnce.Do(func() { artDir = t.ArtifactDir() })
+					keepPspCase(t, artDir, c)
 					t.Errorf("case %d (DIFFTEST_SEED=%d DIFFTEST_FPGPSP_ONLY=%d): fpgpsp %s\n%v",
 						i, base, i, strings.Join(c.args, " "), err)
 				case v == "tolerated":
