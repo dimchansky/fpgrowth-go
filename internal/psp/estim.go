@@ -1,6 +1,7 @@
 package psp
 
 import (
+	"context"
 	"math"
 	"math/bits"
 	"slices"
@@ -44,14 +45,14 @@ type EstimateConfig struct {
 // whose limits are fpg_estpsp's: sizes [zmin, zmax], supports [minimum
 // support, d.Len()]. Sizes are estimated from psp's minimum size up to
 // d.NItems-1 (a size equal to the number of items is never estimated,
-// D10).
-func Estimate(d *Data, psp *report.Spectrum, zmin int, c EstimateConfig) {
+// D10). Cancellation of ctx is checked for every size and every few
+// samples; the error is then ctx.Err() and psp is incomplete.
+func Estimate(ctx context.Context, d *Data, psp *report.Spectrum, zmin int, c EstimateConfig) error {
 	cnts := taslots(d)
 	n := d.NItems
 	smax := tract.Supp(d.Len())
 	if c.Alpha <= 0 { // equal item probabilities
-		simpest(psp, cnts, zmin, n, smax, c.Equiv)
-		return
+		return simpest(ctx, psp, cnts, zmin, n, smax, c.Equiv)
 	}
 	probs := make([]float64, n)
 	x := 1.0 / float64(d.Extent())
@@ -65,7 +66,7 @@ func Estimate(d *Data, psp *report.Spectrum, zmin int, c EstimateConfig) {
 		}
 	}
 	rng := NewRNG(c.Seed) // rseed(seed): drand
-	cplxest(psp, cnts, probs, zmin, n, smax, c.Equiv, c.Samples, rng)
+	return cplxest(ctx, psp, cnts, probs, zmin, n, smax, c.Equiv, c.Samples, rng)
 }
 
 // lg is ln(Gamma(n)) of an integer argument.
@@ -162,10 +163,13 @@ func taslots(d *Data) []uint64 {
 
 // simpest is a port of simpest (seq = 0): a Poisson approximation with
 // equal item probabilities.
-func simpest(psp *report.Spectrum, cnts []uint64, zmin, n int, smax tract.Supp, equiv uint64) {
+func simpest(ctx context.Context, psp *report.Spectrum, cnts []uint64, zmin, n int, smax tract.Supp, equiv uint64) error {
 	for z := zmin; z < n; z++ {
 		if cnts[z] == 0 {
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		y := lg(n+1) - lg(n-z+1) - lg(z+1)
 		l := math.Log(float64(cnts[z])) - y
@@ -183,12 +187,13 @@ func simpest(psp *report.Spectrum, cnts []uint64, zmin, n int, smax tract.Supp, 
 			psp.Add(z, c, frq)
 		}
 	}
+	return nil
 }
 
 // cplxest is a port of cplxest (seq = 0): item probabilities from the
 // item frequencies, sampled item sets per size.
-func cplxest(psp *report.Spectrum, cnts []uint64, probs []float64, zmin, n int,
-	smax tract.Supp, equiv, smpls uint64, rng *RNG) {
+func cplxest(ctx context.Context, psp *report.Spectrum, cnts []uint64, probs []float64, zmin, n int,
+	smax tract.Supp, equiv, smpls uint64, rng *RNG) error {
 	dist := make([]float64, smax+1)
 	s := smax + 1 // clear fully on the first size
 	minSupp := psp.MinSupp()
@@ -201,7 +206,12 @@ func cplxest(psp *report.Spectrum, cnts []uint64, probs []float64, zmin, n int,
 		const q = 0.0 // seq = 0
 		y := lg(n+1) - q - lg(n-z+1)
 		t := -math.Log(float64(equiv)) - y - 9 // threshold for the distribution
-		for range smpls {
+		for i := range smpls {
+			if i%64 == 0 {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
 			l := math.Log(float64(cnts[z])) + samplelp(probs, n, z, rng) - q
 			x := -math.Exp(l)
 			dist[0] += math.Exp(x)
@@ -236,6 +246,7 @@ func cplxest(psp *report.Spectrum, cnts []uint64, probs []float64, zmin, n int,
 			psp.Add(z, c, frq)
 		}
 	}
+	return nil
 }
 
 // samplelp is a port of samplelp: the logarithm of the probability of a

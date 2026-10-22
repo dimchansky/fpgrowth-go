@@ -1,0 +1,34 @@
+usage: fpgpsp [options] infile [outfile]
+generate or estimate a pattern spectrum (FP-growth)
+version 1.3 (2024.12.12)         (c) 2015-2024   Christian Borgelt
+-t#      target type                              (default: s)
+         (s: frequent, c: closed, m: maximal item sets,
+          g: generators)
+-m#      minimum number of items per item set     (default: 1)
+-n#      maximum number of items per item set     (default: no limit)
+-s#      minimum support of an item set           (default: 10)
+         (positive: percentage, negative: absolute number)
+-A#      variant of the fpgrowth algorithm to use (default: c)
+-x       do not prune with perfect extensions     (default: prune)
+-l#      number of items for k-items machine      (default: 16)
+         (only for variants s and d, options -As or -Ad)
+-i       do not sort items w.r.t. cond. support   (default: sort)
+         (only for algorithm variant c, option -Ac)
+-u       do not use head union tail (hut) pruning (default: use hut)
+         (only for maximal item sets, option -tm)
+-g#      surrogate generation method              (default: e)
+-c#      number of surrogate data sets            (default: 1000)
+-e#      probability dispersion factor            (default: 0.5)
+-z#      number of item set samples per size      (default: 1000)
+-S#      seed for random numbers                  (default: time)
+-Z#      number of cpus/processor cores to use    (default: 0)
+         (a value <= 0 means all cpus reported as available)
+-D       print induced decision border
+-R#      read an item selection from a file       (default: use all items)
+-r#      record/transaction separators            (default: "\n")
+-f#      field /item        separators            (default: " \t,")
+-b#      blank   characters                       (default: " \t\r")
+-C#      comment characters                       (default: "#")
+-!       print additional option information
+infile   file to read trains from                 [required]
+outfile  file to write pattern spectrum to        [optional]

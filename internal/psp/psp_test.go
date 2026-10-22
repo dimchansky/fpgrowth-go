@@ -337,7 +337,9 @@ func TestEstimate_seed(t *testing.T) {
 	d := randData(r, 10, 120)
 	est := func(alpha float64, seed uint32) []report.Cell {
 		p := report.NewSpectrum(1, report.MaxSize, 2, tract.Supp(d.Len()))
-		Estimate(d, p, 1, EstimateConfig{Equiv: 1000, Alpha: alpha, Samples: 200, Seed: seed})
+		if err := Estimate(context.Background(), d, p, 1, EstimateConfig{Equiv: 1000, Alpha: alpha, Samples: 200, Seed: seed}); err != nil {
+			t.Fatal(err)
+		}
 		return slices.Collect(p.All())
 	}
 	if a, b := est(0, 1), est(0, 2); !slices.Equal(a, b) || len(a) == 0 {
@@ -361,7 +363,9 @@ func TestEstimate_expectedSingletons(t *testing.T) {
 	r := rand.New(rand.NewPCG(8, 8))
 	d := randData(r, 10, 300)
 	p := report.NewSpectrum(1, 1, 1, tract.Supp(d.Len()))
-	Estimate(d, p, 1, EstimateConfig{Equiv: 1000, Alpha: 0})
+	if err := Estimate(context.Background(), d, p, 1, EstimateConfig{Equiv: 1000, Alpha: 0}); err != nil {
+		t.Fatal(err)
+	}
 	var sum uint64
 	for c := range p.All() {
 		sum += c.Count
@@ -377,5 +381,18 @@ func TestTaslots_allItems(t *testing.T) {
 	d := &Data{NItems: 3, Tracts: [][]tract.Item{tr(0, 1, 2), tr(0, 1, 2)}}
 	if got, want := taslots(d), []uint64{0, 6, 6, 2}; !slices.Equal(got, want) {
 		t.Errorf("taslots = %v, want %v (upstream: [0 0 0 2])", got, want)
+	}
+}
+
+// TestEstimate_cancel checks that a canceled context stops the estimation.
+func TestEstimate_cancel(t *testing.T) {
+	d := randData(rand.New(rand.NewPCG(6, 6)), 10, 100)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, a := range []float64{0, 0.5} {
+		p := report.NewSpectrum(1, report.MaxSize, 1, tract.Supp(d.Len()))
+		if err := Estimate(ctx, d, p, 1, EstimateConfig{Equiv: 10, Alpha: a, Samples: 10}); err != context.Canceled {
+			t.Errorf("alpha %g: err %v", a, err)
+		}
 	}
 }
