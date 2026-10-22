@@ -361,3 +361,20 @@ jobs:
         run: |
           ls -l dist
           cat dist/checksums.txt
+      - name: Check that every archive has both programs
+        run: |
+          n=0
+          for a in dist/*.tar.gz; do
+            for b in fpgrowth fpgpsp; do
+              tar -tzf "$a" | grep -q "/$b\$" || { echo "::error::$a lacks $b"; exit 1; }
+            done
+            n=$((n + 1))
+          done
+          for a in dist/*.zip; do
+            for b in fpgrowth.exe fpgpsp.exe; do
+              unzip -l "$a" | grep -q "/$b\$" || { echo "::error::$a lacks $b"; exit 1; }
+            done
+            n=$((n + 1))
+          done
+          echo "$n archives with fpgrowth and fpgpsp"
+          [ "$n" -eq 6 ]

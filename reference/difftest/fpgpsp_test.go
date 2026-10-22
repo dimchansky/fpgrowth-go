@@ -496,6 +496,9 @@ func (c *pspCase) compare(cr, gr pspResult) (string, error) {
 	if cr.exit != gr.exit {
 		return "", fmt.Errorf("exit C %d, Go %d\nC: %s\nGo: %s", cr.exit, gr.exit, lastLine([]byte(cr.stderr)), lastLine([]byte(gr.stderr)))
 	}
+	if runtime.GOOS == "darwin" { // Apple libc's %g keeps zeros of a tie
+		cr.stdout, cr.out = normGTies(cr.stdout), normGTies(cr.out)
+	}
 	cerr, gerr := cr.stderr, pspSeedRE.ReplaceAllString(gr.stderr, "")
 	if c.multi { // upstream's progress of several threads is racy (U8)
 		cerr, gerr = pspProgressRE.ReplaceAllString(cerr, ""), pspProgressRE.ReplaceAllString(gerr, "")
@@ -558,6 +561,26 @@ func (c *pspCase) compare(cr, gr pspResult) (string, error) {
 		return "tolerated: only the border or the log differs", nil
 	}
 	return "tolerated: " + differing[0], nil
+}
+
+// gTieRE matches the exponential form of %g with trailing zeros in the
+// mantissa ("1.67960e+06", "2.50000e+06").
+var gTieRE = regexp.MustCompile(`\b([0-9]+)(\.[0-9]*?)0+(e[+-][0-9]+)\b`)
+
+// normGTies removes the trailing zeros that Apple's libc prints for %g
+// when the rounding to 6 digits is an exact tie (printf("%g", 1679605.0)
+// gives "1.67960e+06" on macOS, "1.6796e+06" with glibc and Go; C99 asks
+// for the zeros to be removed). Go never prints such zeros, so the
+// normalization only changes C outputs. docs/differences.md F-2.
+func normGTies(s string) string {
+	return gTieRE.ReplaceAllStringFunc(s, func(m string) string {
+		sub := gTieRE.FindStringSubmatch(m)
+		frac := sub[2]
+		if frac == "." {
+			frac = ""
+		}
+		return sub[1] + frac + sub[3]
+	})
 }
 
 func mergeKeys(a, b map[[2]int64]float64) map[[2]int64]bool {

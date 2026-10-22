@@ -260,12 +260,24 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 	}
 	specs := make([]*report.Spectrum, len(parts))
 	errs := make([]error, len(parts))
+	// At most GOMAXPROCS chains run at a time: every chain keeps its own
+	// surrogate, miner and spectrum, so one goroutine per chain would hold
+	// all of them at once (-Z20000: gigabytes). The result does not depend
+	// on the number of workers: each chain is sequential and the spectra
+	// are added in chain order.
+	work := make(chan int, len(parts))
+	for i := range parts {
+		work <- i
+	}
+	close(work)
 	var wg sync.WaitGroup
-	for i, p := range parts {
+	for range min(len(parts), runtime.GOMAXPROCS(0)) {
 		wg.Go(func() {
-			specs[i], errs[i] = psp.RunChain(ctx, d, method, p, cfg, smin, smax, progress)
-			if errs[i] != nil {
-				cancel() // stop the other chains
+			for i := range work {
+				specs[i], errs[i] = psp.RunChain(ctx, d, method, parts[i], cfg, smin, smax, progress)
+				if errs[i] != nil {
+					cancel() // stop the other chains
+				}
 			}
 		})
 	}
@@ -273,16 +285,32 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 	if err := r.ctx.Err(); err != nil {
 		return nil, errorf(exitInterrupt, "interrupted")
 	}
-	for _, err := range errs {
-		if err != nil {
-			return nil, r.prepError(err)
-		}
+	if err := chainError(errs); err != nil {
+		return nil, r.prepError(err)
 	}
 	spec := specs[0]
 	for _, s := range specs[1:] {
 		spec.Merge(s)
 	}
 	return spec, nil
+}
+
+// chainError returns the error of a failed chain: the first one that is
+// not context.Canceled, which the other chains return after the failing
+// one canceled them; context.Canceled only if every error is one (an
+// interrupt); nil if no chain failed.
+func chainError(errs []error) error {
+	var canceled error
+	for _, err := range errs {
+		switch {
+		case err == nil:
+		case errors.Is(err, context.Canceled):
+			canceled = err
+		default:
+			return err
+		}
+	}
+	return canceled
 }
 
 // prepError maps an error of preparing or mining the data.

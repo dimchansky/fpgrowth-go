@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dimchansky/fpgrowth-go/internal/fpg"
 )
 
 // invocation runs the program in-process.
@@ -238,3 +242,42 @@ func TestRun_outputErrors(t *testing.T) {
 type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, os.ErrClosed }
+
+// TestChainError checks that the error of a failing chain is reported, not
+// the cancellation it caused in the other chains (status 1, not 130).
+func TestChainError(t *testing.T) {
+	tooLarge := errors.New("too large")
+	canceled := fmt.Errorf("chain: %w", context.Canceled)
+	for _, c := range []struct {
+		errs []error
+		want error
+	}{
+		{nil, nil},
+		{[]error{nil, nil}, nil},
+		{[]error{canceled, tooLarge, canceled}, tooLarge},
+		{[]error{nil, canceled}, canceled},
+		{[]error{tooLarge, nil}, tooLarge},
+	} {
+		if got := chainError(c.errs); got != c.want {
+			t.Errorf("chainError(%v) = %v, want %v", c.errs, got, c.want)
+		}
+	}
+	r := &runner{o: &options{inFile: new(string)}}
+	if e := r.prepError(chainError([]error{canceled, fpg.ErrTooLarge})); e.code != exitNoMem {
+		t.Errorf("status %d, want %d", e.code, exitNoMem)
+	}
+}
+
+// TestRun_workersSameResult checks that the output does not depend on how
+// many chains run at a time (GOMAXPROCS bounds the workers).
+func TestRun_workersSameResult(t *testing.T) {
+	in := dataFile(t, basket)
+	args := []string{"-gr", "-s-2", "-c40", "-S9", "-Z12", in, "-"}
+	want, _, _ := invocation{args: args}.run(t)
+	prev := runtime.GOMAXPROCS(1)
+	got, _, _ := invocation{args: args}.run(t)
+	runtime.GOMAXPROCS(prev)
+	if got != want || want == "" {
+		t.Errorf("one worker:\n%s\nmany workers:\n%s", got, want)
+	}
+}
