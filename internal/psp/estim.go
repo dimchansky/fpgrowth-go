@@ -21,6 +21,11 @@ import (
 // where a value lies at a rounding boundary; see the tolerance in
 // docs/upstream/fpgpsp.md (Estimation).
 
+// estimTrace, if set (tests only), receives every value v·equiv of the
+// estimation before it is rounded to a count, in loop order, as the
+// oracle's estim-trace.patch prints them (TestEstimate_matchesC).
+var estimTrace func(z int, c tract.Supp, v float64)
+
 // mulAdd returns a*b + c with the product rounded before the addition,
 // like C compiled with -ffp-contract=off (never a fused multiply-add).
 func mulAdd(a, b, c float64) float64 { return float64(a*b) + c }
@@ -192,7 +197,11 @@ func simpest(ctx context.Context, psp *report.Spectrum, cnts []uint64, zmin, n i
 		for c := tract.Supp(1); c <= smax; c++ {
 			y = l - math.Log(float64(c))
 			x += y
-			frq := toCount(mulAdd(math.Exp(x), float64(equiv), 0.5))
+			v := float64(math.Exp(x) * float64(equiv)) // explicit rounding
+			if estimTrace != nil {
+				estimTrace(z, c, v)
+			}
+			frq := toCount(v + 0.5)
 			if frq == 0 {
 				if y > 0 {
 					continue
@@ -254,7 +263,11 @@ func cplxest(ctx context.Context, psp *report.Spectrum, cnts []uint64, probs []f
 		}
 		for c := minSupp; c < s; c++ {
 			dist[c] *= x
-			frq := toCount(mulAdd(dist[c], float64(equiv), 0.5))
+			v := float64(dist[c] * float64(equiv)) // explicit rounding
+			if estimTrace != nil {
+				estimTrace(z, c, v)
+			}
+			frq := toCount(v + 0.5)
 			if frq == 0 {
 				continue
 			}

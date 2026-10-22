@@ -1,0 +1,18 @@
+--- a/tract/src/patspec.c
++++ b/tract/src/patspec.c
+@@ -654,6 +654,7 @@
+     x = y -exp(l);              /* and start of Poisson distribution */
+     for (c = 1; c <= smax; c++) {
+       x += y = l -log(c);       /* compute next distribution value */
++      fprintf(stderr, "\nD %d %ld %a\n", (int)z, (long)c, exp(x) *(double)equiv); /* trace */
+       frq = (size_t)(exp(x) *(double)equiv +0.5);
+       if (frq <= 0) {           /* check value against threshold */
+         if (y > 0) continue; else break; }
+@@ -707,6 +708,7 @@
+     x = (y > 0) ? (double)cnts[z] /y : 1.0;
+     for (c = psp->minsupp; c < s; c++) {
+       dist[(size_t)c] *= x;     /* normalize the number of slots */
++      fprintf(stderr, "\nD %d %ld %a\n", (int)z, (long)c, dist[(size_t)c] *(double)equiv); /* trace */
+       frq = (size_t)(dist[(size_t)c] *(double)equiv +0.5);
+       if (frq <= 0) continue;   /* compute equivalent frequency */
+       if (psp_incfrq(psp, z, c, frq) != 0) return -1;

@@ -1,0 +1,19 @@
+# Estimation traces dumped by the fpgpsp-fixed oracle with
+# reference/harness/fpgpsp/estim-trace.patch (gen.sh): every value v*equiv
+# before rounding, in loop order. TestEstimate_matchesC compares them.
+# name          target zmin zmax supp equiv  alpha smpls seed       data
+s-basket        s      1    0    -2   1000   0     1     1          ../surr/basket.tab
+s-dense-m2      s      2    4    -3   10000  0     1     1          ../surr/dense.tab
+s-m0            s      0    0    -1   1000   0     1     1          ../surr/basket.tab
+c-basket        s      1    0    -2   10000  0.5   300   3          ../surr/basket.tab
+c-basket-e1     s      1    0    -2   10000  1     300   4          ../surr/basket.tab
+c-basket-e2     s      1    0    -2   10000  2     200   5          ../surr/basket.tab
+c-dense         s      1    0    -5   100000 0.5   400   7          ../surr/dense.tab
+c-dense-m3      s      3    4    -5   10000  0.5   400   9          ../surr/dense.tab
+c-dense-tc      c      1    0    -5   10000  0.5   200   9          ../surr/dense.tab
+c-table-m2      s      2    0    -2   10000  0.5   300   12         ../surr/table.tab
+c-sparse        s      1    0    -1   1000   0.5   200   14         ../surr/sparse.tab
+c-est1          s      1    0    -2   100000 0.5   500   17         est1.tab
+c-est1-m2       s      2    0    -3   50000  0.5   500   18         est1.tab
+c-est2          s      1    0    -2   100000 0.5   300   20         est2.tab
+c-est2-e2       s      1    0    -2   200000 2     300   4294967295 est2.tab

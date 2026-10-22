@@ -1,0 +1,35 @@
+# Estimation (-ge) cases of cmd/fpgpsp: "<name> <arguments>", golden
+# outputs in golden-estim/ from the C oracle (gen-cli.sh). The spectrum
+# goes to out.txt, the -D border to stdout. TestGoldenEstimate requires
+# byte equality, except that at most one case may differ, in at most one
+# cell by one count (log and exp may differ in the last bit between Go and
+# the platform's libm; docs/upstream/fpgpsp.md §7).
+simple-test1 -ge -e0 -s-1 -c1000 test1.tab out.txt
+simple-test1-c1e6 -ge -e0 -s-1 -c1000000 -D test1.tab out.txt
+simple-basket -ge -e0 -s-2 -c100000 basket.tab out.txt
+simple-dense-m2 -ge -e0 -s-3 -m2 -n4 -c10000 -D dense.tab out.txt
+simple-m0 -ge -e0 -m0 -s-1 -c1000 basket.tab out.txt
+cplx-test1 -ge -s-1 -c1000 -S1 test1.tab out.txt
+cplx-test1-z100 -ge -s-1 -c100000 -z100 -S2 -D test1.tab out.txt
+cplx-basket -ge -s-2 -c10000 -z500 -S3 basket.tab out.txt
+cplx-basket-e1 -ge -e1 -s-2 -c10000 -z300 -S4 basket.tab out.txt
+cplx-basket-e2 -ge -e2 -s-2 -c10000 -z300 -S5 basket.tab out.txt
+cplx-basket-e025 -ge -e0.25 -s-2 -c10000 -z300 -S6 basket.tab out.txt
+cplx-dense -ge -s-5 -c100000 -z400 -S7 -D dense.tab out.txt
+cplx-dense-m2 -ge -s-5 -m2 -c100000 -z400 -S8 dense.tab out.txt
+cplx-dense-m3-n4 -ge -s-5 -m3 -n4 -c10000 -z400 -S9 -D dense.tab out.txt
+cplx-dense-tc -ge -tc -s-5 -c10000 -z400 -S9 dense.tab out.txt
+cplx-dense-pct -ge -s20 -c10000 -z400 -S10 dense.tab out.txt
+cplx-table -ge -s-2 -c10000 -z300 -S11 -D table.tab out.txt
+cplx-table-m2 -ge -m2 -s-2 -c10000 -z300 -S12 table.tab out.txt
+cplx-test2 -ge -s-1 -c1000 -z200 -S13 -f, test2.tab out.txt
+cplx-m0 -ge -m0 -s-1 -c1000 -z200 -S14 basket.tab out.txt
+cplx-c1 -ge -s-1 -c1 -z200 -S15 dense.tab out.txt
+cplx-sel -ge -s-1 -c10000 -z200 -S16 -R sel.txt test1.tab out.txt
+big1-simple -ge -e0 -s-2 -c100000 -D est1.tab out.txt
+big1-cplx -ge -s-2 -c100000 -z1000 -S17 -D est1.tab out.txt
+big1-cplx-m2 -ge -m2 -s-3 -c50000 -z1000 -S18 est1.tab out.txt
+big1-cplx-e1 -ge -e1 -s-2 -c100000 -z2000 -S19 est1.tab out.txt
+big2-cplx -ge -s-2 -c100000 -z1000 -S20 -D est2.tab out.txt
+big2-cplx-e2 -ge -e2 -s-2 -c200000 -z1000 -S21 est2.tab out.txt
+big2-simple-m3 -ge -e0 -m3 -s-1 -c100000 est2.tab out.txt

@@ -5,6 +5,8 @@
 # and regenerate the golden files of internal/psp/testdata:
 #   rng.c.out          sequences of util/src/random.c
 #   surr/<case>.c.out  the surrogate chains listed in surr/cases.txt
+#   estim/<case>.c.out the unrounded values of the estimations listed in
+#                      estim/cases.txt (estim-trace.patch)
 # See README.md in this directory.
 #
 # Usage: ./gen.sh BUILD_DIR
@@ -63,3 +65,23 @@ while read -r name method seed cnt zmin supp target algo flags data; do
 	n=$((n + 1))
 done <"$testdata/surr/cases.txt"
 echo "wrote rng.c.out and $n surrogate chain(s)" >&2
+
+# --- estimation traces: fpgpsp with estim-trace.patch prints every
+# value v*equiv before rounding ("D <size> <support> <%a>") ---
+rm -rf "$build/trace"
+cp -R "$s" "$build/trace"
+rm -f "$build/trace/tract/src/pspest.o" "$build/trace/fpgrowth/src/fpgpsp"
+patch -s -p1 -d "$build/trace" <"$here/estim-trace.patch"
+make -C "$build/trace/fpgrowth/src" fpgpsp CC="$cc" ADDFLAGS=-ffp-contract=off \
+	ADDLIBS= ADDOBJS= >>"$build/build.log" 2>&1 || { tail -n 30 "$build/build.log" >&2; exit 1; }
+est=$testdata/estim
+n=0
+while read -r name target zmin zmax supp equiv alpha smpls seed data; do
+	case $name in '' | '#'*) continue ;; esac
+	args=(-ge "-t$target" "-m$zmin" "-s$supp" "-c$equiv" "-e$alpha" "-z$smpls" "-S$seed")
+	[ "$zmax" = 0 ] || args+=("-n$zmax")
+	(cd "$est" && "$build/trace/fpgrowth/src/fpgpsp" "${args[@]}" "$data" /dev/null 2>&1 >/dev/null |
+		grep '^D ' >"$est/$name.c.out") || true
+	n=$((n + 1))
+done <"$est/cases.txt"
+echo "wrote $n estimation trace(s)" >&2

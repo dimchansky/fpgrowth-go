@@ -36,9 +36,12 @@ type cliCase struct {
 	stdin string // file for stdin, "" for an empty stdin
 }
 
-func readCases(t *testing.T) []cliCase {
+func readCases(t *testing.T) []cliCase { return readCasesFile(t, "cases.txt") }
+
+// readCasesFile parses a case file of testdata.
+func readCasesFile(t *testing.T, name string) []cliCase {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", "cases.txt"))
+	b, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatal(err)
 	}

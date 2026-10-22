@@ -516,15 +516,23 @@ func (c *pspCase) compare(cr, gr pspResult) (string, error) {
 	}
 	unit := 1 / float64(c.cnt)
 	oneSided := 0
+	var differing []string
 	for k := range mergeKeys(cm, gm) {
 		cv, cok := cm[k]
 		gv, gok := gm[k]
 		if cok != gok {
 			oneSided++
 		}
+		if cv != gv {
+			differing = append(differing, fmt.Sprintf("cell %v: C %g, Go %g", k, cv, gv))
+		}
 		if math.Abs(cv-gv) > unit*(1+1e-9)+5e-6*(math.Abs(cv)+math.Abs(gv)) {
 			return "", fmt.Errorf("cell %v: C %g, Go %g (unit %g)", k, cv, gv, unit)
 		}
+	}
+	// a boundary case moves one count of one cell; more is systematic
+	if len(differing) > 1 {
+		return "", fmt.Errorf("%d cells differ (at most 1 is tolerated): %v", len(differing), differing)
 	}
 	// every -D line is the border of its own spectrum
 	if slices.Contains(c.args, "-D") {
@@ -546,7 +554,10 @@ func (c *pspCase) compare(cr, gr pspResult) (string, error) {
 			return "", fmt.Errorf("signature counts C %d, Go %d, %d one-sided cells", a, b, oneSided)
 		}
 	}
-	return "tolerated", nil
+	if len(differing) == 0 {
+		return "tolerated: only the border or the log differs", nil
+	}
+	return "tolerated: " + differing[0], nil
 }
 
 func mergeKeys(a, b map[[2]int64]float64) map[[2]int64]bool {
@@ -591,13 +602,13 @@ func firstDifference(cr, gr pspResult, cerr, gerr string) string {
 // several chains without upstream's racy progress counter, U8) and exit
 // status. The estimation (-ge) depends on log and exp, whose last bits
 // differ between Go's math package and the platform's libm; its counts
-// are round(v·cnt) of values v computed with a relative error far below
-// 1e-9 (a few hundred roundings of numbers below 2^53 in magnitude), so a
-// cell may differ by at most one count (1/cnt in the printed unit, plus
-// the rounding of %g), cells present on one side only must be within one
-// count of zero, the signature counts of the log may differ by the number
-// of such cells, and each program's -D line must be the border of its own
-// spectrum. DIFFTEST_FPGPSP_CASES sets the number of cases (default
+// are round(v·cnt), and a last-bit difference of v moves a count only when
+// v·cnt lies at a rounding boundary, which is rare: in at most one cell
+// of a case, by one count (1/cnt in the printed unit, plus the rounding
+// of %g; a cell on one side only counts as differing), with the signature
+// counts of the log differing by at most the number of one-sided cells
+// and each program's -D line the border of its own spectrum; and in at
+// most 1 + 0.1% of the estimations. Every tolerated case is logged. DIFFTEST_FPGPSP_CASES sets the number of cases (default
 // 3000, -short 300), DIFFTEST_SEED the base seed; DIFFTEST_FPGPSP_ONLY
 // runs selected cases (comma-separated indices); with -artifacts the
 // files and the command of every failing case are kept.
@@ -655,8 +666,9 @@ func TestFpgpsp(t *testing.T) {
 					keepPspCase(t, artDir, c)
 					t.Errorf("case %d (DIFFTEST_SEED=%d DIFFTEST_FPGPSP_ONLY=%d): fpgpsp %s\n%v",
 						i, base, i, strings.Join(c.args, " "), err)
-				case v == "tolerated":
+				case strings.HasPrefix(v, "tolerated"):
 					tolerated.Add(1)
+					t.Logf("case %d (DIFFTEST_SEED=%d): fpgpsp %s: %s", i, base, strings.Join(c.args, " "), v)
 				default:
 					equal.Add(1)
 				}
@@ -670,4 +682,10 @@ func TestFpgpsp(t *testing.T) {
 	wg.Wait()
 	t.Logf("%d cases (%d estimations): %d byte-equal, %d within the estimation tolerance, %d failed",
 		len(idx), estim.Load(), equal.Load(), tolerated.Load(), failed.Load())
+	// A count at a rounding boundary of log/exp is rare (about one in
+	// 10^5 estimations on darwin/arm64); more tolerated cases than
+	// 1 + 0.1% of the estimations indicate a systematic difference.
+	if limit := 1 + estim.Load()/1000; tolerated.Load() > limit {
+		t.Errorf("%d estimations within the tolerance, more than the limit %d (1 + 0.1%% of %d)", tolerated.Load(), limit, estim.Load())
+	}
 }
