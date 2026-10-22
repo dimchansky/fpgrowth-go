@@ -1,6 +1,6 @@
-# GoReleaser configuration for the fpgrowth command-line program
-# (docs/releasing.md). The library itself is distributed through the Go
-# module proxy; release archives only carry the CLI.
+# GoReleaser configuration for the command-line programs fpgrowth and
+# fpgpsp (docs/releasing.md). The library itself is distributed through
+# the Go module proxy; release archives only carry the two programs.
 #
 # Check:    goreleaser check
 # Snapshot: goreleaser release --snapshot --clean --skip=publish
@@ -26,10 +26,26 @@ builds:
       - -s -w
     # Reproducible builds: file times from the commit, not the build time.
     mod_timestamp: '{{ .CommitTimestamp }}'
+  # fpgpsp: pattern spectra from surrogate data (issue #23); same settings,
+  # and like fpgrowth it prints upstream's version line, not a release
+  # version.
+  - id: fpgpsp
+    main: ./cmd/fpgpsp
+    binary: fpgpsp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
+  # One archive per platform with both programs.
   - id: fpgrowth
-    ids: [fpgrowth]
+    ids: [fpgrowth, fpgpsp]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
