@@ -96,6 +96,13 @@ type benchSpec struct {
 	// lines of x) with x named N; with -s-17 -n1 every item of the
 	// long line has all its predecessors as perfect extensions.
 	Chain int
+	// Wide > 0 selects wide lines of issue #21 instead (every other
+	// field but Name, Items and Transactions must be 0): every one of
+	// the Transactions lines holds the items 0, 1, …, Wide−1, followed
+	// by its share of the items Wide … Items−1 (item Wide+k goes to line
+	// k mod Transactions). With -s-1 -n1 (Transactions 1 or 2) the
+	// common items are perfect extensions of the empty set.
+	Wide int
 }
 
 // longShortCount returns the number of transactions of a Short > 0 spec.
@@ -180,6 +187,15 @@ var benchSpecs = []benchSpec{
 	{Name: "t4-6250", Transactions: 6277, Items: 6251, Chain: 17},
 	{Name: "t4-12500", Transactions: 12527, Items: 12501, Chain: 17},
 	{Name: "t4-25000", Transactions: 25027, Items: 25001, Chain: 17},
+	// Wide lines (issue #21, design challenge F1). one-N: one line of N
+	// items, so that with -s-1 -n1 the empty set's hypercube of N
+	// perfect extensions is expanded to size 1. t4b-N: two lines with N
+	// common items (perfect extensions inherited from the empty set) and
+	// N items split between them (sets of size 1 with N extensions).
+	{Name: "one-6250", Transactions: 1, Items: 6250, Wide: 6250},
+	{Name: "one-12500", Transactions: 1, Items: 12500, Wide: 12500},
+	{Name: "t4b-3000", Transactions: 2, Items: 6000, Wide: 3000},
+	{Name: "t4b-6000", Transactions: 2, Items: 12000, Wide: 6000},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -234,6 +250,10 @@ func (s benchSpec) validate() error {
 		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 ||
 		s.Trap != 0 || s.MaxWeight != 0):
 		return fmt.Errorf("benchgen %s: invalid perfect-extension chain", s.Name)
+	case s.Wide < 0 || s.Wide > 0 && (s.Wide > s.Items || s.Transactions < 1 || s.MinLen != 0 ||
+		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 ||
+		s.Trap != 0 || s.Chain != 0 || s.MaxWeight != 0):
+		return fmt.Errorf("benchgen %s: invalid wide lines", s.Name)
 	}
 	return nil
 }
@@ -255,6 +275,9 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	if s.Chain > 0 {
 		return benchChain(s, fn)
+	}
+	if s.Wide > 0 {
+		return benchWide(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -439,6 +462,24 @@ func benchChain(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	items = append(items[:0], int32(s.Items-1))
 	for range s.Transactions - s.Chain {
+		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// benchWide generates the wide lines of issue #21 (benchSpec.Wide).
+func benchWide(s benchSpec, fn func(tx benchTx) error) error {
+	items := make([]int32, 0, s.Items)
+	for t := range s.Transactions {
+		items = items[:0]
+		for i := range int32(s.Wide) {
+			items = append(items, i)
+		}
+		for i := s.Wide + t; i < s.Items; i += s.Transactions {
+			items = append(items, int32(i))
+		}
 		if err := fn(benchTx{Items: items, Weight: 1}); err != nil {
 			return err
 		}

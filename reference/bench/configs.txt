@@ -145,3 +145,11 @@ t4-12500-s-Ad      t4-12500.tab      -s-17 -n1 -Ad
 t4-12500-s-As-l0   t4-12500.tab      -s-17 -n1 -As -l0
 t4-12500-s-x       t4-12500.tab      -s-17 -n1 -x
 t4-12500-g         t4-12500.tab      -tg -s-17 -n1
+# Wide lines (issue #21, design challenge F1): with -s-1 -n1 the common
+# items are perfect extensions of the empty set; expanding its hypercube
+# (one-N) or reporting the one-item sets that inherit them (t4b-N) only
+# rejects them against the maximum size, quadratic before #21 (also in C).
+one-6250-s         one-6250.tab      -s-1 -n1
+one-12500-s        one-12500.tab     -s-1 -n1
+t4b-3000-s         t4b-3000.tab      -s-1 -n1
+t4b-6000-s         t4b-6000.tab      -s-1 -n1
