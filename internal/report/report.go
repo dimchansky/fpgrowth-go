@@ -376,10 +376,10 @@ func (r *Reporter) updateXmax() {
 func (r *Reporter) PexUseful() bool { return r.cnt < r.pexMax }
 
 // SetPexGuard turns the perfect-extension guard on (the default) or off:
-// with the guard off, PexUseful always returns true and Report and
-// expand handle the perfect extensions of sets with zmax items like
-// upstream. The results are the same either way; it is meant for
-// differential tests.
+// with the guard off, PexUseful always returns true and Report handles
+// the perfect extensions of sets with zmax items like upstream (the
+// hypercube expansion stops at zmax items either way). The results are
+// the same; it is meant for differential tests.
 func (r *Reporter) SetPexGuard(on bool) {
 	r.noPexGuard = !on
 	r.updateXmax()
@@ -629,7 +629,7 @@ func (r *Reporter) Report() error {
 	if s < r.smin || s > r.smax {
 		return nil
 	}
-	if r.cnt >= r.pexMax {
+	if n > 0 && r.cnt >= r.pexMax {
 		// Extension, not in upstream: no perfect extension fits into a
 		// set of zmax items (see PexUseful; the extensions inherited
 		// from smaller sets are skipped here). Only the set itself can be
@@ -739,16 +739,20 @@ func (r *Reporter) expand(next int) error {
 		return err
 	}
 	n := len(r.pexs)
-	if r.cnt >= r.pexMax {
-		// Extension, not in upstream: with zmax items no extension fits
-		// (r.cnt+1 > zmax below), so the loop would only write the
-		// scratch entry items[cnt] and reject every extension; skip it.
-		n = next
-	}
 	for j := next; j < n; j++ {
+		if r.cnt >= r.zmax {
+			// Extension, not in upstream (same results): upstream
+			// tests r.cnt+1 <= zmax after adding each extension and
+			// goes on with the next one. With zmax items no extension
+			// fits, and the set size does not change within the loop,
+			// so the remaining iterations would only write the scratch
+			// entry items[cnt] and reject (issue #21). This replaces
+			// upstream's test at the same cost per iteration.
+			break
+		}
 		r.items[r.cnt] = r.pexs[j]
 		r.cnt++
-		if r.cnt+(n-j-1) >= r.zmin && r.cnt <= r.zmax {
+		if r.cnt+(n-j-1) >= r.zmin {
 			if err := r.expand(j + 1); err != nil {
 				r.cnt--
 				return err

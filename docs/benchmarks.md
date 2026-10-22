@@ -762,10 +762,16 @@ variants `-As -Ac -Ad -l0 -j`) the instructions differ from `main` by
 −0.35 % to +0.33 %. `internal/fpg` `BenchmarkMine` (benchstat, 6
 interleaved runs): geomean −0.19 %, one row +2.4 % (`m/c-j-l0`, a
 maximal-set row where the guard is constant), one −1.5 %.
-`internal/report` `BenchmarkReporter`: +4.6 % on `frequent` and +4.0 %
-on `pex-hypercube-8` (+2.5 % and +2.6 % instructions: the two new
-compares per `Report` and per `expand` call, a few instructions each),
-`closed` and `count-only` unchanged.
+`internal/report` `BenchmarkReporter` was +4.6 % on `frequent` and
++4.0 % on `pex-hypercube-8` in the first version (+2.5 % and +2.6 %
+instructions: a guard compare per `Report` and per `expand` call, PR #36
+review P1). The final code tests the `Report` guard only when there are
+perfect extensions and stops the expansion loop at zmax items in place
+of upstream's per-extension size test, at no extra cost per call:
+benchstat (6 interleaved runs) `frequent` +1.4 %, `count-only` +1.0 %,
+`pex-hypercube-8` −1.5 %, `closed` ~, geomean +0.14 %; instructions
++0.33 % and +0.65 %. The T4 and wide-line rows are unchanged by this
+(e.g. `t4-25000` 1.04 G, `t4b-6000` 0.156 G, same output).
 
 ### Profiles after optimization
 

@@ -95,7 +95,8 @@ func TestReporter_PexUsefulNew(t *testing.T) {
 
 // TestReporter_ExpandSkip checks with a sentinel that the expansion of a
 // hypercube does not visit the extensions of its sets of zmax items: the
-// rejecting loop would overwrite the scratch entry items[zmax].
+// rejecting loop would overwrite the scratch entry items[zmax]. The
+// expansion stops there also with the guard off (SetPexGuard).
 func TestReporter_ExpandSkip(t *testing.T) {
 	const sentinel = tract.Item(-7)
 	for _, guard := range []bool{true, false} {
@@ -116,8 +117,8 @@ func TestReporter_ExpandSkip(t *testing.T) {
 		if !slices.EqualFunc(s.sets, want, slices.Equal) {
 			t.Errorf("guard %v: sets %v, want %v", guard, s.sets, want)
 		}
-		if kept := r.items[1] == sentinel; kept != guard {
-			t.Errorf("guard %v: items[zmax] kept = %v (%d)", guard, kept, r.items[1])
+		if r.items[1] != sentinel {
+			t.Errorf("guard %v: items[zmax] = %d, want the sentinel", guard, r.items[1])
 		}
 	}
 }
