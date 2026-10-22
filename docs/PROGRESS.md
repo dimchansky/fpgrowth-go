@@ -57,8 +57,8 @@ linked documents.
   regression above 1 % instructions on the `-tc` rows (M5 §4, §7.5).
   Still quadratic, outside the check: such data with `-n2`/`-n3`
   (projection) and with `-At` (top-down tree build); `-tm` on it (the
-  maximal check counts the long line, an exact pruning exists, a
-  separate issue); and the challenge's `adv1f -At -q-2` shape (1.64 s,
+  maximal check counts the long line, an exact pruning exists, triage
+  issue #34); and the challenge's `adv1f -At -q-2` shape (1.64 s,
   C 0.02 s through its incomplete repository check).
 - M5A-1 (dense maximal checks near the size limit), issue #19 (PR #33):
   parent-condensed sibling bit rows answer the children's maximal checks
@@ -88,6 +88,6 @@ linked documents.
   saturate as before, every other spelling and all results up to 2^53
   are unchanged (N3 in `docs/differences.md`).
 - Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
-  #23), #29 (three difftest harness gaps). Follow-up noted in PR #28:
+  #23), #29 (three difftest harness gaps), #34 (maximal check on the NEW-3 shape). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,
   Low).
