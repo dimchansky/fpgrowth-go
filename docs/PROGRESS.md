@@ -46,9 +46,20 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  the remaining quadratic closed-check shape (NEW-3, #20), skipping
-  perfect extensions that cannot affect a result (NEW-1, #21, quadratic
-  in upstream too), `-z` (#22) and `fpgpsp` (#23).
+  skipping perfect extensions that cannot affect a result (NEW-1, #21,
+  quadratic in upstream too), `-z` (#22) and `fpgpsp` (#23).
+- NEW-3 (Info, the remaining quadratic closed-check shape), issue #20:
+  resolved. The closed scan starts from a short cover transaction
+  (the shortest of the first and the spread ones, or of the whole
+  cover when that one is still long) after the unchanged probes of the
+  first one, and searches long transactions exponentially; `lp50000
+  -As -tc -s-2 -n1` 7.0 s → 0.06 s (C 3.7 s), output identical, no
+  regression above 1 % instructions on the `-tc` rows (M5 §4, §7.5).
+  Still quadratic, outside the check: such data with `-n2`/`-n3`
+  (projection) and with `-At` (top-down tree build); `-tm` on it (the
+  maximal check counts the long line, an exact pruning exists, triage
+  issue #34); and the challenge's `adv1f -At -q-2` shape (1.64 s,
+  C 0.02 s through its incomplete repository check).
 - M5A-1 (dense maximal checks near the size limit), issue #19 (PR #33):
   parent-condensed sibling bit rows answer the children's maximal checks
   by popcount; built by an actual-work rule with a history-scaled bound
@@ -77,6 +88,6 @@ linked documents.
   saturate as before, every other spelling and all results up to 2^53
   are unchanged (N3 in `docs/differences.md`).
 - Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
-  #23), #29 (three difftest harness gaps). Follow-up noted in PR #28:
+  #23), #29 (three difftest harness gaps), #34 (maximal check on the NEW-3 shape). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,
   Low).

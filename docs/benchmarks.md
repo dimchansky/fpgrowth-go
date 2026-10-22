@@ -706,6 +706,30 @@ bound was scaled below the maximum size. It now measures 2.47 vs
 `~` in a repeat. The bound is 3.25× of the ordinary checks per level
 ([M5 §7.4](m5-investigation.md#74-review-round-2-later-siblings-that-are-never-checked-issue-19)).
 
+*Update (2026-10-21, issue #20):* closed checks on a long transaction
+plus many short ones (audit NEW-3) were quadratic in Go and C; the
+closed scan now starts from a short cover transaction
+([M5 §4, §7.5](m5-investigation.md#75-closed-checks-on-long-and-short-transactions-issue-20)).
+`lp-*` rows of `configs.txt`, 6 interleaved runs, median wall s:
+
+| `-As -tc -s-2 -n1` | Go `main` | Go branch | C 6.21 |
+| --- | ---: | ---: | ---: |
+| `lp12500` | 0.45 | 0.02 | 0.23 |
+| `lp25000` | 1.74 | 0.03 | 0.88 |
+| `lp50000` | 6.98 | 0.06 | 3.70 |
+| `lp100000` | 27.91 | 0.12 | 13.50 (3 runs) |
+| `lpc20000 -q0` | 60.15 | 0.51 | killed after 541 s |
+
+The claim is for `-n1`: with `-n2`/`-n3` the projection, with `-At` the
+top-down tree build stay quadratic on this data (lp50000 `-n3`: 12.07 →
+5.26 s, C 3.43 s; `-At`: 10.22 → 3.42 s, C 11.61 s), and `-tm` is
+unchanged (5.68 s, C 3.42 s). Every other `-tc` row of `configs.txt`
+is unchanged within noise (instructions at most +0.65 %). Generated data
+with long transactions (PR #35 review): the corrected exponential-search
+rule is −2.2 % to +0.2 % against `main`; the worst case of the pass over
+the cover (it runs on most scans and never finds a shorter transaction)
+is +1.1 % (M5 §7.5).
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package

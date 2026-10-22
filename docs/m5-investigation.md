@@ -406,13 +406,59 @@ reached, accepted by the repository (3.4) and passes the check.
     all n items (n = 100,000: 22.0 s, now 0.30 s, where the C program
     crashes from about n = 60,000; n = 30,000: 2.17 s, now 0.08 s,
     C 0.05 s; independent review of the change). One quadratic shape
-    remains, in C too: a long first cover transaction whose probes fail,
-    followed by short ones (one 50,000-item line plus 50,000 one-item
-    lines, `-As -tc -s-2 -n1`: Go 6.8 s, C 3.4 s); starting the
-    candidates from the shortest cover transaction would remove it. For a single-transaction cover the first item of t
-    outside the set always succeeds, so a check reads at most |X| + 1
-    items of t; the maximal scan already stopped at the first frequent
-    extension and is unchanged.
+    remained, in C too: a long first cover transaction whose probes
+    fail, followed by short ones (one 50,000-item line plus 50,000
+    one-item lines, `-As -tc -s-2 -n1`: Go 6.8 s, C 3.4 s); the next
+    bullet removes it (issue #20). For a single-transaction cover the
+    first item of t outside the set always succeeds, so a check reads
+    at most |X| + 1 items of t; the maximal scan already stopped at the
+    first frequent extension and is unchanged.
+  - Start transaction and exponential search (closed scan, issue #20).
+    After the probes of t0 have failed, the candidates come from a
+    short cover transaction t* instead of t0:
+    - stage a: t* is the shortest of t0 and the spread transactions
+      (at most 8 length lookups of transactions the scan intersects
+      anyway; on every scan);
+    - stage b: if t* still has more than 4 candidates per cover
+      transaction (|t*| − |X| > 4·n), one pass over the cover's
+      transaction lengths finds the shortest cover transaction (n
+      steps, at most a quarter of copying t*), stopping at one of
+      |X| items (no candidate);
+    - if t* ≠ t0, the probes are also run on t* (same guard), then t0
+      is intersected; the spread transactions other than t* follow,
+      then the full scan, which skips t0 as before;
+    - a transaction of at least 128 items is intersected by
+      exponential search for each candidate (`keepSeek`, the `seek`
+      of the bit sets) instead of a merge if the merge would walk more
+      than 16 of its items per candidate: the merge stops at the last
+      candidate, so the rule tests in O(1) whether item 16·|cand| of
+      the transaction is still below the last candidate. (The first
+      rule compared |t| with 16·|cand|; with candidates clustered at
+      the start of long transactions the search was 1.6–2.1× slower
+      than the merge and such data took up to 10 % more instructions
+      than `main`, PR #35 review P1.) The decision is made by the
+      callers, so that the merge (`keepCand`) stays inlined. The
+      thresholds are constants (`extcheck_thresh.go`); the build tag
+      `fpgforce` replaces them (`extcheck_force.go`) for brute-force
+      runs, and tests can set them on a checker.
+
+    Exactness: the closure of X is the intersection of its cover
+    transactions minus X (§3), which does not depend on the start,
+    the order or repeats; every cover transaction is intersected (t0
+    and the spread ones before the full scan, t* by the copy), and the
+    stages only choose among cover transactions (the bits of the
+    cover; weight 0 is not in the checker). The probes of t0 run
+    first and unchanged: probes of t* alone are not as good, because
+    they test the first 4 items of a different transaction. The
+    independent challenge of the design found a case
+    (`adv5-*`, `reference/bench`) where t0's fourth probe proves the
+    set not closed and t*'s four probes miss, which made every check
+    copy n items (20,000: 0.05 s → 2.3 s); the first probe cannot
+    regress (in lexicographic bag order the smallest item of t0 \ X
+    is at most that of any cover transaction), the others can.
+    Results in §7.5: every `lp-*` `-n1` row from seconds to ≤ 0.1 s
+    and linear; rows that stay quadratic for other reasons are listed
+    there.
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
   unlimited as before); `xable2`/`deeper` are the size gates. The miner
@@ -435,7 +481,8 @@ differ):
 | `3e5d372` | per check from scratch (AND of the set's bit sets) | full rows for every item if they need ≤ 4× the horizontal items **or ≤ 64 MiB**, else per-item transaction lists (the rarest item's list filtered by containment) |
 | `671474e` | incremental per prefix depth (`checkPath`, bit sets only) | as above |
 | Stage 3 fix S3-1 | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
-| issue #19 (this version) | as S3-1 | as S3-1, plus sibling rows for maximal checks (§4.1) |
+| issue #19 | as S3-1 | as S3-1, plus sibling rows for maximal checks (§4.1) |
+| issue #20 (this version) | as S3-1; the closed scan starts from a short cover transaction and searches long ones exponentially (§4) | as #19 |
 
 The 64 MiB floor of the first two versions was a memory-for-speed
 trade-off: on `sparse-large` (2,592 frequent items at `-s0.05`, 3,115
@@ -574,7 +621,13 @@ proof is in §3.2, last bullet):
   words at `-n4`, against a budget of 2.4 M words.
 - **Closed checks** are unchanged: a closed check of a non-closed set
   usually stops after a few candidates (§4), and the closed scan's
-  remaining quadratic case is issue #20.
+  remaining quadratic case is issue #20. *Note (issue #20):* sibling
+  rows were evaluated for closed checks and not adopted. A closed
+  child must test every row with supp(P ∪ j) ≥ supp(X), about 198 on
+  `d20000x200d30 -tc -n3`, plus its share of the build (about 1,600
+  item visits per child), against about 380 steps of the scan, which
+  stops after about 4 transactions there; the whole check, cover
+  ANDs included, is 27 % of that run.
 - **Test hooks** (`testHooks.sib`): never, at the first child, at child
   number m, or by the production rule. A verify mode also runs the
   ordinary check and panics on a different verdict. The statistics
@@ -1033,6 +1086,121 @@ alike (machine state).
   its ordinary checks. It is reached only if rows are built and then go
   unused, which both bounds and the history make unlikely but not
   impossible.
+
+### 7.5 Closed checks on long and short transactions (issue #20)
+
+CLI, output to `/dev/null`, `/usr/bin/time -l`, 6 interleaved runs
+after one warm-up (3 for the C column of `lp100000`), median wall s
+and instructions retired; Apple M1 Max, Go 1.27.2, load average 5–17.
+`main` is `ba63d14`; v0.1.0 equals `main` within 1 % on every closed
+row. Set counts are equal for all programs, and the outputs of the
+branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
+`m5-*` and `-tc` row and on the T4 chain.
+
+| row (`-s-2 -n1` unless noted) | `main` | branch | C 6.21 |
+| --- | ---: | ---: | ---: |
+| `lp12500 -As -tc` | 0.45 / 5.14 G | **0.02 / 0.22 G** | 0.23 / 2.04 G |
+| `lp25000 -As -tc` | 1.74 / 20.2 G | **0.03 / 0.46 G** | 0.88 / 8.01 G |
+| `lp50000 -As -tc` | 6.98 / 79.8 G | **0.06 / 0.92 G** | 3.70 / 31.8 G |
+| `lp100000 -As -tc` | 27.91 / 317 G | **0.12 / 1.75 G** | 13.50 / 127 G |
+| `lp50000 -Ac` / `-Ad` / `-As -l0` `-tc` | 6.97 / 6.91 / 6.89 | **0.06 / 0.06 / 0.06** | 2.23 / 3.48 / 2.02 |
+| `lp50000s2 -As -tc` | 6.96 | **0.07** | 3.47 |
+| `lp50000w -w -As -tc` | 6.97 | **0.07** | 3.51 |
+| `lpc20000 -As -tc` (`-q2`) | 1.55 | **0.44** | 6.74 |
+| `lpc20000 -As -tc -q0` | 60.15 / 987 G | **0.51 / 7.09 G** | killed after 541 s (169 GB footprint) |
+| `adv5-20000` / `adv5-40000 -At -q0 -tc` | 0.05 / 0.07 | 0.05 / 0.07 | 0.02 / 0.03 |
+| T4 chain `-At -tc -s-17 -n1` (n = 30,000) | 0.08 | 0.08 | 0.06 |
+| `lp50000 -At -tc` | 10.22 / 97.3 G | 3.42 / 18.5 G | 11.61 / 43.0 G |
+| `lp50000 -As -tc -n3` | 12.07 / 134 G | 5.26 / 55.5 G | 3.43 / 31.8 G |
+| `lp50000s2 -As -tc -n2` | 19.14 / 213 G | 5.32 / 55.7 G | 3.52 / 32.0 G |
+| `lp50000 -As -tm` (control) | 5.68 | 5.68 | 3.42 |
+| challenge `adv1f -At -q-2 -tc` | 1.64 | 1.64 | 0.02 |
+
+- **`-n1` (the check).** Linear: ×2 items gives ×2.1 instructions
+  (0.22 → 0.46 → 0.92 → 1.75 G), against ×4 on `main` and in C. Go
+  is 12–110× faster than C on these rows.
+- **Still quadratic, not in the check** (the claim of #20 is for `-n1`):
+  - `-n2`/`-n3` on lp data: the FP-growth projection of every item
+    (`projSmp16`/`fpCondSupp`, 96 % of the remaining time in the
+    challenge's profiles); C is quadratic there too;
+  - `-At`: the top-down tree build (`addTopDown`, 92 % in the same
+    profiles); C 11.6 s;
+  - `-tm`: the maximal check counts the long line for every item. An
+    exact pruning exists (if a cover transaction t has
+    w(t) > supp(X) − smin, every frequent extension is in t), left to a
+    separate issue;
+  - `adv1f` (challenge L2: three equal chains, one chain with four rare
+    items, fillers; `-At -q-2`): the first and shortest cover
+    transaction's 4 probes are the rare items, so every check copies n
+    items, on `main` as on the branch. C is fast because its repository
+    check is incomplete (M5), not because its check is better; a known
+    shape, not a regression.
+- **Ordinary rows** (benchstat, n = 6, branch vs `main`): every `-tc`
+  row of `configs.txt` (sparse, sparse-large with and without `-n`,
+  dense and its 7 variants, long, weighted, every `m5-*-c-*`, tier),
+  plus `s50000x414 -tc -s-1350 -n3` and `d20000x200d30 -tc -s2 -n3 -At`:
+  wall time `~` everywhere except `dense-c-Ac` −4.1 %,
+  `m5-d2000-c-n4` −2.7 %, `m5-d1000-c` −2.8 % (geomean −0.4 %);
+  instructions `~` except `d20000 -n3` +0.60 %, tier +0.45 %,
+  `d20000 -n3 -At` +0.33 % (the stage-a lookups and the threshold
+  tests; geomean +0.09 %). Against v0.1.0 the same. In process (6 interleaved rounds of
+  `CloMaxLimited` and the root `SuiteMaxSize`, `SuiteTargets`,
+  `SuiteVariants`, load 4–16): all 12 `CloMaxLimited` rows and every
+  closed row `~`; three rows were flagged
+  (`SuiteVariants/…/maximal/complex+reorder` +5.4 %,
+  `SuiteMaxSize/…/frequent/n=5` +3.0 %, `…/maximal/n=3` +1.6 %), none of
+  which runs the closed scan (the first two not even the checker), and
+  all three are `~` in a rerun of 10 interleaved rounds.
+- **Paths.** On `d20000 -tc -s2 -n3` (challenge counters) stage a moves
+  the start in 1.12 M of 1.17 M scans and lowers the copied items from
+  73 M to 59 M; stage b and the exponential search never run on the
+  ordinary rows (their transactions have at most about 100 items).
+  The test suite reaches all three paths at the production thresholds
+  (`TestExtCheckMixedCover`); `-tags fpgforce` lowers the thresholds
+  for the brute forces.
+- **Correctness evidence.** The extension-check suite at
+  `FPG_M5_CASES=20000 FPG_ORACLE_CASES=5000 FPG_M5_UNLIMITED=300
+  FPG_SIB_CASES=2000` (440,000 + 220,000 oracle comparisons, 26,400
+  unlimited runs equal), and at 10,000 cases with `-tags fpgforce`;
+  the audit's brute forces with production and forced thresholds
+  (`bf -focus -big` 33,000 runs, `bf -wide` forced 33,000, `bf -big`
+  forced 22,000, `bfs` 2,000 + 2,000 forced): 92,000 runs, 0 failures;
+  difftest and `FuzzMine`/`FuzzMineItemsets` (60 s each, also forced).
+  Mutants (default `go test ./internal/fpg`): a main-like scan (start
+  at t0, no stage b), the exponential search off-by-one, never used,
+  skipping the last item or not advancing, stage b's guard inverted,
+  missing the last cover word or choosing a non-cover transaction, t0
+  not intersected, probes of t* only (the trap), and PR #6's W1, W2,
+  W4; after review round 1 also the full scan skipping the first
+  transaction of every cover word (K10) and the gallop rule without
+  its span test: all caught. Two survive and are equivalent in the verdict:
+  probing t0 twice, and skipping the spread transactions (the full
+  scan intersects them anyway).
+- **Review round 1 (PR #35).** The performance review generated
+  adversaries with long transactions (`gen.py` of the review: 200–1,000
+  random items plus a block of common items). With the first gallop
+  rule (|t| ≥ 16·|cand|) the search ran on candidates clustered at the
+  start of long transactions, where the merge stops early: up to
+  +10.3 % instructions against `main`. The span rule of §4 fixes it.
+  Instructions, 6 interleaved runs (load 4–7):
+
+  | data (`-tc -s-2 -n1`) | `main` | first rule | span rule |
+  | --- | ---: | ---: | ---: |
+  | `g6-60-0.9` (1,000 lines of 1,000 items, 60 block items at 90 %) | 4.36 G | 4.80 G | 4.36 G |
+  | `g6-200-0.9` | 6.02 G | 6.64 G | 5.95 G |
+  | `g6-200-0.95` | 4.89 G | 5.29 G | 4.78 G |
+  | `g6-400-0.95` | 7.27 G | 7.56 G | 7.11 G |
+  | `g1` (stage b on 75 % of the scans, never shorter) | 12.28 G | 12.46 G | 12.41 G (+1.1 %) |
+  | `g2` / `g3` | 15.57 / 12.45 G | — | 15.62 / 12.36 G |
+
+  `g1` is stage b's worst case: it runs on most scans, finds no
+  shorter transaction, and the candidates die after one merge, so its
+  pass over the cover is pure overhead, about +1 to +1.5 % of all
+  instructions (bounded by a quarter of the copies, §4). The
+  correctness review found a verdict-changing mutant that no test
+  caught (the full scan skipping the first transaction of every cover
+  word once the start moved, K10); `TestExtCheckFirstOfWord` (18 cover
+  words, every transaction lacking one item of all others) catches it.
 
 ## 8. Decision
 

@@ -63,6 +63,36 @@ are maximal and checked. Its other children have frequent supersets
 and are never checked. The `m5-split-*` rows guard the later-sibling
 bound of the same rule.
 
+The `lp*` datasets (`benchSpec.Short`, no randomness except the weights
+of `lp50000w`) are the long-and-short shape of issue #20 (NEW-3, review
+PR6-2 `lp2`): one line of all N items, then for every item a short
+line, so that with `-tc -s-2 -n1` every item's cover is the long line
+plus short ones and each closed check of an item copies the long line
+into its candidates (quadratic in Go and in C). `lp12500` … `lp100000`
+are the issue's awk reproducer byte for byte at four sizes (the
+scaling); `lp50000s2` has two-item short lines (a candidate survives
+the short line and must be intersected with the long one);
+`lp50000w` has weights 1..20; `lpc20000` replaces the long line by
+313 suffix chains (chain j holds the items 64·j to 19,999), so that
+with `-q0` a long chain comes first in every cover word and neither the
+first cover transaction nor the spread probes of the closed scan are
+short. Its `-q0` row and `lp100000` are slow on `main` before #20
+and in C (see `configs.txt`).
+
+`adv5-20000` and `adv5-40000` (`benchSpec.Trap`) are the probe trap
+found by the independent challenge of the #20 design (`gen5.py`, with
+the items renamed in the same order of first appearance): with
+`-At -q0 -tc -s-2 -n1` the first cover transaction of every `{a_i}`
+holds a covering item among its 4 probes and the shortest cover
+transaction does not, so the closed scan must still probe the first
+one (0.05 s; 2.3 s and quadratic if only the shortest is probed).
+
+A build with `go build -tags fpgforce ./cmd/fpgrowth` lowers the
+closed scan's thresholds so that its rare paths (the pass over the
+cover for the shortest transaction, the exponential search) run on
+ordinary data; it is for brute-force and differential runs only
+(`internal/fpg/extcheck_force.go`).
+
 ```bash
 cd reference
 go run ./bench/gen -dataset d2000x40d60 -o d2000x40d60.tab
@@ -71,6 +101,9 @@ go run ./bench/gen -dataset d5000x60d40 -o d5000x60d40.tab
 go run ./bench/gen -dataset d20000x200d30 -o d20000x200d30.tab
 bench/compare.sh -m devnull '^(m5-d[125]000-|m5-tier-|m5-split-|large-[cm]-n)'   # the fast M5 configurations
 bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slow)
+bench/compare.sh -n 5 -m devnull '^lp-(12500|25000|50000|c20000-c\*)'   # issue #20, fast rows
+bench/compare.sh -n 5 -m devnull '^adv5-'              # issue #20, the probe trap
+bench/compare.sh -n 3 -m devnull '^lp-100000'          # issue #20, slow in C (lp-c20000-c-q0: C does not finish)
 ```
 `go test ./bench/...` checks that
 
@@ -81,7 +114,7 @@ bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slo
 - the SHA-256 of every dataset is unchanged (`TestDatasetsPinned`).
 
 Datasets are generated on demand into a temporary directory and never
-committed (the largest is 8.5 MB).
+committed (the largest is `lpc20000`, 18.1 MB).
 
 ## Comparison with the C program
 
