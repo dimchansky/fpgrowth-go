@@ -178,7 +178,7 @@ A clean build of all four variants takes about 18 s on an M-series Mac.
 ## fpgpsp oracle patches
 
 Upstream's `fpgpsp` has defects that change its results (issue #23,
-`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U18). The Go
+`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U20). The Go
 port fixes them, and the differential oracle is upstream with the
 smallest source changes that fix them. The patches live in
 `patches/fpgpsp/`, are applied only to the `fpgpsp-fixed` variant (and by
@@ -186,15 +186,17 @@ smallest source changes that fix them. The patches live in
 
 | Patch | Defect | Change |
 | --- | --- | --- |
-| `p1-no-reduce.patch` | U2-U4: equal transactions are merged into weighted ones before surrogates are generated or the spectrum is estimated | `FPG_NOREDUCE` in the two `fpg_data` calls of `fpg_genpsp` and `fpg_estpsp` |
-| `p2-recount.patch` | U1: every surrogate is mined with the item frequencies of the first one (stale cache) | `tbg_ifrqs(bag, 1)` in the five miners |
-| `p2b-clear-pex.patch` | U1: the root-level perfect extensions of a surrogate stay in the reporter; with P2 alone item sets with duplicate items overflow the reporter | clear them after every `fpg_mine` (both loops) |
-| `p3-border.patch` | U5: `-D` compares with the counter array of the smallest size and prints nothing for one size | compare with the size's own row; print for `zmax >= zmin` |
-| `p4-repair.patch` | U12: the frequency repair of `tbg_random` never examines the last item of its search | examine it |
-| `p5-estim-frequencies.patch` | U13: `-ge` with `-m` > 1 divides unfiltered item frequencies by the filtered extent | frequencies of the filtered bag |
-| `p6-reset-filters.patch` | U16: the closed/maximal and generator filters of the reporter keep the sets of earlier surrogates (lost sets; crash for `-tg`) | new filters after every `fpg_mine` |
-| `p7-taslots-largest.patch` | U17: the slot counts of `-ge` ignore transactions that contain every item | start the search for the largest size at the number of items |
-| `p8-size0-row.patch` | U18: a second support for size 0 (`-ge -m0`) overflows the spectrum's row buffer | size-0 rows like all others |
+| `p01-no-reduce.patch` | U2-U4: equal transactions are merged into weighted ones before surrogates are generated or the spectrum is estimated | `FPG_NOREDUCE` in the two `fpg_data` calls of `fpg_genpsp` and `fpg_estpsp` |
+| `p02-recount.patch` | U1: every surrogate is mined with the item frequencies of the first one (stale cache) | `tbg_ifrqs(bag, 1)` in the five miners |
+| `p02b-clear-pex.patch` | U1: the root-level perfect extensions of a surrogate stay in the reporter; with P02 alone item sets with duplicate items overflow the reporter | clear them after every `fpg_mine` (both loops) |
+| `p03-border.patch` | U5: `-D` compares with the counter array of the smallest size and prints nothing for one size | compare with the size's own row; print for `zmax >= zmin` |
+| `p04-repair.patch` | U12: the frequency repair of `tbg_random` never examines the last item of its search | examine it |
+| `p05-estim-frequencies.patch` | U13: `-ge` with `-m` > 1 divides unfiltered item frequencies by the filtered extent | frequencies of the filtered bag |
+| `p06-reset-filters.patch` | U16: the closed/maximal and generator filters of the reporter keep the sets of earlier surrogates (lost sets; crash for `-tg`) | new filters after every `fpg_mine` |
+| `p07-taslots-largest.patch` | U17: the slot counts of `-ge` ignore transactions that contain every item | start the search for the largest size at the number of items |
+| `p08-size0-row.patch` | U18: a second support for size 0 (`-ge -m0`) overflows the spectrum's row buffer | size-0 rows like all others |
+| `p09-shuffle-no-fim16.patch` | U19: `-gs` mines unrecoded data with the 16-items machine (`-As`/`-Ad`), which loses item sets | no 16-items machine for `-gs` |
+| `p10-fim16-init.patch` | U20: threads fill the static table of the 16-items machine concurrently (data race; nondeterministic spectra with `-Z` > 1) | fill it before the threads start |
 
 `patches/fpgpsp/` is never applied to the other variants (the top-level
 `patches/*.patch` would be, but there are none).
