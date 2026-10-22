@@ -9,9 +9,10 @@ here is part of the published Go module.
 ```bash
 cd reference
 ./build.sh                 # release, debug, asan and native
-./build.sh release         # one or more of: release | debug | asan | native | zlib | fpgpsp | all
+./build.sh release         # one or more of: release | debug | asan | native | zlib | fpgpsp | fpgpsp-fixed | all
 ./build.sh zlib            # release with USE_ZLIB (option -z); needs zlib
 ./build.sh fpgpsp          # the fpgpsp program (release flags, -lpthread)
+./build.sh fpgpsp-fixed    # fpgpsp with patches/fpgpsp/*.patch: the oracle of cmd/fpgpsp
 CC=gcc ./build.sh          # another compiler (the default is cc)
 ```
 
@@ -23,7 +24,10 @@ compiled with `-DUSE_ZLIB` and linked with `-lz`, upstream's optional
 build with option `-z` (zlib-compressed output); it is the oracle of
 `difftest`'s `TestZlib` and is not part of `all`. `fpgpsp` builds the
 make target `fpgpsp` instead of `fpgrowth`, with the `release` flags;
-it is not part of `all` either.
+it is not part of `all` either. `fpgpsp-fixed` is `fpgpsp` with the
+oracle-only patches in `patches/fpgpsp/` applied in name order (see
+[fpgpsp oracle patches](#fpgpsp-oracle-patches)); it is the oracle of
+`difftest`'s `TestFpgpsp`.
 
 `build.sh` prints one `<variant> <absolute path>` line per binary on
 stdout; progress goes to stderr. It exits non-zero if the pristine
@@ -55,7 +59,8 @@ linker flags, e.g. `-D_FILE_OFFSET_BITS=64`; empty by default).
 | `asan` | `-ffp-contract=off` | `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer` | `$(ADDFLAGS) -g -fsanitize=address,undefined` | on | oracle, sanitizers |
 | `native` | (empty) | upstream default `-DNDEBUG -O3 -funroll-loops` | upstream default | off | performance only |
 | `zlib` | `-ffp-contract=off -DUSE_ZLIB` | as `release` | as `release`; `ADDLIBS=-lz` | off | oracle of `-z` (`TestZlib`) |
-| `fpgpsp` | `-ffp-contract=off` | as `release` | as `release`; the makefile adds `-lpthread` | off | `fpgpsp` program (issue #23) |
+| `fpgpsp` | `-ffp-contract=off` | as `release` | as `release`; the makefile adds `-lpthread` | off | pristine `fpgpsp` program (issue #23) |
+| `fpgpsp-fixed` | `-ffp-contract=off` | as `release` | as `fpgpsp` | off | oracle of `cmd/fpgpsp` (`TestFpgpsp`) |
 
 `$(CFBASE)` is the upstream warning set plus `-c` and `$(ADDFLAGS)`:
 `-Wall -Wextra -Wno-unused-parameter -Wconversion -pedantic -c $(ADDFLAGS)`
@@ -107,6 +112,7 @@ reference/build/asan/fpgrowth/src/fpgrowth
 reference/build/native/fpgrowth/src/fpgrowth
 reference/build/zlib/fpgrowth/src/fpgrowth
 reference/build/fpgpsp/fpgrowth/src/fpgpsp
+reference/build/fpgpsp-fixed/fpgrowth/src/fpgpsp
 ```
 
 Each `reference/build/<variant>/` directory is a full copy of
@@ -168,6 +174,30 @@ upstream directory is never written to.
    `-gp -c4 -S1 -Z2` (two threads) at `-s-2`.
 
 A clean build of all four variants takes about 18 s on an M-series Mac.
+
+## fpgpsp oracle patches
+
+Upstream's `fpgpsp` has defects that change its results (issue #23,
+`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U18). The Go
+port fixes them, and the differential oracle is upstream with the
+smallest source changes that fix them. The patches live in
+`patches/fpgpsp/`, are applied only to the `fpgpsp-fixed` variant (and by
+`harness/fpgpsp/gen.sh`), and each carries its rationale in its header:
+
+| Patch | Defect | Change |
+| --- | --- | --- |
+| `p1-no-reduce.patch` | U2-U4: equal transactions are merged into weighted ones before surrogates are generated or the spectrum is estimated | `FPG_NOREDUCE` in the two `fpg_data` calls of `fpg_genpsp` and `fpg_estpsp` |
+| `p2-recount.patch` | U1: every surrogate is mined with the item frequencies of the first one (stale cache) | `tbg_ifrqs(bag, 1)` in the five miners |
+| `p2b-clear-pex.patch` | U1: the root-level perfect extensions of a surrogate stay in the reporter; with P2 alone item sets with duplicate items overflow the reporter | clear them after every `fpg_mine` (both loops) |
+| `p3-border.patch` | U5: `-D` compares with the counter array of the smallest size and prints nothing for one size | compare with the size's own row; print for `zmax >= zmin` |
+| `p4-repair.patch` | U12: the frequency repair of `tbg_random` never examines the last item of its search | examine it |
+| `p5-estim-frequencies.patch` | U13: `-ge` with `-m` > 1 divides unfiltered item frequencies by the filtered extent | frequencies of the filtered bag |
+| `p6-reset-filters.patch` | U16: the closed/maximal and generator filters of the reporter keep the sets of earlier surrogates (lost sets; crash for `-tg`) | new filters after every `fpg_mine` |
+| `p7-taslots-largest.patch` | U17: the slot counts of `-ge` ignore transactions that contain every item | start the search for the largest size at the number of items |
+| `p8-size0-row.patch` | U18: a second support for size 0 (`-ge -m0`) overflows the spectrum's row buffer | size-0 rows like all others |
+
+`patches/fpgpsp/` is never applied to the other variants (the top-level
+`patches/*.patch` would be, but there are none).
 
 ## Running the sanitizer build
 

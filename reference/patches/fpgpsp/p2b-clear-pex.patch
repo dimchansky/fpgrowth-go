@@ -1,0 +1,46 @@
+P2b (issue #23, U1): clear the root-level perfect extensions after every
+surrogate.
+
+The miners register the perfect extensions of the empty prefix in the
+item set reporter (isr_addpex at level 0), and isr_remove never removes
+them; the reporter is reused for every surrogate. With stale item
+frequencies (pristine) the set never changes, so it is carried over
+silently; with recounted frequencies (P2) a former perfect extension can
+also be a tree item, and item sets with a duplicate item overflow the
+reporter (AddressSanitizer: heap-buffer-overflow in isr_report). Clearing
+the level-0 list after every fpg_mine gives every surrogate a fresh
+reporter state, which is what mining each surrogate separately means.
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -202,6 +202,14 @@
+   Pattern Spectrum Generation
+ ----------------------------------------------------------------------*/
+ 
++static void clrpex (ISREPORT *rep)
++{                               /* --- P2b: clear root-level perfect */
++  ITEM n;                       /* extensions after a surrogate */
++  for (n = rep->pxpp[0] & ~ITEM_MIN; --n >= 0; )
++    rep->pxpp[*rep->pexs++] &= ~ITEM_MIN;
++  rep->pxpp[0] &= ITEM_MIN;     /* unmark the items, clear the count */
++}  /* clrpex() */
++
+ static WORKERDEF(worker, p)
+ {                               /* --- worker function for a thread */
+   WORKDATA *w = p;              /* type the argument pointer */
+@@ -219,6 +227,7 @@
+     if (sig_aborted()) break;   /* check for an abort interrupt */
+     #endif
+     w->err |= fpg_mine(w->fpgrowth, ITEM_MIN, 0);
++    clrpex(w->report);          /* P2b */
+     if (w->err < 0)    break;   /* execute the fpgrowth algorithm */
+     #ifdef FPG_ABORT            /* if a signal handler is present */
+     if (sig_aborted()) break;   /* check for an abort interrupt */
+@@ -354,6 +363,7 @@
+       r = fpg_data(fpgrowth, tasur = s, FPG_SURR, 0);
+       if (r < 0) break;         /* prepare the data set */
+       r = fpg_mine(fpgrowth, 0, 0);
++      clrpex(report);           /* P2b */
+       if (r < 0) break;         /* execute the FP-growth algorithm */
+       if (rep) rep(i, data);    /* report the progress and */
+       #ifdef CCN_ABORT          /* if a signal handler is present */

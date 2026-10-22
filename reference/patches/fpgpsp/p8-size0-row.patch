@@ -1,0 +1,22 @@
+P8 (issue #23, U18): the pattern spectrum row of size 0 may hold
+several supports.
+
+resize keeps a single counter for size 0 (the empty set has one support
+when item sets are mined), but when a second support arrives it
+reallocates the row to one counter and clears the counters beyond it:
+a heap buffer overflow (AddressSanitizer in resize, -ge -m0 on data with
+empty transactions, where the estimation spreads size 0 over several
+supports). The row of size 0 is now sized like every other row; mined
+spectra are unchanged.
+
+--- a/tract/src/patspec.c
++++ b/tract/src/patspec.c
+@@ -255,7 +255,7 @@
+   else if (supp < row->max +BLKSIZE) max = row->max +BLKSIZE;
+   else                               max = supp;
+   if (max > psp->maxsupp)            max = psp->maxsupp;
+-  if (size <= 0) min = max = supp; /* only one counter for size = 0 */
++  /* P8: no single-counter row for size 0 (it overflowed) */
+   n = (size_t)max -(size_t)min +1; /* compute the new array size */
+   p = (size_t*)realloc(row->frqs, n *sizeof(size_t));
+   if (!p) return psp->err = -1; /* enlarge the counter array */

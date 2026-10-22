@@ -1,0 +1,19 @@
+P4 (issue #23, U12): the frequency repair of tbg_random also examines the
+last item of its cyclic search.
+
+The search for an under-represented item starts at a random index i and
+stops at j = i-1 (cyclically) without examining item j, so a repair fails
+when j is the only candidate. The patched test examines the item the
+search stopped at. No random draw is added or removed.
+
+--- a/tract/src/tract.c
++++ b/tract/src/tract.c
+@@ -2721,7 +2721,7 @@
+       while ((i != j)           /* and search cyclically from there */
+       &&     ((ifrq[i].item & ITEM_MIN) || (ifrq[i].dif >= 0)))
+         i = (i+1) % n;          /* find an under-represented item */
+-      if (i != j) {             /* if under-represented item found */
++      if ((ifrq[i].dif < 0) && !(ifrq[i].item & ITEM_MIN)) { /* P4 */
+         ifrq[*d].item &= ~ITEM_MIN;
+         ifrq[*d    ].dif -= 1;  /* replace the over-represented item */
+         ifrq[*d = i].dif += 1;  /* with the under-represented item */

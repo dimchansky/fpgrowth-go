@@ -3,7 +3,7 @@
 # Build the pristine upstream FP-Growth 6.21 C sources into reference
 # executables that serve as the differential-testing oracle.
 #
-# Usage: ./build.sh [-h] [release|debug|asan|native|zlib|fpgpsp|all]...
+# Usage: ./build.sh [-h] [release|debug|asan|native|zlib|fpgpsp|fpgpsp-fixed|all]...
 #        (default: all = release debug asan native)
 #
 # Variants:
@@ -18,6 +18,9 @@
 #   fpgpsp    release flags, but the make target fpgpsp: upstream's
 #             pattern-spectrum program (surrogate data or estimation),
 #             linked with -lpthread; binary build/fpgpsp/fpgrowth/src/fpgpsp
+#   fpgpsp-fixed
+#             fpgpsp with the defect fixes of patches/fpgpsp/*.patch
+#             (issue #23): the differential oracle of cmd/fpgpsp
 #
 # Environment:
 #   CC        C compiler driver (default: cc). "-std=c99" is appended
@@ -48,7 +51,7 @@ die() { printf 'build.sh: error: %s\n' "$*" >&2; exit 1; }
 log() { printf 'build.sh: %s\n' "$*" >&2; }
 
 usage() {
-	sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '3,38p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- arguments -------------------------------------------------------
@@ -58,8 +61,8 @@ for arg in "$@"; do
 	case $arg in
 	-h | --help) usage; exit 0 ;;
 	all) variants+=(release debug asan native) ;;
-	release | debug | asan | native | zlib | fpgpsp) variants+=("$arg") ;;
-	*) die "unknown variant '$arg' (expected release, debug, asan, native, zlib, fpgpsp or all)" ;;
+	release | debug | asan | native | zlib | fpgpsp | fpgpsp-fixed) variants+=("$arg") ;;
+	*) die "unknown variant '$arg' (expected release, debug, asan, native, zlib, fpgpsp, fpgpsp-fixed or all)" ;;
 	esac
 done
 [ ${#variants[@]} -gt 0 ] || variants=(release debug asan native)
@@ -145,7 +148,7 @@ make_args() {
 	fi
 	margs=(CC="$cc" LD="$ld" ADDFLAGS="$add" ADDLIBS="$libs" ADDOBJS=)
 	case $1 in
-	release | native | zlib | fpgpsp) ;; # upstream: CFLAGS = $(CFBASE) -DNDEBUG -O3 -funroll-loops
+	release | native | zlib | fpgpsp | fpgpsp-fixed) ;; # upstream: CFLAGS = $(CFBASE) -DNDEBUG -O3 -funroll-loops
 	debug)
 		margs+=('CFLAGS=$(CFBASE) -g -O0')
 		;;
@@ -165,7 +168,7 @@ check_binary() {
 	if command -v nm >/dev/null 2>&1; then
 		syms=$(nm "$bin" 2>/dev/null || true)
 		case $variant in
-		release | native | zlib | fpgpsp)
+		release | native | zlib | fpgpsp | fpgpsp-fixed)
 			if grep -Eq '__assert_(rtn|fail)' <<<"$syms"; then
 				die "$variant: assertions are compiled in (expected -DNDEBUG)"
 			fi
@@ -183,7 +186,7 @@ check_binary() {
 		log "nm not found; skipping flag checks for $variant"
 	fi
 	local smoke=$dst/smoke.out
-	if [ "$variant" = fpgpsp ]; then
+	if [ "$variant" = fpgpsp ] || [ "$variant" = fpgpsp-fixed ]; then
 		# usage lists the surrogate options; estimation (-ge), a
 		# single-threaded (-Z1) and a two-thread (-Z2) surrogate run
 		# with a fixed seed must each produce a pattern spectrum
@@ -222,7 +225,7 @@ build_variant() {
 	local dst=$builddir/$variant
 	local logf=$dst/build.log
 	local target=fpgrowth
-	[ "$variant" = fpgpsp ] && target=fpgpsp
+	case $variant in fpgpsp | fpgpsp-fixed) target=fpgpsp ;; esac
 	local bin=$dst/fpgrowth/src/$target
 	local p nwarn
 
@@ -235,6 +238,14 @@ build_variant() {
 		for p in "$patchdir"/*.patch; do
 			[ -e "$p" ] || continue
 			log "$variant: applying $(basename "$p")"
+			patch -s -p1 -d "$dst" <"$p" || die "$variant: patch $p failed"
+		done
+	fi
+	if [ "$variant" = fpgpsp-fixed ]; then
+		# the oracle-only defect fixes of fpgpsp, applied in name order
+		for p in "$patchdir"/fpgpsp/*.patch; do
+			[ -e "$p" ] || die "$variant: no patches in $patchdir/fpgpsp"
+			log "$variant: applying fpgpsp/$(basename "$p")"
 			patch -s -p1 -d "$dst" <"$p" || die "$variant: patch $p failed"
 		done
 	fi
