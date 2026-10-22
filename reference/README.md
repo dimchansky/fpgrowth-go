@@ -2,14 +2,16 @@
 
 This directory builds Christian Borgelt's unmodified C implementation
 (`upstream/fpgrowth-6.21/`) into the `fpgrowth` executables that serve
-as the oracle for differential tests of the Go port. Nothing here is
-part of the published Go module.
+as the oracle for differential tests of the Go port, and into upstream's
+second program `fpgpsp` (pattern spectra from surrogate data). Nothing
+here is part of the published Go module.
 
 ```bash
 cd reference
 ./build.sh                 # release, debug, asan and native
-./build.sh release         # one or more of: release | debug | asan | native | zlib | all
+./build.sh release         # one or more of: release | debug | asan | native | zlib | fpgpsp | all
 ./build.sh zlib            # release with USE_ZLIB (option -z); needs zlib
+./build.sh fpgpsp          # the fpgpsp program (release flags, -lpthread)
 CC=gcc ./build.sh          # another compiler (the default is cc)
 ```
 
@@ -19,7 +21,9 @@ and must produce identical output. `native` is the upstream build with
 no added flags, for performance comparisons only. `zlib` is `release`
 compiled with `-DUSE_ZLIB` and linked with `-lz`, upstream's optional
 build with option `-z` (zlib-compressed output); it is the oracle of
-`difftest`'s `TestZlib` and is not part of `all`.
+`difftest`'s `TestZlib` and is not part of `all`. `fpgpsp` builds the
+make target `fpgpsp` instead of `fpgrowth`, with the `release` flags;
+it is not part of `all` either.
 
 `build.sh` prints one `<variant> <absolute path>` line per binary on
 stdout; progress goes to stderr. It exits non-zero if the pristine
@@ -51,6 +55,7 @@ linker flags, e.g. `-D_FILE_OFFSET_BITS=64`; empty by default).
 | `asan` | `-ffp-contract=off` | `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer` | `$(ADDFLAGS) -g -fsanitize=address,undefined` | on | oracle, sanitizers |
 | `native` | (empty) | upstream default `-DNDEBUG -O3 -funroll-loops` | upstream default | off | performance only |
 | `zlib` | `-ffp-contract=off -DUSE_ZLIB` | as `release` | as `release`; `ADDLIBS=-lz` | off | oracle of `-z` (`TestZlib`) |
+| `fpgpsp` | `-ffp-contract=off` | as `release` | as `release`; the makefile adds `-lpthread` | off | `fpgpsp` program (issue #23) |
 
 `$(CFBASE)` is the upstream warning set plus `-c` and `$(ADDFLAGS)`:
 `-Wall -Wextra -Wno-unused-parameter -Wconversion -pedantic -c $(ADDFLAGS)`
@@ -101,6 +106,7 @@ reference/build/debug/fpgrowth/src/fpgrowth
 reference/build/asan/fpgrowth/src/fpgrowth
 reference/build/native/fpgrowth/src/fpgrowth
 reference/build/zlib/fpgrowth/src/fpgrowth
+reference/build/fpgpsp/fpgrowth/src/fpgpsp
 ```
 
 Each `reference/build/<variant>/` directory is a full copy of
@@ -140,8 +146,15 @@ upstream directory is never written to.
    `ADDLIBS`/`ADDOBJS` are referenced but never assigned upstream, so they
    are set empty to keep the environment out of the build; `MAKEFLAGS`
    and friends are unset for the same reason. Only the `fpgrowth` target
-   is built: the default `all` target also wants `fpgpsp`, whose sources
-   (`tract/src/tars.c`, `pspest.c`) are not in the archive.
+   is built, or the `fpgpsp` target for the `fpgpsp` variant. All sources
+   of `fpgpsp` are in the archive: the makefile's `tars.o` and `pspest.o`
+   are object files compiled from `tract/src/tract.c` (with `-DTA_READ
+   -DTA_SURR`, the surrogate generators) and `tract/src/patspec.c` (with
+   `-DPSP_REPORT -DPSP_ESTIM`, the estimation); it also links
+   `util/src/random.c`, `fpgrowth.c` (without `FPG_MAIN`) and `fpgpsp.c`
+   (with `-DFPGPSP_MAIN`), and `-lpthread`. (Earlier versions of this
+   file said that `tars.c` and `pspest.c` were missing; that was a
+   misreading of the makefiles, see issue #25.)
 
 4. **Checks.** Every compile command in `build.log` must contain
    `-ffp-contract=off` (and none may for `native`). `nm` must show the
@@ -149,7 +162,10 @@ upstream directory is never written to.
    glibc/musl) in `debug` and `asan` but not in `release`/`native`, and
    `__asan_init`/`__ubsan_*` in `asan`. Each binary then mines
    `fpgrowth/ex/test1.tab` at 50% support; the `zlib` binary must also
-   list `-z` in its usage message and write a zlib header with `-z`.
+   list `-z` in its usage message and write a zlib header with `-z`. The
+   `fpgpsp` binary must list `-g#` in its usage message and write a
+   pattern spectrum for `-ge -S1`, `-gr -c4 -S1 -Z1` and
+   `-gp -c4 -S1 -Z2` (two threads) at `-s-2`.
 
 A clean build of all four variants takes about 18 s on an M-series Mac.
 
