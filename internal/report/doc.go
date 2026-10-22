@@ -20,6 +20,16 @@
 // final Report with an empty set reports the empty set and the hypercube
 // of these top-level perfect extensions.
 //
+// Perfect extensions that cannot change any result are not processed
+// (an extension of upstream, issue #21): a miner skips collecting them
+// when PexUseful returns false (generators, or a set of zmax items for
+// targets other than closed and maximal sets), and Report and the
+// hypercube expansion ignore the perfect extensions of a set of zmax
+// items, which do not fit into any reportable superset. Results are
+// identical to upstream's; on a long single path with a small maximum
+// size the work becomes linear instead of quadratic. SetPexGuard turns
+// this off for differential tests.
+//
 // # Upstream functions
 //
 //	isr_create, isr_createx       New

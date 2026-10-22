@@ -96,6 +96,37 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// datasetStats are the measured characteristics of a dataset.
+type datasetStats struct {
+	used           int // number of distinct items used
+	sum            int // total transaction length
+	minLen, maxLen int
+}
+
+// listStats measures s. The items used are counted without assuming that
+// they are below s.Items: the probe trap (benchSpec.Trap) numbers its
+// filler items beyond it.
+func listStats(s benchSpec) (datasetStats, error) {
+	st := datasetStats{minLen: 1 << 30}
+	var used []bool
+	err := benchGenerate(s, func(tx benchTx) error {
+		for _, i := range tx.Items {
+			if int(i) >= len(used) {
+				used = append(used, make([]bool, int(i)+1-len(used))...)
+			}
+			if !used[i] {
+				used[i] = true
+				st.used++
+			}
+		}
+		st.sum += len(tx.Items)
+		st.minLen = min(st.minLen, len(tx.Items))
+		st.maxLen = max(st.maxLen, len(tx.Items))
+		return nil
+	})
+	return st, err
+}
+
 // printList prints each dataset's parameters and measured
 // characteristics: average transaction length, density (average length
 // divided by the number of distinct items used), table size and the
@@ -104,27 +135,11 @@ func printList(w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
 	fmt.Fprintln(tw, "dataset\ttransactions\titems used\tavg len\tmin len\tmax len\tdensity\tweighted\ttable bytes\tsha256[:12]\t")
 	for _, s := range benchSpecs {
-		used := make([]bool, s.Items)
-		var sum, minLen, maxLen int
-		minLen = 1 << 30
-		err := benchGenerate(s, func(tx benchTx) error {
-			for _, i := range tx.Items {
-				used[i] = true
-			}
-			sum += len(tx.Items)
-			minLen = min(minLen, len(tx.Items))
-			maxLen = max(maxLen, len(tx.Items))
-			return nil
-		})
+		st, err := listStats(s)
 		if err != nil {
 			return err
 		}
-		nused := 0
-		for _, u := range used {
-			if u {
-				nused++
-			}
-		}
+		nused, sum, minLen, maxLen := st.used, st.sum, st.minLen, st.maxLen
 		h := sha256.New()
 		cw := &countingWriter{h: h}
 		if err := benchWrite(cw, s, false); err != nil {

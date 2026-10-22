@@ -24,11 +24,15 @@ func (m *miner) recSingle(t *fpTree, n int) error {
 		nodes := m.fp.nodes
 		node := h.list
 		if nodes[node].succ < 0 { // projection would be a chain
-			for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
-				if k := nodes[anc].id; k >= 0 {
-					m.rep.AddPex(t.heads[k].item)
-				} else {
-					m.rep.AddPexPacked(k)
+			// Extension: skip the walk if no perfect extension can
+			// change a result (rep.PexUseful; e.g. a set of zmax items).
+			if m.rep.PexUseful() {
+				for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
+					if k := nodes[anc].id; k >= 0 {
+						m.rep.AddPex(t.heads[k].item)
+					} else {
+						m.rep.AddPexPacked(k)
+					}
 				}
 			}
 		} else if i > 0 && m.rep.Xable(1) {

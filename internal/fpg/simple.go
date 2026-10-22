@@ -201,8 +201,12 @@ func (m *miner) recSimple(t *fpTree, depth int) error {
 		node := h.list
 		switch {
 		case nodes[node].succ < 0: // projection would be a chain
-			for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
-				m.rep.AddPex(t.heads[nodes[anc].id].item)
+			// Extension: skip the walk if no perfect extension can
+			// change a result (rep.PexUseful; e.g. a set of zmax items).
+			if m.rep.PexUseful() {
+				for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
+					m.rep.AddPex(t.heads[nodes[anc].id].item)
+				}
 			}
 		case proj != nil && m.deeper():
 			if m.projSimple(proj, t, i) {
@@ -387,11 +391,15 @@ func (m *miner) recSmp16(t *fpTree, depth int) error {
 		node := h.list
 		switch {
 		case nodes[node].succ < 0: // projection would be a chain
-			for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
-				if k := nodes[anc].id; k >= 0 {
-					m.rep.AddPex(t.heads[k].item)
-				} else {
-					m.rep.AddPexPacked(k)
+			// Extension: skip the walk if no perfect extension can
+			// change a result (rep.PexUseful; e.g. a set of zmax items).
+			if m.rep.PexUseful() {
+				for anc := nodes[node].parent; nodes[anc].id > tract.End; anc = nodes[anc].parent {
+					if k := nodes[anc].id; k >= 0 {
+						m.rep.AddPex(t.heads[k].item)
+					} else {
+						m.rep.AddPexPacked(k)
+					}
 				}
 			}
 		case proj != nil && m.deeper():
