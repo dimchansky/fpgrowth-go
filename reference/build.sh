@@ -3,7 +3,8 @@
 # Build the pristine upstream FP-Growth 6.21 C sources into reference
 # executables that serve as the differential-testing oracle.
 #
-# Usage: ./build.sh [-h] [release|debug|asan|native|all]... (default: all)
+# Usage: ./build.sh [-h] [release|debug|asan|native|zlib|all]...
+#        (default: all = release debug asan native)
 #
 # Variants:
 #   release   upstream flags (-O3 -DNDEBUG -funroll-loops) + -ffp-contract=off
@@ -11,6 +12,9 @@
 #   asan      -g -O1 -fsanitize=address,undefined     + -ffp-contract=off
 #   native    exact upstream makefile flags, nothing added (performance
 #             comparison only; NOT the differential-testing oracle)
+#   zlib      release + -DUSE_ZLIB, linked with -lz: the build with
+#             option -z (zlib-compressed output); needs the zlib headers
+#             and library (oracle of difftest's TestZlib)
 #
 # Environment:
 #   CC        C compiler driver (default: cc). "-std=c99" is appended
@@ -41,7 +45,7 @@ die() { printf 'build.sh: error: %s\n' "$*" >&2; exit 1; }
 log() { printf 'build.sh: %s\n' "$*" >&2; }
 
 usage() {
-	sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '3,32p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- arguments -------------------------------------------------------
@@ -51,8 +55,8 @@ for arg in "$@"; do
 	case $arg in
 	-h | --help) usage; exit 0 ;;
 	all) variants+=(release debug asan native) ;;
-	release | debug | asan | native) variants+=("$arg") ;;
-	*) die "unknown variant '$arg' (expected release, debug, asan, native or all)" ;;
+	release | debug | asan | native | zlib) variants+=("$arg") ;;
+	*) die "unknown variant '$arg' (expected release, debug, asan, native, zlib or all)" ;;
 	esac
 done
 [ ${#variants[@]} -gt 0 ] || variants=(release debug asan native)
@@ -130,11 +134,15 @@ fpflags=-ffp-contract=off
 # CFLAGS keeps each makefile's own $(CFBASE) (warnings, -c, $(ADDFLAGS));
 # make expands it per (sub-)makefile.
 make_args() {
-	local add=${ADDFLAGS:-}
+	local add=${ADDFLAGS:-} libs=
 	[ "$1" = native ] || add="$fpflags${add:+ $add}"
-	margs=(CC="$cc" LD="$ld" ADDFLAGS="$add" ADDLIBS= ADDOBJS=)
+	if [ "$1" = zlib ]; then
+		add="$add -DUSE_ZLIB"
+		libs=-lz # the makefile links $(LIBS) = -lm $(ADDLIBS)
+	fi
+	margs=(CC="$cc" LD="$ld" ADDFLAGS="$add" ADDLIBS="$libs" ADDOBJS=)
 	case $1 in
-	release | native) ;; # upstream: CFLAGS = $(CFBASE) -DNDEBUG -O3 -funroll-loops
+	release | native | zlib) ;; # upstream: CFLAGS = $(CFBASE) -DNDEBUG -O3 -funroll-loops
 	debug)
 		margs+=('CFLAGS=$(CFBASE) -g -O0')
 		;;
@@ -154,7 +162,7 @@ check_binary() {
 	if command -v nm >/dev/null 2>&1; then
 		syms=$(nm "$bin" 2>/dev/null || true)
 		case $variant in
-		release | native)
+		release | native | zlib)
 			if grep -Eq '__assert_(rtn|fail)' <<<"$syms"; then
 				die "$variant: assertions are compiled in (expected -DNDEBUG)"
 			fi
@@ -177,6 +185,17 @@ check_binary() {
 		die "$variant: smoke run failed"
 	fi
 	[ -s "$smoke" ] || die "$variant: smoke run produced no output"
+	if [ "$variant" = zlib ]; then
+		# -z must be compiled in: listed in the usage message, and the
+		# output starts with a zlib header (0x78, deflate, 32 KiB window)
+		"$bin" 2>/dev/null | grep -q '^-z ' || die "$variant: -z missing from the usage message"
+		if ! "$bin" -z -s50 "$dst/fpgrowth/ex/test1.tab" "$smoke.z" >>"$dst/smoke.log" 2>&1; then
+			cat "$dst/smoke.log" >&2
+			die "$variant: smoke run with -z failed"
+		fi
+		[ "$(head -c 1 "$smoke.z" | od -An -tx1 | tr -d ' \n')" = 78 ] ||
+			die "$variant: -z output does not start with a zlib header"
+	fi
 }
 
 build_variant() {

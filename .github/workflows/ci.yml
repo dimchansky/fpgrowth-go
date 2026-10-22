@@ -304,6 +304,11 @@ jobs:
       - name: Build the C reference (release)
         working-directory: reference
         run: ./build.sh release
+      - name: Build the C reference with zlib (-z)
+        # Built here, so that a missing zlib fails the job instead of
+        # skipping TestZlib.
+        working-directory: reference
+        run: ./build.sh zlib
       - name: Differential tests
         working-directory: reference
         # -artifacts keeps the inputs and outputs of failing cases.
@@ -318,6 +323,8 @@ jobs:
           path: |
             reference/build/release/build.log
             reference/build/release/smoke.log
+            reference/build/zlib/build.log
+            reference/build/zlib/smoke.log
             ${{ runner.temp }}/difftest-artifacts
           if-no-files-found: ignore
           retention-days: 14

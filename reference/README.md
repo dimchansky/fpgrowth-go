@@ -8,14 +8,18 @@ part of the published Go module.
 ```bash
 cd reference
 ./build.sh                 # release, debug, asan and native
-./build.sh release         # one or more of: release | debug | asan | native | all
+./build.sh release         # one or more of: release | debug | asan | native | zlib | all
+./build.sh zlib            # release with USE_ZLIB (option -z); needs zlib
 CC=gcc ./build.sh          # another compiler (the default is cc)
 ```
 
 `release`, `debug` and `asan` are the oracle: they are compiled with
 `-ffp-contract=off` (see [Floating-point contraction](#floating-point-contraction))
 and must produce identical output. `native` is the upstream build with
-no added flags, for performance comparisons only.
+no added flags, for performance comparisons only. `zlib` is `release`
+compiled with `-DUSE_ZLIB` and linked with `-lz`, upstream's optional
+build with option `-z` (zlib-compressed output); it is the oracle of
+`difftest`'s `TestZlib` and is not part of `all`.
 
 `build.sh` prints one `<variant> <absolute path>` line per binary on
 stdout; progress goes to stderr. It exits non-zero if the pristine
@@ -31,6 +35,7 @@ check, a build or a post-build check fails.
 | `sha256sum` or `shasum` | For the pristine check (`sha256sum` on Linux, `shasum -a 256` on macOS). |
 | `nm` | Optional; used to check that assertions and sanitizers took effect. |
 | `patch` | Only if top-level `patches/*.patch` exist (currently there are none). |
+| zlib | Only for the `zlib` variant: `zlib.h` and `libz` (part of the macOS SDK; `zlib1g-dev` on Debian/Ubuntu). `TestZlib` is skipped if they are missing. |
 
 Environment variables: `CC` (default `cc`; `-std=c99` is appended
 unless `CC` already contains `-std=`), `LD` (default: `CC`), `MAKE`,
@@ -45,6 +50,7 @@ linker flags, e.g. `-D_FILE_OFFSET_BITS=64`; empty by default).
 | `debug` | `-ffp-contract=off` | `-g -O0` | upstream default `$(ADDFLAGS)` | on | oracle, assertions |
 | `asan` | `-ffp-contract=off` | `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer` | `$(ADDFLAGS) -g -fsanitize=address,undefined` | on | oracle, sanitizers |
 | `native` | (empty) | upstream default `-DNDEBUG -O3 -funroll-loops` | upstream default | off | performance only |
+| `zlib` | `-ffp-contract=off -DUSE_ZLIB` | as `release` | as `release`; `ADDLIBS=-lz` | off | oracle of `-z` (`TestZlib`) |
 
 `$(CFBASE)` is the upstream warning set plus `-c` and `$(ADDFLAGS)`:
 `-Wall -Wextra -Wno-unused-parameter -Wconversion -pedantic -c $(ADDFLAGS)`
@@ -94,6 +100,7 @@ reference/build/release/fpgrowth/src/fpgrowth
 reference/build/debug/fpgrowth/src/fpgrowth
 reference/build/asan/fpgrowth/src/fpgrowth
 reference/build/native/fpgrowth/src/fpgrowth
+reference/build/zlib/fpgrowth/src/fpgrowth
 ```
 
 Each `reference/build/<variant>/` directory is a full copy of
@@ -126,7 +133,7 @@ upstream directory is never written to.
 
 3. **make.** `make -C build/<variant>/fpgrowth/src fpgrowth` with the
    variables `CC`, `LD`, `ADDFLAGS` (with `-ffp-contract=off` except for
-   `native`), `ADDLIBS=`, `ADDOBJS=` and, for
+   `native`), `ADDLIBS=` (`-lz` for `zlib`), `ADDOBJS=` and, for
    `debug`/`asan`, `CFLAGS='$(CFBASE) ...'` (single-quoted, so that each
    sub-makefile expands its own `CFBASE`) and `LDFLAGS`. Command-line
    variables propagate to the recursive makes through `MAKEFLAGS`.
@@ -141,7 +148,8 @@ upstream directory is never written to.
    assertion handler (`__assert_rtn` on macOS, `__assert_fail` on
    glibc/musl) in `debug` and `asan` but not in `release`/`native`, and
    `__asan_init`/`__ubsan_*` in `asan`. Each binary then mines
-   `fpgrowth/ex/test1.tab` at 50% support.
+   `fpgrowth/ex/test1.tab` at 50% support; the `zlib` binary must also
+   list `-z` in its usage message and write a zlib header with `-z`.
 
 A clean build of all four variants takes about 18 s on an M-series Mac.
 
