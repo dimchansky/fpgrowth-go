@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"errors"
 	"fmt"
@@ -27,6 +28,9 @@ type env struct {
 	// tempDir is the directory for the spool file of standard input;
 	// empty means os.TempDir().
 	tempDir string
+	// create opens the item set output file; nil means os.Create. Tests
+	// use it to inject write and close errors.
+	create func(name string) (io.WriteCloser, error)
 }
 
 // run executes the program like upstream's main and returns the exit
@@ -215,17 +219,22 @@ func (r *runner) mine() *cliError {
 	} // a write error of the output is reported when closing it
 
 	// --- statistics and closing (isr_prstats, isr_close) ---
-	var statsErr error
+	var statsErr, closeErr error
 	if o.stats {
-		if out.isStdout {
+		if out.isStdout && out.zw == nil {
 			_ = out.w.WriteStats(rep.Count(), rep.Stats()) // error at close
 		} else {
+			if out.isStdout {
+				// -z: the statistics are not compressed; they follow the
+				// complete zlib stream (docs/differences.md O12).
+				closeErr = out.close()
+			}
 			// Deviation from upstream: write errors of the statistics are
 			// reported (upstream ignores them, like the -P errors, O7).
 			statsErr = isrout.WriteStats(r.stdout, rep.Count(), rep.Stats())
 		}
 	}
-	if err := out.close(); err != nil {
+	if err := out.close(); err != nil || closeErr != nil {
 		return errorf(exitWrite, "write error on file "+out.name)
 	}
 	if statsErr != nil {
@@ -491,12 +500,14 @@ func (r *runner) inputError(err error, name string) *cliError {
 	return errorf(exitNoMem, err.Error())
 }
 
-// output is the item set output: an isrout.Writer on a file or stdout, or
-// nothing (count only). It implements report.Sink and remembers write
-// errors, which upstream reports only when the file is closed.
+// output is the item set output: an isrout.Writer on a file or stdout,
+// with -z through a zlib writer, or nothing (count only). It implements
+// report.Sink and remembers write errors, which upstream reports only
+// when the file is closed.
 type output struct {
 	w        *isrout.Writer
-	f        *os.File // nil for stdout and count only
+	zw       *zlib.Writer   // -z: compresses into the file or stdout; else nil
+	f        io.WriteCloser // nil for stdout and count only
 	name     string
 	isStdout bool
 	failed   bool
@@ -514,18 +525,29 @@ func (o *output) Rule(rl report.Rule) error {
 	return err
 }
 
-// close flushes and closes the output (isr_close).
+// close flushes and closes the output (isr_close): the isrout.Writer,
+// then the zlib stream (its final block and checksum), then the file. It
+// returns the first error; the file is closed in any case. Later calls
+// return nil.
 func (o *output) close() error {
 	if o.w == nil {
 		return nil
 	}
 	err := o.w.Close()
+	if o.zw != nil {
+		// Close writes the final block and the Adler-32 checksum; after
+		// a write error (the zlib writer's errors are sticky) it returns
+		// that error again.
+		if cerr := o.zw.Close(); err == nil {
+			err = cerr
+		}
+	}
 	if o.f != nil {
 		if cerr := o.f.Close(); err == nil {
 			err = cerr
 		}
 	}
-	o.w = nil
+	o.w, o.zw, o.f = nil, nil, nil
 	return err
 }
 
@@ -540,11 +562,21 @@ func (r *runner) openOutput(ib *tract.ItemBase[string], bag *tract.Bag, info str
 	out.name = displayName(*r.o.outFile, "<stdout>")
 	out.isStdout = *r.o.outFile == ""
 	if !out.isStdout {
-		f, err := os.Create(*r.o.outFile)
+		create := r.create
+		if create == nil {
+			create = func(name string) (io.WriteCloser, error) { return os.Create(name) }
+		}
+		f, err := create(*r.o.outFile)
 		if err != nil {
 			return nil, errorf(exitOpen, "cannot open file "+out.name)
 		}
 		out.f, dst = f, f
+	}
+	if r.o.zlib {
+		// upstream: deflateInit(Z_DEFAULT_COMPRESSION), the zlib format
+		// of RFC 1950 (report.c isr_open); only the item set output
+		out.zw = zlib.NewWriter(dst)
+		dst = out.zw
 	}
 	names := make([]string, ib.Len())
 	for i := range names {

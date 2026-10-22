@@ -39,3 +39,5 @@ dev-At          M1   -At item map (C crashes)
 dev-tg-m2       M3   generators with -m2
 dev-tm-pex      M4   maximal set of top-level perfect extensions
 dev-tm-x        M9   -tm -x with the 16-items machine
+usage           O12  usage of the build with USE_ZLIB (-z line)
+err-z           O12  -z accepted (zlib output; count only here)

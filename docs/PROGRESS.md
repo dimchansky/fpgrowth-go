@@ -46,7 +46,12 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  `-z` (#22) and `fpgpsp` (#23).
+  `fpgpsp` (#23).
+- FEAT-2 (zlib-compressed output `-z`), issue #22: resolved (PR #37).
+  The CLI accepts `-z` like upstream's `USE_ZLIB` build and compresses
+  only the item set/rule output with `compress/zlib`; `reference/build.sh
+  zlib` and `TestZlib` compare decompressed outputs with that build
+  (deviation O12).
 - NEW-1 (perfect extensions beyond the maximum size), issue #21:
   resolved. The miners' chain walks skip perfect extensions when
   `Reporter.PexUseful` says they cannot change a result (generators, or

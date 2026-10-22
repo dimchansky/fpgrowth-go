@@ -19,7 +19,8 @@ func writeBanner(w io.Writer, prog string) {
 	fmt.Fprintf(w, "%s - %s\n%s", prog, description, version)
 }
 
-// writeUsage writes upstream's usage message (main without arguments).
+// writeUsage writes upstream's usage message (main without arguments),
+// as printed by a build with USE_ZLIB, which has option -z.
 func writeUsage(w io.Writer, prog string) {
 	o := defaultOptions()
 	p := func(format string, args ...any) { fmt.Fprintf(w, format, args...) }
@@ -61,6 +62,9 @@ func writeUsage(w io.Writer, prog string) {
 	p("-Z       print item set statistics (number of item sets per size)\n")
 	p("-N       do not pre-format some integer numbers   (default: do)\n")
 	p("-g       write item names in scanable form (quote certain characters)\n")
+	// The line of upstream's build with USE_ZLIB (the default build has no
+	// -z and does not print it; docs/differences.md O12).
+	p("-z       compress output with zlib (deflate)      (default: plain text)\n")
 	p("-h#      record header  for output                (default: \"%s\")\n", o.hdr)
 	p("-k#      item separator for output                (default: \"%s\")\n", o.sep)
 	p("-I#      implication sign for association rules   (default: \"%s\")\n", o.imp)

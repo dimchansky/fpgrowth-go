@@ -960,6 +960,18 @@ all: 15
   3: 3
 ```
 
+zlib-compressed output (`-z`, RFC 1950 as in upstream's build with
+`USE_ZLIB`; not gzip). Only the item sets are compressed; the
+decompressed file equals the output without `-z`:
+
+```text
+$ fpgrowth -z -s30 test1.tab out.z
+$ python3 -c 'import sys,zlib; sys.stdout.buffer.write(zlib.decompress(sys.stdin.buffer.read()))' < out.z | head -n 3
+d (70)
+c d (40)
+c (70)
+```
+
 ## Input formats
 
 **Upstream flexible table format** (`TableFile`, `SpoolTable`, the CLI):
@@ -1169,10 +1181,11 @@ plus two upstream crashes that it avoids and five latent defects
 - **CLI output.** `-h` and `-g` work as documented; no spurious empty-set
   line; count-only mode honors `-n`; `-Z` statistics follow the item sets;
   write errors are reported; no crash with supports above about 2·10^8
-  (O1-O11). Number formatting is kept byte-compatible. A standard output
-  closed by the caller (`>&-`) is not detected: the Go runtime opens
-  `/dev/null` in its place, so the program exits 0 where C exits 4
-  (C10).
+  (O1-O12); `-z` (zlib-compressed output, upstream only with `USE_ZLIB`)
+  is always available (O12). Number formatting is kept byte-compatible.
+  A standard output closed by the caller (`>&-`) is not detected: the Go
+  runtime opens `/dev/null` in its place, so the program exits 0 where C
+  exits 4 (C10).
 - **CLI input and messages.** Escape decoding, non-ASCII separators, long
   fields and the last record without a newline are handled correctly
   (I1-I8); NaN thresholds are rejected; standard input is spooled to a
@@ -1219,10 +1232,7 @@ plus two upstream crashes that it avoids and five latent defects
   spectra from surrogate data for significance filtering with `-F`):
   `fpgpsp.c` is in the upstream archive, but it needs the modules
   `tars.c` and `pspest.c`, which the archive does not contain (it also
-  uses the system's pthreads library); and
-  zlib-compressed output (`-z`): it is not compiled into upstream's
-  default build, and the Go CLI rejects `-z` as an unknown option, like
-  that build.
+  uses the system's pthreads library).
 
 ## Testing
 

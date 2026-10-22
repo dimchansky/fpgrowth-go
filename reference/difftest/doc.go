@@ -111,4 +111,20 @@
 // moderate. Options that would trigger a documented deviation on the
 // data are changed (avoidDeviations), so every case must be byte-equal or
 // semantically equal (compareC) and pass the Go self-check.
+//
+// # Compressed output (-z)
+//
+// TestZlib (zlib_test.go) compares option -z with upstream's program
+// built with USE_ZLIB (../build.sh zlib, or DIFFTEST_C_ZLIB; skipped
+// without a C compiler or the zlib development files). The compressed
+// bytes depend on the deflate implementation, so the decompressed
+// outputs are compared: a fixed matrix (targets, variants, rules, -Z,
+// -P, absolute formats, an empty output, outputs of several 64 KiB
+// buffers, to a file and to standard output, count-only mode) byte for
+// byte, together with the usage and help messages; then
+// DIFFTEST_ZLIB_CASES random cases (default 1000; -short: at most 100)
+// of newCase with -z added, evaluated like TestDifferential. A run that
+// succeeds must write exactly one complete zlib stream. With -Z and the
+// item sets on standard output the statistics are placed differently by
+// design (docs/differences.md O12); the fixed matrix checks both layouts.
 package difftest

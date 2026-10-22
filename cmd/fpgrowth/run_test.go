@@ -27,6 +27,7 @@ type invocation struct {
 	stdout  io.Writer
 	ctx     context.Context
 	tempDir string
+	create  func(string) (io.WriteCloser, error) // output file (nil: os.Create)
 }
 
 func (inv invocation) run(t *testing.T) (stdout, stderr string, code int) {
@@ -38,6 +39,7 @@ func (inv invocation) run(t *testing.T) (stdout, stderr string, code int) {
 		stdout:  inv.stdout,
 		stderr:  &errOut,
 		tempDir: inv.tempDir,
+		create:  inv.create,
 	}
 	if e.stdin == nil {
 		e.stdin = strings.NewReader("")

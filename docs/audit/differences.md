@@ -274,6 +274,13 @@ compare decompressed output). Importance: low (users can pipe through a
 compressor; the library has no text output). Recommendation: defer; keep the
 current rejection, which matches the default upstream build.
 
+*Note (2026-10-22, issue #22):* implemented after v0.1.0. The CLI accepts
+`-z` like the `USE_ZLIB` build (usage line included) and compresses only the
+item set/rule output; `reference/build.sh zlib` builds the C oracle and
+`reference/difftest` `TestZlib` compares decompressed outputs. The usage
+line cited above is at `fpgrowth.c:2329-2332` in the vendored file. See
+`docs/differences.md` O12.
+
 ### FEAT-3 — library-only upstream facilities (Info)
 Not exposed: size-ordered item set tree output (`ist_init(order≠0)`,
 `ist_iset/ist_rule`; beware rules B14), the data-mode flags `FPG_NOSORT /

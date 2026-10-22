@@ -90,6 +90,7 @@ type options struct {
 	stats   bool      // -Z
 	scan    bool      // -g
 	weight  bool      // -w
+	zlib    bool      // -z
 
 	inFile, outFile  *string
 	selFile, pspFile *string
@@ -219,6 +220,8 @@ func parseArgs(args []string) (options, action, *cliError) {
 				pending, o.infoSet = &o.info, true
 			case 'w':
 				o.weight = true
+			case 'z': // upstream: only in a build with USE_ZLIB
+				o.zlib = true
 			case 'r':
 				pending = newString(&o.recSeps)
 			case 'f':

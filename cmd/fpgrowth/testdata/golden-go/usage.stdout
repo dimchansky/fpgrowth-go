@@ -1,0 +1,51 @@
+usage: fpgrowth [options] infile [outfile]
+find frequent item sets with the fpgrowth algorithm
+version 6.21 (2022.11.22)        (c) 2004-2022   Christian Borgelt
+-t#      target type                              (default: s)
+         (s: frequent, c: closed, m: maximal item sets,
+          g: generators, r: association rules)
+-m#      minimum number of items per set/rule     (default: 1)
+-n#      maximum number of items per set/rule     (default: no limit)
+-s#      minimum support of an item set/rule      (default: 10%)
+-S#      maximum support of an item set/rule      (default: 100%)
+         (positive: percentage, negative: absolute number)
+-o       use original rule support definition     (body & head)
+-c#      minimum confidence of an assoc. rule     (default: 80%)
+-e#      additional evaluation measure            (default: none)
+-a#      aggregation mode for evaluation measure  (default: none)
+-d#      threshold for add. evaluation measure    (default: 10%)
+-i       invalidate eval. below expected support  (default: evaluate all)
+-p#      (min. size for) pruning with evaluation  (default: no pruning)
+         (< 0: weak forward, > 0 strong forward, = 0: backward pruning)
+-q#      sort items w.r.t. their frequency        (default: 2)
+         (1: ascending, -1: descending, 0: do not sort,
+          2: ascending, -2: descending w.r.t. transaction size sum)
+-A#      variant of the fpgrowth algorithm to use (default: c)
+-x       do not prune with perfect extensions     (default: prune)
+-l#      number of items for k-items machine      (default: 16)
+         (only for variants s and d, options -As or -Ad)
+-j       do not sort items w.r.t. cond. support   (default: sort)
+         (only for algorithm variant c, option -Ac)
+-u       do not use head union tail (hut) pruning (default: use hut)
+         (only for maximal item sets, option -tm)
+-F#:#..  support border for filtering item sets   (default: none)
+         (list of minimum support values, one per item set size,
+         starting at the minimum size, as given with option -m#)
+-R#      read item selection/appearance indicators
+-P#      write a pattern spectrum to a file
+-Z       print item set statistics (number of item sets per size)
+-N       do not pre-format some integer numbers   (default: do)
+-g       write item names in scanable form (quote certain characters)
+-z       compress output with zlib (deflate)      (default: plain text)
+-h#      record header  for output                (default: "")
+-k#      item separator for output                (default: " ")
+-I#      implication sign for association rules   (default: " <- ")
+-v#      output format for set/rule information   (default: " (%S)")
+-w       integer transaction weight in last field (default: only items)
+-r#      record/transaction separators            (default: "\n")
+-f#      field /item        separators            (default: " \t,")
+-b#      blank   characters                       (default: " \t\r")
+-C#      comment characters                       (default: "#")
+-!       print additional option information
+infile   file to read transactions from           [required]
+outfile  file to write item sets/assoc. rules to  [optional]

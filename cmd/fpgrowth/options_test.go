@@ -198,7 +198,28 @@ func TestParseArgs(t *testing.T) {
 				t.Errorf("%+v", o)
 			}
 		}},
-		{name: "unknown option", args: []string{"-z", "x"}, code: exitOption, msg: "unknown option -z"},
+		{name: "unknown option", args: []string{"-y", "x"}, code: exitOption, msg: "unknown option -y"},
+		{name: "zlib off by default", args: []string{"x", "y"}, check: func(t *testing.T, o options) {
+			if o.zlib {
+				t.Error("zlib set without -z")
+			}
+		}},
+		{name: "zlib flag", args: []string{"-z", "x", "y"}, check: func(t *testing.T, o options) {
+			if !o.zlib {
+				t.Error("-z not set")
+			}
+		}},
+		{name: "zlib cluster", args: []string{"-tczZs20", "x"}, check: func(t *testing.T, o options) {
+			if !o.zlib || !o.stats || o.target != 'c' || o.smin.v != 20 {
+				t.Errorf("%+v", o)
+			}
+		}},
+		{name: "zlib takes no value", args: []string{"-z5", "x"}, code: exitOption, msg: "unknown option -5"},
+		{name: "zlib in a value", args: []string{"-k", "-z", "x"}, check: func(t *testing.T, o options) {
+			if o.zlib || o.sep != "-z" {
+				t.Errorf("%+v", o)
+			}
+		}},
 		{name: "double dash", args: []string{"--", "x"}, code: exitOption, msg: "unknown option --"},
 		{name: "fraction", args: []string{"-m2.5", "x"}, code: exitOption, msg: "unknown option -."},
 		{name: "missing argument", args: []string{"x", "-k"}, code: exitOptArg, msg: "missing option argument"},
@@ -257,11 +278,11 @@ func TestParseArgsActions(t *testing.T) {
 	}
 	// -! is processed when reached: earlier errors win, later ones are
 	// never seen
-	if _, act, err := parseArgs([]string{"-s10", "-!", "-tq", "-z"}); act != actHelp || err != nil {
+	if _, act, err := parseArgs([]string{"-s10", "-!", "-tq", "-y"}); act != actHelp || err != nil {
 		t.Errorf("-!: %d %v", act, err)
 	}
-	if _, _, err := parseArgs([]string{"-z", "-!"}); err == nil || err.code != exitOption {
-		t.Errorf("-z -!: %v", err)
+	if _, _, err := parseArgs([]string{"-y", "-!"}); err == nil || err.code != exitOption {
+		t.Errorf("-y -!: %v", err)
 	}
 }
 
@@ -368,7 +389,7 @@ func FuzzParseArgs(f *testing.F) {
 		"-ts\x00-s-1\x00-eb\x00-d0\x00-v %a %20e\x00in\x00-",
 		"-tr\x00-c0\x00-s0\x00-ox\x00-ec\x00-a\x00-d-1e308\x00in\x00out",
 		"-s10\x00-!\x00-tq",
-		"-z\x00-!",
+		"-y\x00-!", "-z\x00-!", "-zZtr\x00in\x00-", "-z5\x00in",
 		"-F60:\x00-F:5\x00-F\x00-Fnan\x00x",
 		"-snan\x00-Snan\x00-cnan\x00-dnan\x00x",
 		"-m-1\x00-n0x10\x00-p0x7fffffffffff\x00-q-2\x00-l99\x00x",
