@@ -6,7 +6,6 @@ import (
 	"math"
 
 	"github.com/dimchansky/fpgrowth-go/internal/fpg"
-	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
 )
 
@@ -69,17 +68,18 @@ var ErrTooLarge = errors.New("psp: database too large")
 // PrepConfig returns the miner configuration of fpg_genpsp's and
 // fpg_estpsp's data preparation for the mining configuration cfg: the same
 // thresholds, sizes and item order (which depends on the variant, -i and
-// the target through FPG_REORDER, D3), no packing (FPG_NOPACK) and the
-// transaction filter of fpg_data for every target: upstream filters by
-// -m also for generators before generating surrogates, which is part of
-// the null model (D7), while internal/fpg mines generators unfiltered.
-// Generators are prepared as frequent item sets, which have the same item
-// order (fpg_create clears FPG_REORDER for neither).
+// the target through FPG_REORDER, D3), no packing (FPG_NOPACK), and the
+// transaction filter of fpg_data, which empties transactions with fewer
+// than -m items (part of the null model, D7).
+//
+// Deviation from upstream (U25, oracle patch P11): for generators the
+// filter is not applied, as internal/fpg does for fpgrowth (M3): emptying
+// short transactions deflates the supports of the subsets that a
+// generator is compared with, so upstream misses generators with -m >= 2
+// (fpgpsp -gi -tg -m3 found none where fpgrowth finds two). fpg.Miner.Data
+// skips the filter for the generator target.
 func PrepConfig(cfg fpg.Config) fpg.Config {
 	c := cfg
-	if c.Target == report.TargetGenerators {
-		c.Target = report.TargetAll
-	}
 	c.Pack = 0
 	return c
 }

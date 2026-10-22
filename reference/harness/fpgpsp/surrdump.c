@@ -88,11 +88,12 @@ int main (int argc, char *argv[])
   trd_delete(tread, 1);
   if ((surr == 3) && !tbg_istab(tabag)) { printf("notable\n"); return 0; }
 
-  /* --- prepare the data like fpg_genpsp (with patch P1) --- */
+  /* --- prepare the data like fpg_genpsp (with patches P1, P11) --- */
   fpg = fpg_create(target, supp, 100.0, 100.0, zmin, ITEM_MAX,
                    RE_NONE, FPG_NONE, 0.0, algo, mode);
   if (!fpg) return 1;
   r = (surr == 3) ? FPG_NORECODE|FPG_NOSORT : 0;
+  if (target & ISR_GENERAS) r |= FPG_NOFILTER; /* P11 */
   r = fpg_data(fpg, tabag, r|FPG_NOPACK|FPG_NOREDUCE, +2);
   if (r) { printf("error %d\n", r); return 0; }
   printf("prep %d\n", (int)tbg_cnt(tabag));

@@ -309,12 +309,17 @@ func TestMine_identity(t *testing.T) {
 	if cells := slices.Collect(p.All()); len(cells) != 0 {
 		t.Errorf("support above the total: %v", cells)
 	}
-	cfg.SMin = -40
-	cfg.Target = report.TargetMaximal
 	sparse := &Data{NItems: 3, Tracts: [][]tract.Item{tr(0), tr(1), tr(2), tr()}}
-	p = mineDirect(t, sparse, fpg.Config(func() fpg.Config { c := cfg; c.SMin = -4; return c }()))
-	if cells := slices.Collect(p.All()); !slices.Equal(cells, []report.Cell{{Size: 0, Supp: 4, Count: 1}}) {
-		t.Errorf("no frequent item, -m0: %v", cells)
+	for _, target := range []report.Target{report.TargetAll, report.TargetClosed, report.TargetMaximal, report.TargetGenerators} {
+		c := cfg
+		c.SMin, c.Target = -4, target
+		want := []report.Cell{{Size: 0, Supp: 4, Count: 1}}
+		if target == report.TargetMaximal {
+			want = nil // a maximal set is not empty
+		}
+		if cells := slices.Collect(mineDirect(t, sparse, c).All()); !slices.Equal(cells, want) {
+			t.Errorf("no frequent item, -m0, target %d: %v", target, cells)
+		}
 	}
 }
 

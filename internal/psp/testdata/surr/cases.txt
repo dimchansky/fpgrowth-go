@@ -27,3 +27,4 @@ t7583a r 1614262922 11 1 -2 c t x0 t7583.tab
 t7583b r 1614262923 11 1 -2 c t x0 t7583.tab
 t7583c r 1614262924 11 1 -2 c t x0 t7583.tab
 t7583d r 1614262925 9 1 -2 c t x0 t7583.tab
+sparse-g-m2       r      21         4   2    -1   g      c    -     sparse.tab

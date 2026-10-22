@@ -75,8 +75,9 @@ func Mine(ctx context.Context, ts [][]tract.Item, cfg fpg.Config, smin tract.Sup
 		if errors.Is(err, fpg.ErrNoItems) {
 			// No item is frequent in this surrogate. Upstream mines the
 			// unrecoded data and reports only the empty set, if it is
-			// within the size range and frequent.
-			if total := tract.Supp(len(ts)); smin <= total {
+			// within the size range and frequent, and not for the maximal
+			// target (a maximal set is not empty, internal/oracle).
+			if total := tract.Supp(len(ts)); smin <= total && cfg.Target != report.TargetMaximal {
 				psp.Add(0, total, 1)
 			}
 			return nil

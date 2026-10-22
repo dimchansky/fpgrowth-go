@@ -38,6 +38,10 @@ ident-tc -gi -tc -s-2 test1.tab -
 ident-tm -gi -tm -s-2 basket.tab -
 ident-tg -gi -tg -s-2 basket.tab -
 ident-m0 -gi -m0 -s-2 test1.tab -
+ident-tg-m3 -gi -tg -s-1 -m3 -n3 test1.tab -
+ident-tg-m2 -gi -tg -s-1 -m2 basket.tab -
+rand-tg-m2 -gr -tg -m2 -s-2 -c10 -S3 -Z2 basket.tab -
+shuffle-tg-m3 -gs -tg -m3 -s-2 -c10 -S3 -Z2 table.tab -
 rand -gr -s-2 -c40 -S7 -Z1 test1.tab -
 rand-Z2 -gr -s-2 -c19 -S7 -Z2 test1.tab -
 rand-Z4 -gr -s-2 -c19 -S7 -Z4 test1.tab -

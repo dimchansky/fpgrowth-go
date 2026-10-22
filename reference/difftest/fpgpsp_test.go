@@ -180,7 +180,7 @@ func pspData(r *rand.Rand) (string, [][]string, bool) {
 }
 
 // onlyUniversal reports whether every frequent item is in every
-// transaction (or, with -m0, no item is frequent), after the -R selection and
+// transaction (and there is a frequent item), after the -R selection and
 // the -m filter, which mining the surrogates sees: then the maximal
 // target hits fpgrowth's deviation M4 (upstream reports nothing). The
 // surrogate methods keep the item frequencies (-gr up to rare failed
@@ -210,9 +210,7 @@ func onlyUniversal(rows [][]string, sel map[string]bool, smin int64, zmin int) b
 			found = true
 		}
 	}
-	// without any frequent item (only -gs gets that far) the maximal
-	// empty set of -m0 is not reported upstream, for the same reason
-	return found || zmin == 0
+	return found
 }
 
 // newPspCase builds case i of the base seed: every option of fpgpsp with

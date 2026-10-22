@@ -231,7 +231,11 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 	var d *psp.Data
 	var smin, smax tract.Supp
 	if method == psp.Shuffle {
-		d = psp.TableData(recs, ib.Len(), cfg.ZMin)
+		zmin := cfg.ZMin
+		if cfg.Target == report.TargetGenerators {
+			zmin = 0 // no -m filter for generators (U25, see psp.PrepConfig)
+		}
+		d = psp.TableData(recs, ib.Len(), zmin)
 		smin, smax = fpg.Thresholds(cfg, ib.TotalWeight())
 	} else {
 		m, data, err := psp.Prepare(ib, scan, cfg)
