@@ -73,9 +73,10 @@ Command-line program:
 
 ```bash
 go install github.com/dimchansky/fpgrowth-go/cmd/fpgrowth@latest
+go install github.com/dimchansky/fpgrowth-go/cmd/fpgpsp@latest   # pattern spectra
 ```
 
-Once releases are published, prebuilt CLI archives for Linux, macOS and
+Once releases are published, prebuilt CLI archives (with both programs) for Linux, macOS and
 Windows (amd64, arm64) with SHA-256 checksums are attached to each GitHub
 release; see [docs/releasing.md](docs/releasing.md).
 
@@ -972,6 +973,44 @@ c d (40)
 c (70)
 ```
 
+### Pattern spectra: `fpgpsp`
+
+`cmd/fpgpsp` is the Go version of upstream's second program: it mines
+surrogate data sets (randomized versions of the input that keep, for
+example, the item frequencies and transaction sizes but destroy the
+dependencies between items) or estimates their result, and writes the
+pattern spectrum, the average number of item sets per size and support.
+With `-D` it prints the decision border, the smallest supports per size
+that the surrogates do not reach; fpgrowth's `-F` can then keep only the
+item sets above it (pass the values negated, see
+[docs/cli.md](docs/cli.md#using-the-decision-border-with-fpgrowth)). Pair
+swaps (`-gp`), 100 surrogates, sizes from 2, seed 1, one chain:
+
+```text
+$ fpgpsp -gp -s-2 -m2 -c100 -S1 -Z1 -D test1.tab
+...
+2 2 1.72
+2 3 1.51
+2 4 3.02
+2 5 1.81
+2 6 0.24
+2 7 0.01
+3 2 2.54
+3 3 1.38
+3 4 0.3
+3 5 0.03
+4 2 0.24
+8:6:3
+```
+
+Methods: `-gr` transaction randomization, `-gp` pair swaps, `-gs` column
+shuffles of table data, `-gi` the data itself, `-ge` an analytical
+estimate (the default). The result depends on the seed `-S` and the
+number of chains `-Z` (upstream's threads), not on the machine; with both
+fixed it is byte for byte that of upstream's program with its defects
+fixed (`docs/differences.md`, section fpgpsp). Reference:
+[docs/cli.md](docs/cli.md#command-line-reference-fpgpsp).
+
 ## Input formats
 
 **Upstream flexible table format** (`TableFile`, `SpoolTable`, the CLI):
@@ -1228,11 +1267,12 @@ plus two upstream crashes that it avoids and five latent defects
   promise.
 - The library has no text output; formatting like the CLI's `-v` info codes
   exists only in the command-line program.
-- Not ported (deferred past v0.1.0): the `fpgpsp` program (pattern
-  spectra from surrogate data for significance filtering with `-F`):
-  `fpgpsp.c` is in the upstream archive, but it needs the modules
-  `tars.c` and `pspest.c`, which the archive does not contain (it also
-  uses the system's pthreads library).
+- Pattern spectra (`fpgpsp`) are available as a command only, not in the
+  library API. Its estimation (`-ge`) can differ from the C program by one
+  count per cell where a value lies at a rounding boundary of `log`/`exp`.
+  (Before #23 this list said that `fpgpsp` was not ported because its
+  modules `tars.c` and `pspest.c` were missing from the archive; they are
+  object files built from `tract.c` and `patspec.c`, issue #25.)
 
 ## Testing
 

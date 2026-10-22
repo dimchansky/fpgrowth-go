@@ -64,6 +64,12 @@ upstream's arithmetic below 2^52 and is exact above; it is now a defect
 fix (policy) row (issue #17, 2026-10-19).
 O12, option `-z` (zlib-compressed output, upstream's optional `USE_ZLIB`
 build), is a new row (issue #22, 2026-10-22).
+U1-U24, the `fpgpsp` program (issue #23, 2026-10-23), are a new section:
+13 upstream defects of fpgpsp that change results (U1-U5, U11-U13,
+U16-U20), 4 in its seeds, progress, messages and validation (U7, U8,
+U14, U15), one latent defect (U9), one preserved behavior (U10) and 5
+command-line additions or platform differences (U6, U21-U24); P7-P9 are
+preserved fpgpsp behavior.
 
 ## Mining results
 
@@ -225,6 +231,44 @@ value and is not part of this contract (F-1).
 | C9 | platform | stdin is read once into memory | stdin is spooled to a temporary file (two passes); failure: "cannot create temporary file for <stdin>" (exit 2) | implemented in `cmd/fpgrowth` (`TestStdinMatchesFile`, `TestSpoolRemoved`, `TestInputErrors`) |
 | C10 | platform | Standard output closed by the caller (`fpgrowth t1.tab - >&-`): the first write fails, "write error on file <stdout>", exit 4 | Exit 0, nothing reported: at startup the Go runtime opens `/dev/null` for a closed file descriptor 0–2, so writes to standard output succeed and the case cannot be told apart from `>/dev/null`. The same holds for `-Z` and `-P ''` to standard output. Scripts that rely on exit 4 to detect a closed standard output lose the results silently; redirect to a file instead. Write errors on an open but failing output (full disk, failing file) are reported as in C3, C6, O7. *Note (2026-10-22, #22):* a broken pipe on the process's standard output is not such an error: the program ends with SIGPIPE (shell status 141), as upstream does | implemented in `cmd/fpgrowth` (`TestMain_closedStdout`, Unix only: it runs the program with standard output closed by the shell; audit DIF-5) |
 
+## fpgpsp (pattern spectra, issue #23)
+
+`cmd/fpgpsp` and `internal/psp` port upstream's `fpgpsp` 1.3. Its
+defects are fixed; the differential oracle is upstream with the patches
+P1-P10 of `reference/patches/fpgpsp/` (`reference/build.sh fpgpsp-fixed`),
+and `reference/difftest` `TestFpgpsp` requires byte-identical output for
+the surrogate methods (the estimation within one count per cell, see
+`docs/upstream/fpgpsp.md` §7). Audit notes and evidence:
+[upstream/fpgpsp.md](upstream/fpgpsp.md) §6. The mining deviations of
+the miner (M1-M11) apply to the mined surrogates too.
+
+| # | Kind | Upstream behavior (evidence, location) | Go behavior | Status / test |
+| --- | --- | --- | --- | --- |
+| U1 | defect fix | Every surrogate after the first is mined with the first one's item frequencies (stale `tbg_ifrqs` cache, `fpgrowth.c:748, 1209, 1377, 1638, 1759`) and with the root-level perfect extensions of earlier surrogates (`isr_addpex` at level 0, `report.c:1223`); wrong singleton supports | Every surrogate is mined on its own (oracle P2, P2b) | implemented in `internal/psp` (`Mine`; `TestRunChain_keepsSingletons`; `TestFpgpsp`) |
+| U2 | defect fix | Single-threaded `-gr` works on the deduplicated transactions with weight 1 (`clone()` instead of `tbg_clone()`, `tract.c:2666`): duplicates are lost, `-Z1` and `-Z>1` differ in meaning | All records, weight 1 (P1) | implemented (`FromBag`; `TestRunChain_keepsSingletons` "random duplicates"; `TestFpgpsp`) |
+| U3 | defect fix | Surrogates are generated from the reduced, weighted transactions (`fpg_data` without `FPG_NOREDUCE`, `fpgpsp.c:265`); weights stay with the slots, so pair swaps do not keep the item frequencies | Every record is a transaction (P1) | implemented (`TestRunChain_keepsSingletons` "swap duplicates") |
+| U4 | defect fix | `-ge` estimates on the reduced transactions (`fpgpsp.c:400`): slots and the maximum support count distinct transactions (400 transactions, 133 distinct: supports capped at 133) | All records (P1) | implemented (`TestEstimate_duplicates`) |
+| U5 | defect fix | `-D` stops at the largest size whose maximum support reaches the counter array start of the smallest size (`fpgpsp.c:727-729`; empty border on dense data) and prints nothing for a single size (`fpgpsp.c:739`) | Border up to the largest size with a signature, also for one size (P3; reasoning in upstream/fpgpsp.md §5) | implemented (`TestBorder`; CLI golden `swap-D-m2`) |
+| U6 | new | One file argument is an error (`k < 2`, `fpgpsp.c:619`) although the usage calls the output optional | The spectrum goes to standard output | implemented (CLI golden-go `onearg`) |
+| U7 | defect fix (policy) | `-ge` replaces a negative seed by the time (`seed <= 0`, `fpgpsp.c:395`), generation uses it (`seed == 0`, `fpgpsp.c:258`) | Only 0 means the time, for every method | implemented (`TestRun_estimateNegativeSeed`) |
+| U8 | defect fix | The progress counter of several threads is a non-atomic shared counter (`fpgpsp.c:226`); the printed counts vary | Every 20th data set is printed once, in order | implemented (`TestRun_progressOrder`) |
+| U9 | latent | A failing thread setup (`fpgpsp.c:296-322`) is not merged into the result code and leaks its objects | Errors of every chain are reported (status 1 or 130) | implemented (`generate`; no failure to inject) |
+| U10 | preserved | `-D` prints absolute supports, while `fpgrowth -F` reads positive values as percentages (`fpgrowth.c:2186`) | Same; `docs/cli.md` shows how to pass the border (negated, same `-m`) | documented |
+| U11 | defect fix | The slot counts of `-ge` wrap around in `size_t` (`choose` gives `SIZE_MAX`, `patspec.c:373-387, 480`; transactions of about 60 items) | Saturating counts; identical without overflow | implemented (`TestTaslots_saturates`) |
+| U12 | defect fix | The frequency repair of `tbg_random` never examines the item where its cyclic search stops (`tract.c:2719-2724`) | Examined (P4); no change of the random numbers | implemented (`TestChain_matchesC`: chains `sparse-r5`, `table-r1`, `t3180*`, `t7583*` change without P4) |
+| U13 | defect fix | `-ge` with `-m` > 1 divides read-time item frequencies (including emptied transactions) by the filtered extent (`patspec.c:743-746`) | Frequencies of the filtered transactions (P5) | implemented (`TestItemProbs_filtered`) |
+| U14 | defect fix | The message for `-s` above 100 prints a double with `%d` (`fpgpsp.c:121`) | `invalid minimum support 100.5` (`%g`) | implemented (`TestValidate`) |
+| U15 | defect fix (policy) | A NaN `-e` and `-z` <= 0 with `-ge` give undefined results (`cplxest`: assertion, division by zero, `size_t` of a negative value) | Rejected with status 13 | implemented (`TestValidate`) |
+| U16 | defect fix | The closed/maximal and generator filters of the reused reporter keep the sets of earlier surrogates (`isr_settarg` creates them once): maximal sets lost (`-gp -tm`), SIGSEGV in `is_isgen` for `-tg` from the second surrogate | Every surrogate has its own reporter (P6) | implemented (CLI goldens `swap-tm`, `swap-tg`, `rand-tg`; `TestFpgpsp`) |
+| U17 | defect fix | The slot counts of `-ge` ignore transactions that contain every item (`while (--n > 0)`, `patspec.c:476`) | Counted (P7) | implemented (`TestTaslots_allItems`) |
+| U18 | defect fix | `-ge -m0` with empty transactions overflows the single counter of size 0 (`resize`, `patspec.c:258`; AddressSanitizer) | Size 0 is a row like the others (P8) | implemented (`TestEstimate_sizeZero`) |
+| U19 | defect fix | `-gs` mines its unrecoded data with the 16-items machine (`-As`/`-Ad`), which loses or miscounts item sets (fpgrowth-core.md B8) | Mined recoded, so the machine sees frequency-ordered items (P9: no machine for `-gs`) | implemented (`TestRunChain_keepsSingletons` "shuffle 16-items machine"; CLI goldens `shuffle-As`, `shuffle-Ad-Z2`) |
+| U20 | defect fix | Threads fill the static table of the 16-items machine concurrently (`fim16.c:182-184`): threaded spectra with the machine are nondeterministic (14 of 400 parallel runs differed) | No shared mutable state between chains (P10 fills the table before the threads) | implemented (CLI golden `rand-As-Z3`; `go test -race ./cmd/fpgpsp`) |
+| U21 | new | Built without `FPG_ABORT`, SIGINT kills the program | SIGINT stops reading, generation, mining and estimation; status 130 `interrupted` | implemented (`TestMain_interrupt`, `TestRun_cancel`) |
+| U22 | platform | `-Z0` uses `sysconf(_SC_NPROCESSORS_ONLN)` | `runtime.NumCPU()` (the CPUs usable by the process; can be fewer under affinity limits) | implemented (`TestRun_defaultSeedAndThreads`) |
+| U23 | platform | `-S` and `-c` are C `long` (32 bits on Windows, where `strtol` clamps) | 64-bit on every platform; the chain seed is `(uint32)(S+i)` | implemented (`TestParseArgs`, `TestSeedOf`) |
+| U24 | new | With the default seed (time) or thread count, a run cannot be repeated (neither is printed) | The log shows them: `using -S<seed> -Z<k> (<n> chain(s))` (`using -S<seed>` for `-ge`) | implemented (`TestRun_defaultSeedAndThreads`) |
+
 ## Preserved upstream behavior (not deviations)
 
 Upstream behavior that may look like a defect but is kept for
@@ -239,6 +283,9 @@ above.
 | P4 | preserved | Pattern-spectrum counts (`-P`) are printed with `%g`, so counts of 10^6 and more are rounded (tract T10; `patspec.c:822`): a 25-item transaction prints `5.2003e+06` in both programs | implemented | `internal/isrout` (`TestWriteSpectrum`) |
 | P5 | preserved | Items of equal frequency are ordered by an unstable sort, so their tie order depends on the removed items (tract T8; `arrays.c:516-585`, `tract.c:889`) | implemented | `internal/tract` (`TestPtrQsort_ties`, `TestPtrQsort_upstream`) |
 | P6 | preserved | With an evaluation measure and the default aggregation `-ax` (`AggregateFirst`), an item set is evaluated by the rule whose head is its first item in the internal item order. That order depends on the variant, the tuning options (such as `-q`) and the target, so the `Value` (`%e`) of an item set can differ between them even when nothing is filtered (`fpgrowth -s20 -m3 -n3 -el -d0 -v' %e' test1.tab`: `{a,b,c}` has lift 1.14286 with `-q2` and 1.11111 with `-q-2`, `{a,b,d}` 0.857143 and 1.25), and with an evaluation threshold the reported sets can differ too (audit DIF-3: on 200 random transactions, `-ts -s2 -el -d105` gives 164 to 167 sets across `-q` and `-A`, in C and Go alike). Without an evaluation, or with `-am -an -aa`, values and sets do not depend on the order | documented | — (`measure.go`, `AggregateFirst`) |
+| P7 | preserved | `fpgpsp`: the surrogates depend on the item order of the preparation, which depends on `-A`, `-i` and `-t` (`FPG_REORDER`, `fpgrowth.c:1832-1836, 1934`), so the same seed gives other spectra for other options | implemented | `internal/psp` (`TestChain_matchesC` cases with `-i`, `-As`, `-tc`, `-tg`); `TestFpgpsp` |
+| P8 | preserved | `fpgpsp`: surrogates are made from the data after recoding and the `-m` filter, so the null model depends on `-s` and `-m`; empty and emptied transactions stay and take part in the generation (`fpg_data` in `fpg_genpsp`) | implemented | `TestChain_matchesC` (`basket-r-m2`, `basket-p-m3`, `table-s-m4`) |
+| P9 | preserved | `fpgpsp -ge` uses the complex variant and the default mode whatever `-A -x -i -u -l` say (`FPG_AUTO`, `FPG_DEFAULT`, `fpgpsp.c:398`), estimates sizes below the number of items only, and prints `(1/cnt)·count` | implemented | `TestFpgpsp`; `TestMinerConfig` |
 
 ## Library API (no upstream counterpart; behavior relative to the CLI)
 

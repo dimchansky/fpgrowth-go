@@ -370,6 +370,17 @@ DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -ar
   equal. `DIFFTEST_LARGE` sets the number of cases (default 300, about
   5 s; `-short` 6; 0 skips), e.g. `DIFFTEST_LARGE=10000` for a larger
   run (about 3 minutes on 10 cores).
+- **fpgpsp.** `TestFpgpsp` (`fpgpsp_test.go`) compares `cmd/fpgpsp`
+  with the `fpgpsp-fixed` oracle (built with `./build.sh fpgpsp-fixed` if
+  missing; `DIFFTEST_C_FPGPSP`, `DIFFTEST_GO_FPGPSP` override) on random
+  data sets (independent items, duplicates, tables, dense data, a
+  universal item, sparse bins) with every fpgpsp option and fixed `-S` and
+  `-Z`: byte-identical output for the surrogate methods (without the
+  progress counter of threaded runs, which is racy upstream), the
+  estimation within one count per cell (`docs/upstream/fpgpsp.md` §7).
+  Options that would trigger a miner deviation (M1, M4, M5, M9) are
+  avoided. `DIFFTEST_FPGPSP_CASES` (default 3000, `-short` 300),
+  `DIFFTEST_FPGPSP_ONLY`, `-artifacts`.
 - **Report.** The summary lists cases per verdict (byte-equal,
   semantic-equal, tolerated, error-equal, deviation-verified, FAIL),
   brute-force checks, tolerated values, count-only reruns, the cases with

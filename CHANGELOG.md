@@ -14,6 +14,23 @@ The release workflow publishes the section whose heading matches the tag
 
 ### Added
 
+- `fpgpsp`, the second program of the upstream sources, as `cmd/fpgpsp`:
+  pattern spectra from surrogate data (transaction randomization `-gr`,
+  pair swaps `-gp`, column shuffles of table data `-gs`, identity `-gi`)
+  or estimated (`-ge`), and the decision border (`-D`) for fpgrowth's
+  `-F`. Same options, formats, messages and exit codes as upstream's
+  fpgpsp 1.3, with its defects fixed (rows U1-U24 in
+  `docs/differences.md`: surrogates from all records, every surrogate
+  mined on its own, the full decision border, the estimation's
+  frequencies and slot counts, no data races, and others); one argument
+  writes to standard output; the seed and the number of chains are
+  printed when left at their defaults; SIGINT exits with status 130. The
+  result depends on the seed and the number of chains (upstream's
+  threads), not on the machine. Release archives contain both programs.
+  `reference/build.sh fpgpsp` builds upstream's program, `fpgpsp-fixed`
+  the differential oracle with the fixes (`reference/patches/fpgpsp/`),
+  and `reference/difftest` `TestFpgpsp` compares the two programs (#23).
+
 - CLI: option `-z` writes the item set/rule output (a file or standard
   output) as one zlib stream (RFC 1950, default level, pure Go
   `compress/zlib`), like upstream's optional build with `USE_ZLIB`. The
@@ -123,6 +140,14 @@ The release workflow publishes the section whose heading matches the tag
   permissive (see Fixed); maxima switch above 2^52.
 
 ### Fixed
+
+- Documentation: the reason given for not porting `fpgpsp` (that its
+  modules `tars.c` and `pspest.c` are missing from the upstream archive)
+  was wrong; they are object files built from `tract.c` and `patspec.c`.
+  Corrected in the README, `docs/feature-matrix.md`,
+  `reference/upstream/PROVENANCE.md` and `reference/README.md`, with dated
+  notes in the audit records (#25). The `[0.1.0]` notes below keep the
+  original wording.
 
 - The command-line program applies absolute support thresholds written
   as integers exactly (audit ALG-3, #18; `docs/differences.md` N3, a

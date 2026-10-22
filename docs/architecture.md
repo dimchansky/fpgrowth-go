@@ -19,6 +19,8 @@ upstream in `docs/differences.md`.
 | `internal/isrout` | `report.c` text output, `scanner.c` (`scn_format`) | Text output for the CLI: item names, separators, info format codes, upstream-exact number formatting, statistics printing |
 | `internal/oracle` | — (independent) | Brute-force reference miner and deterministic random data generator for tests |
 | `cmd/fpgrowth` | `fpgrowth.c` `main()` | Upstream-compatible command line program |
+| `internal/psp` | `fpgpsp.c` (`fpg_genpsp`, `fpg_estpsp`), `tract.c` (`TA_SURR`), `patspec.c` (`PSP_ESTIM`), `random.c` | Surrogate data generation (chains), the estimation of pattern spectra, the decision border, the random number generator (no goroutines) |
+| `cmd/fpgpsp` | `fpgpsp.c` `main()` | Upstream-compatible `fpgpsp` program; one goroutine per chain |
 | root `fpgrowth` | — | Public API (deliberately minimal in Stage 1; designed in Stage 2) |
 
 Dependency direction: `tract` ← `report` ← `istree` ← `fpg` ← root/CLI;

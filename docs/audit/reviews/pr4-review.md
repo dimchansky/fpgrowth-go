@@ -273,3 +273,12 @@ the 7 files.
 | R-1 | Low | docs/differences.md:16; docs/benchmarks.md:643 | `docs/audit/` is on main now, so "on the audit branch" is stale. Use relative links: `[docs/audit/differences.md](audit/differences.md)` and `[docs/audit/m5.md](audit/m5.md)`. |
 | R-2 | Low | docs/differences.md:71 (M10) | The row first says C exits 139 on the reproducer and then "C 31.2 s CPU time, with identical output", which reads as a contradiction. Both are true only with different stack limits. With the default stack (`ulimit -s` = 8176 KB) C crashes in "sorting and reducing transactions". With `ulimit -s 65520` it completes: `[100001 set(s)]`, 29.9 s user. Suggested: "C 31.2 s CPU time with the stack limit raised (`ulimit -s 65520`; with the default limit it crashes)". |
 | R-3 | Info | docs/differences.md:71 (M10) | "completes (100,000 sets)": with the construction that `TestItemBase_BuildBag_longSharedPrefix` uses (the one-item transactions use a new item n), both programs report `100001 set(s)` (Go 33.6 s user). The audit's 100,000 presumably used a different construction. Either give the exact input, or say "about 100,000". |
+
+> **Note (2026-10-23, issues #23, #25).** The FEAT-1 wording discussed in
+> this review ("its sources are missing", "`tars.c` and `pspest.c`, which
+> the archive does not contain") rests on a misreading of the makefiles:
+> `tars.o` and `pspest.o` are objects built from `tract/src/tract.c`
+> (`-DTA_READ -DTA_SURR`) and `tract/src/patspec.c` (`-DPSP_REPORT
+> -DPSP_ESTIM`), which are in the archive. `fpgpsp` builds from it and has
+> since been ported (`cmd/fpgpsp`, `docs/upstream/fpgpsp.md`). The review
+> is kept as written.
