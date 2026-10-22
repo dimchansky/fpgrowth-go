@@ -47,7 +47,7 @@ linked documents.
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24.
 - FEAT-1 (`fpgpsp`), issue #23: ported as `cmd/fpgpsp` with upstream's
-  defects fixed (U1-U24 in `docs/differences.md`); oracle
+  defects fixed (U1-U25 in `docs/differences.md`); oracle
   `reference/build.sh fpgpsp-fixed`, `TestFpgpsp`. The documentation of
   the reason it had been deferred (#25) is corrected.
 - FEAT-2 (zlib-compressed output `-z`), issue #22: resolved (PR #37).

@@ -4,7 +4,7 @@ Audit notes on upstream's second program, `fpgpsp` 1.3 (2024.12.12),
 "generate or estimate a pattern spectrum (FP-growth)", and the modules it
 links. Written for issue #23 (port to `cmd/fpgpsp` and `internal/psp`).
 Locations are files of `reference/upstream/fpgrowth-6.21/`. Defects are
-numbered U1-U20; the port fixes them (rows of the same numbers in
+numbered U1-U20 and U25; the port fixes them (rows of the same numbers in
 [../differences.md](../differences.md)) and the differential oracle is
 upstream with the patches of `reference/patches/fpgpsp/`
 (`reference/build.sh fpgpsp-fixed`, `reference/README.md`).
@@ -191,10 +191,12 @@ so the border must be passed with each value negated, and with the same
 | U19 | `-gs` mines unrecoded data with the 16-items machine (`-As`/`-Ad`), which loses or miscounts item sets (fpgrowth-core.md B8) | non-integer average count of single items, which a column shuffle keeps exactly | P9 |
 | U20 | Threads fill the static table `hibit` of the 16-items machine concurrently (`fim16.c:182-184`), so threaded spectra with the machine are nondeterministic | 14 of 400 parallel runs of one command gave 7 different spectra | P10 |
 
+| U25 | For generators the preparation empties transactions with fewer than `-m` items, so generators of size >= 2 are missed (core B3, fpgrowth's M3) | `fpgpsp -gi -tg -m3` misses generators that `fpgrowth -tg -m3` reports | P11 |
+
 The mining deviations of the Go miner from fpgrowth (M1, M4, M5, M9 in
-`docs/differences.md`) also show in fpgpsp's spectra; for example the
-maximal empty set of `-tm -m0` on `-gs` surrogates without a frequent
-item (the M4 check). The differential test avoids them.
+`docs/differences.md`) also show in fpgpsp's spectra; the differential
+test avoids them and `TestIdentity_bruteForce` checks them against the
+brute-force definitions. M3 is carried into the preparation by U25.
 
 ## 7. Port (`internal/psp`, `cmd/fpgpsp`)
 
@@ -209,19 +211,33 @@ item (the M4 check). The differential test avoids them.
   (counting, recoding, the prefix-tree bag, the miner, a new reporter):
   that is P2, P2b and P6 by construction, and recoding does not change
   the spectrum (D5). The 16-items machine runs on recoded data only (P9).
-- Chains run in one goroutine each (`cmd/fpgpsp`), the spectra are summed
-  in part order; the library packages start no goroutines.
+- Chains run in at most GOMAXPROCS goroutines (`cmd/fpgpsp`), the spectra
+  are summed in part order; the library packages start no goroutines.
 - Floating point: the oracle is compiled with `-ffp-contract=off`; every
   product that feeds a sum goes through `mulAdd` (an explicit rounding;
   `TestMulAdd_noFusion`). `math.Log`/`math.Exp` may differ from libm in
   the last bit (Go's `math.Log` is assembly on amd64, pure Go on arm64 and
-  386), so estimated counts may differ by one where a value lies at a
-  rounding boundary. Error bound: every value is a sum of at most a few
-  hundred terms computed with a few hundred roundings of numbers below
-  2^53, so its relative error is far below 10^-9, and `round(v·equiv)`
-  can differ by at most one count. The differential test accepts at most
-  one count per cell (`1/cnt` in the output, plus `%g` rounding),
-  one-sided cells within one count of zero, signature counts in the log
-  that differ by at most the number of one-sided cells, and a `-D` line
-  that is the border of the program's own spectrum. On macOS arm64, 18,535
-  estimations of 60,000 random cases were byte-identical.
+  386), so values may differ in their last bits.
+  - **What a last-bit difference can do.** A count is
+    `(size_t)(v·equiv + 0.5)`; the values `v·equiv` agree with C's to a
+    relative 1e-13 or better (measured: `TestEstimate_matchesC` accepts
+    1e-10 and passes on every value), so a count changes only when
+    `v·equiv` lies within about 1e-13 of a rounding boundary. That is a
+    rare event, not a per-cell allowance: in 60,000 random cases (18,535
+    estimations) on macOS arm64 none occurred, and the review saw about
+    one in 130,000 estimations. Systematic errors (another rounding,
+    another threshold or normalization) change many cells, or values far
+    below the printed resolution.
+  - **Tests.** `TestEstimate_matchesC` compares every unrounded value with
+    the oracle's (harness `estim-trace.patch`): same cells in the same
+    order, relative 1e-10; it pins the loop limits and the threshold of
+    `cplxest`, whose effect on printed counts is below one count.
+    `TestGoldenEstimate` requires 29 printed estimations to equal C's
+    byte for byte, except one cell of one case by one count. The
+    differential test tolerates at most one differing cell, by one count
+    (`1/cnt` plus `%g` rounding), per estimation and at most 1 + 0.1% of
+    the estimations, logs every tolerated cell, and requires the
+    signature counts to differ by at most the number of one-sided cells
+    and each `-D` line to be the border of its own spectrum. Truncation
+    instead of rounding fails all three tests; the threshold -9 -> -7
+    fails `TestEstimate_matchesC`.

@@ -64,9 +64,9 @@ upstream's arithmetic below 2^52 and is exact above; it is now a defect
 fix (policy) row (issue #17, 2026-10-19).
 O12, option `-z` (zlib-compressed output, upstream's optional `USE_ZLIB`
 build), is a new row (issue #22, 2026-10-22).
-U1-U24, the `fpgpsp` program (issue #23, 2026-10-23), are a new section:
-13 upstream defects of fpgpsp that change results (U1-U5, U11-U13,
-U16-U20), 4 in its seeds, progress, messages and validation (U7, U8,
+U1-U25, the `fpgpsp` program (issue #23, 2026-10-23), are a new section:
+14 upstream defects of fpgpsp that change results (U1-U5, U11-U13,
+U16-U20, U25), 4 in its seeds, progress, messages and validation (U7, U8,
 U14, U15), one latent defect (U9), one preserved behavior (U10) and 5
 command-line additions or platform differences (U6, U21-U24); P7-P9 are
 preserved fpgpsp behavior.
@@ -108,6 +108,7 @@ preserved fpgpsp behavior.
 | # | Kind | Upstream behavior | Go behavior | Status / test |
 | --- | --- | --- | --- | --- |
 | F-1 | platform | Log-based values (`-eb`, measures `j p t i g f h m s`) use the platform libm; results are libm-dependent | Go's `math` package, which can differ by 1 ulp from Apple libm (e.g. `log 3`, `log 14`). A set or rule whose true measure value lies exactly on the threshold (e.g. exactly independent items with `-eb -d0`) may be included by one implementation and not the other (review F1). This holds for **every** measure, not only the log-based ones: a value that is mathematically equal to the threshold is computed with rounding and may fall on either side, in C and in Go alike (e.g. `printf 'x y 5\nx 5\ny 4\nz 6\n'`, `-tr -w -s0 -c0 -m2 -ed -d5` omits `y <- x`, whose value is exactly 0.05 but computes to 0.049999999999999988898; C gives the same; audit ALG-4). All other values are bit-identical to the C reference built with `-ffp-contract=off` (not necessarily to a stock upstream build, since arm64 clang contracts by default), with the exceptions of N1 (issue #16): the information, the G-test p-value and the Fisher tests for total weights above 170 use cancellation-free formulas and differ from C in the last bits on ordinary data (within the same tolerances: at most 2.2 of 8 and 0.2 of 1 tolerance units on `testdata/measures_c.txt`), and chi², Yates, their p-values, the certainty factor and `-i` differ only where C loses precision. Go's own arithmetic is FMA-safe (every product that feeds a sum is rounded explicitly, `TestPinnedBits`); `math.Log`/`math.Exp` may differ per architecture as before | documented; regression test pins Go's value on the review reproducer; difftest tolerates boundary cases |
+| F-2 | platform | Apple's libc prints `%g` of an exact tie with trailing zeros: `printf("%g", 1679605.0)` gives `1.67960e+06` and `2500005.0` gives `2.50000e+06` on macOS, where glibc and C99 give `1.6796e+06` and `2.5e+06` (a property of the C oracle's platform, not of upstream) | Go prints like glibc. It affects fpgrowth's `-P` and fpgpsp's spectrum only for values of 10^6 and more that are exact ties of the 6-digit rounding | documented; `reference/difftest` normalizes the C output on darwin (`normGTies`, `TestNormGTies`) |
 
 ## Numeric limits
 
@@ -240,7 +241,14 @@ and `reference/difftest` `TestFpgpsp` requires byte-identical output for
 the surrogate methods (the estimation within one count per cell, see
 `docs/upstream/fpgpsp.md` §7). Audit notes and evidence:
 [upstream/fpgpsp.md](upstream/fpgpsp.md) §6. The mining deviations of
-the miner (M1-M11) apply to the mined surrogates too.
+the miner apply to the mined surrogates as follows: M1 (`-At`), M4 and M9
+(maximal sets with perfect extensions), M5 (closed/maximal with `-n`), M2,
+M6-M8, M10 and M11 hold for every mined surrogate as for fpgrowth; M3
+(generators with `-m` >= 2) applies to the preparation too, through U25,
+since fpgpsp's preparation would otherwise filter like upstream's. The
+differential test avoids M1, M4, M5 and M9 (upstream gives other
+results), and `internal/psp` `TestIdentity_bruteForce` checks those
+configurations against the brute-force definitions.
 
 | # | Kind | Upstream behavior (evidence, location) | Go behavior | Status / test |
 | --- | --- | --- | --- | --- |
@@ -267,6 +275,7 @@ the miner (M1-M11) apply to the mined surrogates too.
 | U21 | new | Built without `FPG_ABORT`, SIGINT kills the program | SIGINT stops reading, generation, mining and estimation; status 130 `interrupted` | implemented (`TestMain_interrupt`, `TestRun_cancel`) |
 | U22 | platform | `-Z0` uses `sysconf(_SC_NPROCESSORS_ONLN)` | `runtime.NumCPU()` (the CPUs usable by the process; can be fewer under affinity limits) | implemented (`TestRun_defaultSeedAndThreads`) |
 | U23 | platform | `-S` and `-c` are C `long` (32 bits on Windows, where `strtol` clamps) | 64-bit on every platform; the chain seed is `(uint32)(S+i)` | implemented (`TestParseArgs`, `TestSeedOf`) |
+| U25 | defect fix | For generators, fpgpsp's preparation empties the transactions with fewer than `-m` items (`fpg_data` in `fpg_genpsp`/`fpg_estpsp`), which deflates the supports of the subsets a generator is compared with (core B3, as M3): `fpgpsp -gi -tg -m3` misses generators that `fpgrowth -tg -m3` reports | No `-m` filter for generators (oracle patch P11, also for the threads' copies); `-gi -tg -m3` gives fpgrowth's generators | implemented in `internal/psp` (`PrepConfig`; `TestIdentity_generatorsMinSize`, `TestIdentity_bruteForce`; CLI goldens `ident-tg-m3`, `ident-tg-m2`, `rand-tg-m2`, `shuffle-tg-m3`; chain `sparse-g-m2`) |
 | U24 | new | With the default seed (time) or thread count, a run cannot be repeated (neither is printed) | The log shows them: `using -S<seed> -Z<k> (<n> chain(s))` (`using -S<seed>` for `-ge`) | implemented (`TestRun_defaultSeedAndThreads`) |
 
 ## Preserved upstream behavior (not deviations)

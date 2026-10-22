@@ -347,7 +347,7 @@ prints the decision border it induces. The spectrum is the average number
 of item sets per (size, support) signature in the surrogates; item sets of
 the real data whose support exceeds the border are unlikely under the
 null model of the surrogates (pattern spectrum filtering). Upstream's
-defects are fixed (rows U1-U20 of [differences.md](differences.md),
+defects are fixed (rows U1-U20 and U25 of [differences.md](differences.md),
 [upstream/fpgpsp.md](upstream/fpgpsp.md)); otherwise options, formats,
 messages and exit codes are upstream's.
 
@@ -386,7 +386,7 @@ fpgpsp [options] infile [outfile]
 | `-e#` | 0.5 | `-ge`: probability dispersion factor; <= 0 assumes equal item probabilities. |
 | `-z#` | 1000 | `-ge`: item set samples per size. |
 | `-S#` | time | Seed of the random numbers; 0 also means the time. |
-| `-Z#` | all CPUs | Number of chains (upstream: threads); <= 0 means all CPUs (`runtime.NumCPU`). |
+| `-Z#` | all CPUs | Number of chains (upstream: threads); <= 0 means all CPUs (`runtime.NumCPU`). At most GOMAXPROCS chains run at a time; the result does not depend on that. |
 | `-D` | | Print the induced decision border. |
 | `-R#` | | Item selection file. |
 | `-r# -f# -b# -C#` | | Record and field separators, blanks, comment characters (as fpgrowth). |
@@ -446,8 +446,8 @@ As fpgrowth's where the messages agree; specific to fpgpsp:
 
 ## Deviations from upstream
 
-All in [differences.md](differences.md), rows U1-U24 (section
-"fpgpsp"): the defect fixes U1-U5 and U11-U20 change results (surrogates
+All in [differences.md](differences.md), rows U1-U25 (section
+"fpgpsp"): the defect fixes U1-U5, U11-U20 and U25 change results (surrogates
 from all records, every surrogate mined on its own, the full decision
 border, the frequency repair, the estimation's frequencies and slot
 counts, the 16-items machine on table data, no data races), and U6-U9,

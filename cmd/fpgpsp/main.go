@@ -4,7 +4,7 @@
 // estimate of it, and optionally the decision border it induces. It is a
 // Go port of Christian Borgelt's fpgpsp program (version 1.3), which is
 // part of the FP-Growth 6.21 sources, with upstream's defects fixed
-// (docs/differences.md, rows U1-U16) and otherwise the same options,
+// (docs/differences.md, rows U1-U25) and otherwise the same options,
 // formats, messages and exit codes; run it without arguments for the
 // usage message and with -! for more information.
 //

@@ -71,7 +71,7 @@ review in the issue's cycle notes).
   messages) are copied into `cmd/fpgpsp/input.go`; a shared package is a
   possible later refactoring.
 - **Semantics.** Upstream's defects that change results are fixed
-  (`docs/differences.md` U1-U20). The differential oracle is upstream
+  (`docs/differences.md` U1-U20, U25). The differential oracle is upstream
   with the smallest source changes that fix them
   (`reference/patches/fpgpsp/`, `build.sh fpgpsp-fixed`), so the port is
   tested byte for byte rather than against unpatched behavior it would
@@ -80,18 +80,23 @@ review in the issue's cycle notes).
 - **Concurrency and reproducibility.** Upstream's thread partition is
   the unit of reproducibility: `-Z k` splits `-c` into `k` chains with
   the seeds `S+i`, as upstream's threads; the spectrum depends on the
-  seed and the partition only. `cmd/fpgpsp` runs each chain in its own
-  goroutine and adds the spectra in chain order; `internal/psp` starts no
+  seed and the partition only. `cmd/fpgpsp` runs the chains in at most
+  GOMAXPROCS goroutines (one per chain would keep every chain's surrogate
+  and miner at once: -Z20000 used gigabytes) and adds the spectra in chain
+  order; `internal/psp` starts no
   goroutines and the library's guarantee (D6) is unchanged. Defaults are
   upstream's (the time as seed, all CPUs); the log prints the values used
   when they were defaulted (U24), and tests always pass `-S` and `-Z`.
 - **Mining.** Every surrogate is mined on its own through the normal
   pipeline (`fpg.Miner`, recoded): that is what the oracle patches P2,
   P2b, P6 and P9 establish for C, and the spectrum does not depend on the
-  item codes. The per-surrogate rebuild of the item base and the prefix
-  tree costs time (about 1.6 times C's CPU time and 3.3 times its
-  instructions for pair swaps on 4,000 transactions, issue #23); a
-  direct array-to-tree path is a possible optimization.
+  item codes. The per-surrogate rebuild of the item base, the recoding
+  and the prefix tree costs time and memory: measured against the C
+  oracle (-O3) on sparse, table and dense data, Go needs 1.8-3.3 times
+  C's instructions and 1.4-2.5 times its user time, and about twice its
+  maximum resident memory at -Z64 (80-92 MB against 41 MB). Reusing the
+  item base and the recoding across surrogates is the follow-up, issue
+  #39.
 - **Floating point.** The estimation follows C compiled with
   `-ffp-contract=off` (explicit rounding of products, `mulAdd`); it is
   compared with C by a derived tolerance of one count per cell, not by

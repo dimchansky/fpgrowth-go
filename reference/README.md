@@ -178,7 +178,7 @@ A clean build of all four variants takes about 18 s on an M-series Mac.
 ## fpgpsp oracle patches
 
 Upstream's `fpgpsp` has defects that change its results (issue #23,
-`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U20). The Go
+`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U20, U25). The Go
 port fixes them, and the differential oracle is upstream with the
 smallest source changes that fix them. The patches live in
 `patches/fpgpsp/`, are applied only to the `fpgpsp-fixed` variant (and by
@@ -197,6 +197,7 @@ smallest source changes that fix them. The patches live in
 | `p08-size0-row.patch` | U18: a second support for size 0 (`-ge -m0`) overflows the spectrum's row buffer | size-0 rows like all others |
 | `p09-shuffle-no-fim16.patch` | U19: `-gs` mines unrecoded data with the 16-items machine (`-As`/`-Ad`), which loses item sets | no 16-items machine for `-gs` |
 | `p10-fim16-init.patch` | U20: threads fill the static table of the 16-items machine concurrently (data race; nondeterministic spectra with `-Z` > 1) | fill it before the threads start |
+| `p11-generators-nofilter.patch` | U25: for generators the preparation empties transactions with fewer than `-m` items (core B3, fpgrowth's M3) | no `-m` filter for generators, also in the threads' copies |
 
 `patches/fpgpsp/` is never applied to the other variants (the top-level
 `patches/*.patch` would be, but there are none).
@@ -377,7 +378,10 @@ DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -ar
   universal item, sparse bins) with every fpgpsp option and fixed `-S` and
   `-Z`: byte-identical output for the surrogate methods (without the
   progress counter of threaded runs, which is racy upstream), the
-  estimation within one count per cell (`docs/upstream/fpgpsp.md` §7).
+  estimation within one count of one cell per case and in at most 1 +
+  0.1% of the estimations, every tolerated cell logged
+  (`docs/upstream/fpgpsp.md` §7); on darwin Apple's `%g` ties are
+  normalized (F-2).
   Options that would trigger a miner deviation (M1, M4, M5, M9) are
   avoided. `DIFFTEST_FPGPSP_CASES` (default 3000, `-short` 300),
   `DIFFTEST_FPGPSP_ONLY`, `-artifacts`.

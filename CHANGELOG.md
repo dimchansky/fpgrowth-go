@@ -19,7 +19,7 @@ The release workflow publishes the section whose heading matches the tag
   pair swaps `-gp`, column shuffles of table data `-gs`, identity `-gi`)
   or estimated (`-ge`), and the decision border (`-D`) for fpgrowth's
   `-F`. Same options, formats, messages and exit codes as upstream's
-  fpgpsp 1.3, with its defects fixed (rows U1-U24 in
+  fpgpsp 1.3, with its defects fixed (rows U1-U25 in
   `docs/differences.md`: surrogates from all records, every surrogate
   mined on its own, the full decision border, the estimation's
   frequencies and slot counts, no data races, and others); one argument

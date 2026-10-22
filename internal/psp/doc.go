@@ -9,7 +9,7 @@
 // Upstream's defects are fixed; the result equals upstream with the
 // oracle patches of reference/patches/fpgpsp (the fpgpsp-fixed build),
 // byte for byte for the surrogate methods. The deviations are rows
-// U1-U16 of docs/differences.md.
+// U1-U25 of docs/differences.md.
 //
 // # Pipeline
 //
