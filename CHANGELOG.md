@@ -33,8 +33,28 @@ The release workflow publishes the section whose heading matches the tag
   trap of its design review (`adv5-20000`, `adv5-40000`) are pinned
   datasets with `lp-*` and `adv5-*` rows in the Go-vs-C comparison
   (#20).
+- Benchmarks: the perfect-extension shapes of issue #21 (the audit's T4
+  chain `t4-6250` to `t4-25000`, and the wide lines `one-6250`,
+  `one-12500`, `t4b-3000`, `t4b-6000`) are pinned datasets with `t4-*`,
+  `one-*` and `t4b-*` rows in the Go-vs-C comparison, and
+  `go run ./bench/gen -list` no longer panics on the probe trap
+  datasets (#21).
 
 ### Changed
+
+- Frequent item sets and generators with a small maximum size (`-n`,
+  `MaxSize`) no longer take quadratic time on long single paths. Perfect
+  extensions that cannot change any result are skipped: a chain item of
+  a set that already has the maximum number of items no longer collects
+  its predecessors as perfect extensions, and the perfect extensions of
+  such a set (also those inherited from smaller sets, and those of the
+  empty set's hypercube) are no longer expanded only to be rejected
+  against the size limit. The audit's T4 input (17 lines of a 12,500-item
+  chain plus 12,510 one-item lines, `-s-17 -n1`) now takes 0.52 G
+  instead of 7.94 G instructions (C: 5.01 G) and grows linearly; one
+  line of 12,500 items with `-s-1 -n1` 0.16 G instead of 2.11 G. The
+  output is unchanged; closed and maximal item sets are not affected
+  (#21, audit NEW-1).
 
 - Closed item sets with a maximum size (`-tc -n`, `TargetClosed` with
   `MaxSize`) no longer take quadratic time when a long transaction and

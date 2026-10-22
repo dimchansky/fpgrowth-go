@@ -378,8 +378,12 @@ func (m *miner) recCmplx(t *csTree, depth int) error {
 		nodes := m.cs.nodes
 		switch {
 		case nodes[h.list].succ < 0: // projection would be a chain
-			for node := nodes[h.list].parent; nodes[node].id >= 0; node = nodes[node].parent {
-				m.rep.AddPex(t.heads[nodes[node].id].item)
+			// Extension: skip the walk if no perfect extension can
+			// change a result (rep.PexUseful; e.g. a set of zmax items).
+			if m.rep.PexUseful() {
+				for node := nodes[h.list].parent; nodes[node].id >= 0; node = nodes[node].parent {
+					m.rep.AddPex(t.heads[nodes[node].id].item)
+				}
 			}
 		case proj != nil && m.deeper():
 			var ok bool

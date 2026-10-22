@@ -93,10 +93,20 @@ audit, `docs/audit/t4-performance.md`): 17 lines of the N items 0 … N−1,
 then N+10 lines of one more item (named N; the audit's awk reproducer
 calls it `x`, otherwise byte for byte). With `-s-17 -n1` the FP-tree is
 one chain, every item has all its predecessors as perfect extensions,
-and collecting, expanding and removing them is quadratic in Go and in
-C although a maximum size of 1 makes them useless. The three sizes
-show the scaling (C with the default 8 MB stack crashes at 100,000
-items, M10; these sizes need no raised stack).
+and collecting, expanding and removing them was quadratic in Go and is
+in C although a maximum size of 1 makes them useless; since #21 Go
+skips them. The three sizes show the scaling (C with the default 8 MB
+stack crashes at 100,000 items, M10; these sizes need no raised stack).
+
+`one-6250`, `one-12500`, `t4b-3000` and `t4b-6000` (`benchSpec.Wide`)
+are the two further shapes of the same work found by the design review
+of #21. `one-N` is one line of N items: with `-s-1 -n1` all of them are
+perfect extensions of the empty set, whose hypercube was expanded to
+size 1 and every set of size 1 then rejected all later extensions.
+`t4b-N` has two lines with N common items (perfect extensions of the
+empty set) and N items split between the lines, so every one-item set
+inherits N extensions that do not fit. Both were quadratic in Go and
+are in C.
 
 A build with `go build -tags fpgforce ./cmd/fpgrowth` lowers the
 closed scan's thresholds so that its rare paths (the pass over the
@@ -115,7 +125,7 @@ bench/compare.sh -n 5 -m devnull '^m5-d20000-'         # the M5A-1 workload (slo
 bench/compare.sh -n 5 -m devnull '^lp-(12500|25000|50000|c20000-c\*)'   # issue #20, fast rows
 bench/compare.sh -n 5 -m devnull '^adv5-'              # issue #20, the probe trap
 bench/compare.sh -n 3 -m devnull '^lp-100000'          # issue #20, slow in C (lp-c20000-c-q0: C does not finish)
-bench/compare.sh -n 3 -m devnull '^t4-'                # issue #21, the perfect-extension chain
+bench/compare.sh -n 3 -m devnull '^(t4|one|t4b)-'     # issue #21, perfect extensions beyond -n
 ```
 `go test ./bench/...` checks that
 

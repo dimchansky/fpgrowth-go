@@ -110,6 +110,12 @@ type Reporter struct {
 	ticks uint32       // steps since the start (see tick)
 
 	cmCheck CloMaxCheck // final closed/maximal check (SetCloMaxCheck)
+
+	// pexMax is the set size from which perfect extensions cannot change
+	// any result (see PexUseful); noPexGuard disables the guard
+	// (SetPexGuard).
+	pexMax     int
+	noPexGuard bool
 }
 
 // CloMaxCheck decides whether an item set is closed (TargetClosed) or
@@ -156,6 +162,7 @@ func New(numItems int, total tract.Supp, freqs []tract.Supp) *Reporter {
 		evalDir:  1,
 		stats:    make([]uint64, numItems+1),
 	}
+	r.updateXmax()
 	r.supps[0] = total
 	r.wgts[0] = float64(total)
 	b := float64(total)
@@ -330,12 +337,52 @@ func (r *Reporter) Setup() {
 }
 
 // updateXmax computes the size limit of Xable: zmax, or zmax+1 for closed
-// and maximal sets so that a superset witness can be explored.
+// and maximal sets so that a superset witness can be explored. It also
+// computes pexMax (see PexUseful).
 func (r *Reporter) updateXmax() {
 	r.xmax = r.zmax
 	if r.target&(TargetClosed|TargetMaximal) != 0 && r.zmax < MaxSize {
 		r.xmax = r.zmax + 1
 	}
+	switch {
+	case r.noPexGuard || r.mode&ModeNoExpand != 0 || r.cm != nil:
+		r.pexMax = math.MaxInt
+	case r.target&TargetGenerators != 0:
+		r.pexMax = -1
+	default:
+		r.pexMax = r.zmax
+	}
+}
+
+// PexUseful reports whether perfect extensions added now can still change
+// a result. It is an extension, not part of upstream: a miner may skip
+// collecting perfect extensions (AddPex, AddPexPacked) when it returns
+// false, with identical results. AddPex itself stays an exact port.
+//
+// It returns false for generators (AddPex ignores perfect extensions
+// there) and, for all other targets except closed and maximal item sets,
+// once the current set has zmax items. Then every set reported while the
+// extensions would be present has at least zmax items: Report rejects
+// the sets with more than zmax items before looking at the extensions,
+// and of the hypercube of a set with exactly zmax items only the set
+// itself fits the size limit. Its items, support, weight, evaluation,
+// border check, counts and spectrum entry do not depend on the
+// extensions, and neither do the outputs of smaller sets (the skipped
+// work writes only scratch entries beyond index zmax). Closed and
+// maximal item sets (ModeNoExpand, the closed/maximal repository) are
+// excluded: there a set is reported or stored together with all its
+// perfect extensions, and the size gates of a size-limited search
+// (PexCount) count them.
+func (r *Reporter) PexUseful() bool { return r.cnt < r.pexMax }
+
+// SetPexGuard turns the perfect-extension guard on (the default) or off:
+// with the guard off, PexUseful always returns true and Report and
+// expand handle the perfect extensions of sets with zmax items like
+// upstream. The results are the same either way; it is meant for
+// differential tests.
+func (r *Reporter) SetPexGuard(on bool) {
+	r.noPexGuard = !on
+	r.updateXmax()
 }
 
 // Add is a port of isr_add: it extends the current item set by item with
@@ -582,6 +629,15 @@ func (r *Reporter) Report() error {
 	if s < r.smin || s > r.smax {
 		return nil
 	}
+	if r.cnt >= r.pexMax {
+		// Extension, not in upstream: no perfect extension fits into a
+		// set of zmax items (see PexUseful; the extensions inherited
+		// from smaller sets are skipped here). Only the set itself can be
+		// reported, as without the extensions: the gate below rejects it
+		// for zmin > zmax either way, countOnly counts only size cnt, and
+		// the fill and expand below would only reject.
+		n = 0
+	}
 	if r.cnt > r.zmax || r.cnt+n < r.zmin {
 		return nil
 	}
@@ -683,6 +739,12 @@ func (r *Reporter) expand(next int) error {
 		return err
 	}
 	n := len(r.pexs)
+	if r.cnt >= r.pexMax {
+		// Extension, not in upstream: with zmax items no extension fits
+		// (r.cnt+1 > zmax below), so the loop would only write the
+		// scratch entry items[cnt] and reject every extension; skip it.
+		n = next
+	}
 	for j := next; j < n; j++ {
 		r.items[r.cnt] = r.pexs[j]
 		r.cnt++

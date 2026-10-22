@@ -46,8 +46,16 @@ linked documents.
 ## Open problems
 
 - None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  skipping perfect extensions that cannot affect a result (NEW-1, #21,
-  quadratic in upstream too), `-z` (#22) and `fpgpsp` (#23).
+  `-z` (#22) and `fpgpsp` (#23).
+- NEW-1 (perfect extensions beyond the maximum size), issue #21:
+  resolved. The miners' chain walks skip perfect extensions when
+  `Reporter.PexUseful` says they cannot change a result (generators, or
+  a set of zmax items for targets other than closed/maximal), and
+  `Report`/`expand` ignore the extensions of a set of zmax items. T4
+  (`t4-12500 -s-17 -n1`) 7.94 G → 0.52 G instructions (C 5.01 G),
+  linear; the review's further shapes `one-N`, `t4b-N` linear too;
+  output identical. Closed/maximal excluded (not needed: `-tc -n1` on
+  T4 was already linear).
 - NEW-3 (Info, the remaining quadratic closed-check shape), issue #20:
   resolved. The closed scan starts from a short cover transaction
   (the shortest of the first and the spread ones, or of the whole
