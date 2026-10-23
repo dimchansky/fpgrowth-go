@@ -1,0 +1,42 @@
+P11 (issue #23, U25): no -m transaction filter for generators.
+
+fpg_genpsp and fpg_estpsp prepare the data with fpg_data, which empties
+the transactions with fewer than -m items. For generators this deflates
+the supports of the subsets that a generator is compared with, so
+generators of size >= 2 are missed (fpgrowth-core.md B3; the Go port of
+fpgrowth fixes it as deviation M3). With the filter left out for the
+generator target (also for the copies of the data that every thread
+prepares), fpgpsp -gi -tg -m3 reports the generators that fpgrowth -tg
+-m3 finds. The surrogates themselves are never filtered (FPG_SURR
+includes FPG_NOFILTER).
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -276,6 +276,7 @@
+                         RE_NONE, FPG_NONE, 0.0, algo, mode);
+   if (!fpgrowth) return E_NOMEM;/* create an fpgrowth miner */
+   r = (surr == FPG_SHUFFLE) ? FPG_NORECODE|FPG_NOSORT : 0;
++  if (target & ISR_GENERAS) r |= FPG_NOFILTER; /* P11 */
+   r = fpg_data(fpgrowth, tabag, r|FPG_NOPACK|FPG_NOREDUCE, +2); /* prepare the */
+   if (r) { fpg_delete(fpgrowth, 0); return r; }    /* transactions */
+ 
+@@ -310,7 +311,8 @@
+       if (!w[n].fpgrowth || !w[n].tasur || !w[n].rng || !w[n].report) {
+         w[n].err = -1; break; } /* check for successful creation */
+       if ((fpg_data  (w[n].fpgrowth, w[n].tasur,
+-                      FPG_NORECODE|FPG_NOREDUCE, 0) != 0)
++                      FPG_NORECODE|FPG_NOREDUCE  /* P11 */
++                    | ((target & ISR_GENERAS) ? FPG_NOFILTER : 0), 0) != 0)
+       ||  (fpg_report(w[n].fpgrowth, w[n].report) != 0)
+       ||  (isr_addpsp(w[n].report, NULL) < 0)
+       ||  (isr_setup (w[n].report) != 0)) {
+@@ -412,7 +414,8 @@
+   fpgrowth = fpg_create(target, supp, 100.0, 100.0, zmin, zmax,
+                         RE_NONE, FPG_NONE, 0.0, FPG_AUTO, FPG_DEFAULT);
+   if (!fpgrowth) return E_NOMEM;/* create an fpgrowth miner */
+-  r = fpg_data(fpgrowth, tabag, FPG_NOPACK|FPG_NOREDUCE, +2);
++  r = fpg_data(fpgrowth, tabag, FPG_NOPACK|FPG_NOREDUCE  /* P11 */
++             | ((target & ISR_GENERAS) ? FPG_NOFILTER : 0), +2);
+   fpg_delete(fpgrowth, 0);      /* prepare the transactions */
+   if (r) return r;              /* and check for an error */
+   supp = (supp < 0) ? -supp     /* compute absolute minimum support */

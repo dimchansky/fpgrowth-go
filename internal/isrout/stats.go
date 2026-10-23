@@ -46,6 +46,14 @@ func WriteStats(w io.Writer, count uint64, stats []uint64) error {
 // pattern spectrum file (cli-io.md B9, docs/differences.md O7). Here the
 // first write error, including that of the final flush, is returned.
 func WriteSpectrum(w io.Writer, p *report.Spectrum) error {
+	return WriteSpectrumScaled(w, p, 1.0)
+}
+
+// WriteSpectrumScaled is a port of psp_report(psp, twr, scale): like
+// WriteSpectrum, with every count c printed as the C double product
+// scale*(double)c (fpgpsp: scale = 1/(number of surrogates), the average
+// count per surrogate data set). With scale 1 it is WriteSpectrum.
+func WriteSpectrumScaled(w io.Writer, p *report.Spectrum, scale float64) error {
 	if p == nil {
 		return nil
 	}
@@ -56,7 +64,7 @@ func WriteSpectrum(w io.Writer, p *report.Spectrum) error {
 		line = append(line, ' ')
 		line = strconv.AppendInt(line, int64(c.Supp), 10)
 		line = append(line, ' ')
-		line = appendG(line, float64(c.Count))
+		line = appendG(line, scale*float64(c.Count))
 		line = append(line, '\n')
 		if _, err := bw.Write(line); err != nil {
 			return err

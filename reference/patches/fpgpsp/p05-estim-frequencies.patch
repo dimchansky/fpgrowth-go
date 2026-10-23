@@ -1,0 +1,26 @@
+P5 (issue #23, U13): estimate with the item frequencies of the filtered
+transactions.
+
+psp_tbgest divides the item-base frequencies (counted while reading, so
+including the transactions that fpg_data empties because they have fewer
+than -m items) by the extent of the filtered transactions, so with -m > 1
+the item probabilities sum to more than 1 and the supports are
+overestimated. The frequencies of the filtered bag sum to its extent.
+With -m <= 1 (and P1) both are equal.
+
+--- a/tract/src/patspec.c
++++ b/tract/src/patspec.c
+@@ -742,8 +742,11 @@
+   if (!probs) { free(cnts); return -1; } /* allocate work memory */
+   x    = 1.0 /(double)tbg_extent(tabag);
+   base = tbg_base(tabag);       /* get the underlying item base, */
+-  for (z = 0; z < n; z++)       /* traverse items and compute probs. */
+-    probs[z] = x *(double)ib_getfrq(base, z);
++  (void)base;                   /* P5: frequencies of the filtered bag */
++  { const SUPP *f = tbg_ifrqs(tabag, 1);
++    if (!f) { free(probs); free(cnts); return -1; }
++    for (z = 0; z < n; z++)     /* traverse items and compute probs. */
++      probs[z] = x *(double)f[z]; }
+   if (alpha != 1.0) {           /* if to contract rate distribution */
+     x = 1.0/(double)n;          /* compute average item probability */
+     for (z = 0; z < n; z++)     /* and multiply deviation with alpha */

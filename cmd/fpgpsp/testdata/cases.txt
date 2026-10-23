@@ -1,0 +1,79 @@
+# End-to-end cases of cmd/fpgpsp: "<name> <arguments>" (words separated by
+# blanks; "<file" redirects standard input). The golden outputs in golden/
+# are produced by the C oracle (reference/build.sh fpgpsp-fixed) with
+# reference/harness/fpgpsp/gen-cli.sh. Only deterministic cases: every
+# surrogate case fixes -S and -Z; the estimation (-ge) is compared with C
+# by difftest's TestFpgpsp with a derived tolerance, not here.
+usage
+help -!
+help2 -t -!
+# --- option errors ---
+badopt -q test1.tab
+optarg test1.tab -R
+noargs -gi
+args3 test1.tab out.txt extra
+target -tx test1.tab -
+target0 -t test1.tab -
+variant -Ax test1.tab -
+method -gx test1.tab -
+method0 -g test1.tab -
+size -m-1 test1.tab -
+size2 -n-2 test1.tab -
+surrcnt -c0 test1.tab -
+surrcnt2 -c-5 -gr test1.tab -
+nofile -gi missing.tab -
+nosel -gi -R missing.txt test1.tab -
+noitems -gi empty.tab -
+noitems2 -gi blank.tab -
+nofreq -gi -s-100 test1.tab -
+nofreq2 -gr -s-100 -S1 -Z1 test1.tab -
+notable -gs test1.tab -
+notable1 -gs onerow.tab -
+outopen -gi test1.tab nodir/out.txt
+# --- surrogate methods (fixed -S and -Z) ---
+ident -gi -s-2 test1.tab -
+ident-c -gi -s-2 -c50 test1.tab -
+ident-D -gi -s-2 -D test1.tab -
+ident-tc -gi -tc -s-2 test1.tab -
+ident-tm -gi -tm -s-2 basket.tab -
+ident-tg -gi -tg -s-2 basket.tab -
+ident-m0 -gi -m0 -s-2 test1.tab -
+ident-tg-m3 -gi -tg -s-1 -m3 -n3 test1.tab -
+ident-tg-m2 -gi -tg -s-1 -m2 basket.tab -
+rand-tg-m2 -gr -tg -m2 -s-2 -c10 -S3 -Z2 basket.tab -
+shuffle-tg-m3 -gs -tg -m3 -s-2 -c10 -S3 -Z2 table.tab -
+rand -gr -s-2 -c40 -S7 -Z1 test1.tab -
+rand-Z2 -gr -s-2 -c19 -S7 -Z2 test1.tab -
+rand-Z4 -gr -s-2 -c19 -S7 -Z4 test1.tab -
+rand-basket -gr -s-3 -c25 -S3 -Z1 basket.tab -
+rand-D -gr -s-3 -c25 -S3 -Z3 -D basket.tab -
+rand-i -gr -i -s-3 -c10 -S5 -Z1 basket.tab -
+rand-As -gr -As -s-3 -c10 -S5 -Z2 basket.tab -
+rand-tc -gr -tc -s-3 -c10 -S2 -Z1 basket.tab -
+rand-tg -gr -tg -s-3 -c10 -S2 -Z1 dense.tab -
+rand-m2 -gr -m2 -n3 -s-3 -c10 -S2 -Z1 basket.tab -
+rand-pct -gr -s20 -c10 -S2 -Z1 dense.tab -
+rand-big-seed -gr -s-3 -c6 -S4294967295 -Z2 basket.tab -
+rand-neg-seed -gr -s-3 -c6 -S-3 -Z2 basket.tab -
+swap -gp -s-2 -c40 -S7 -Z1 test1.tab -
+swap-basket -gp -s-3 -c30 -S11 -Z1 basket.tab -
+swap-Z3 -gp -s-3 -c30 -S11 -Z3 basket.tab -
+swap-tm -gp -tm -Ad -s-3 -c12 -S1 -Z1 dense.tab -
+swap-tg -gp -tg -s-4 -c12 -S1 -Z2 dense.tab -
+swap-x -gp -x -s-3 -c12 -S1 -Z1 basket.tab -
+swap-l0 -gp -As -l0 -s-3 -c12 -S1 -Z1 basket.tab -
+swap-D -gp -s-3 -c12 -S1 -Z1 -D dense.tab -
+swap-D-m2 -gp -s-3 -m2 -n2 -c12 -S1 -Z1 -D dense.tab -
+shuffle -gs -s-2 -c30 -S1 -Z1 table.tab -
+shuffle-Z2 -gs -s-2 -c30 -S1 -Z2 table.tab -
+shuffle-m4 -gs -m4 -s-2 -c5 -S1 -Z1 table.tab -
+shuffle-D -gs -s-2 -c30 -S9 -Z1 -D table.tab -
+shuffle-As -gs -As -s-2 -c10 -S1 -Z1 table.tab -
+shuffle-Ad-Z2 -gs -Ad -s-2 -c10 -S2 -Z2 table.tab -
+rand-As-Z3 -gr -As -s-3 -c19 -S5 -Z3 basket.tab -
+# --- input and output ---
+onearg -gi -s-2 test1.tab
+outfile -gp -s-2 -c5 -S1 -Z1 test1.tab out.txt
+stdin -gp -s-2 -c5 -S1 -Z1 - - <test1.tab
+sel -gp -s-2 -c5 -S1 -Z1 -R sel.txt test1.tab -
+csv -gp -s-2 -c5 -S1 -Z1 -f, test2.tab -

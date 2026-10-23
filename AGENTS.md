@@ -28,6 +28,7 @@ changing anything.
 | `*.go` (root, package `fpgrowth`) | Public library API |
 | `internal/` | Implementation packages (port of upstream modules) |
 | `cmd/fpgrowth/` | Command-line program compatible with upstream `fpgrowth` |
+| `cmd/fpgpsp/` | Command-line program compatible with upstream `fpgpsp` (pattern spectra; defects fixed) |
 | `testdata/` | Golden fixtures produced by the C reference, and Go snapshots for documented differences (committed) |
 | `docs/` | Design, upstream audit notes, feature matrix, reviews, progress |
 | `reference/` | Nested module: upstream C, reference build, differential tests |

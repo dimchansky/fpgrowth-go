@@ -1,0 +1,24 @@
+P9 (issue #23, U19): no 16-items machine for the unrecoded surrogates of
+the shuffle method.
+
+For -gs the data are not recoded (FPG_NORECODE|FPG_NOSORT keep the table
+columns), so item codes do not follow the item frequencies and
+infrequent items stay in the transactions, but fpg_data(FPG_SURR) still
+packs the items with codes below 16 for the simple and single variants
+(-As, -Ad with -l > 0), and the miners then lose or miscount item sets
+(fpgrowth-core.md B8): wrong spectra, e.g. a non-integer average number
+of single items, which a column shuffle keeps exactly. Clearing the
+FPG_FIM16 field of the mode for -gs disables the machine in every
+miner; it is an optimization only.
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -266,6 +266,8 @@
+   assert(tabag                  /* check the function arguments */
+   &&    (algo >= FPG_SIMPLE) && (algo <= FPG_TOPDOWN));
+   if (seed == 0) seed = (long)time(NULL);
++  if (surr == FPG_SHUFFLE)      /* P9: no 16-items machine for */
++    mode &= ~FPG_FIM16;         /* unrecoded data */
+ 
+   /* --- prepare data --- */
+   fpgrowth = fpg_create(target, supp, 100.0, 100.0, zmin, zmax,

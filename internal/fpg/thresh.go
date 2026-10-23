@@ -96,3 +96,13 @@ func derive(c *Config, minimum, maximum tract.Supp) thresholds {
 	t.smax = maximum
 	return t
 }
+
+// Thresholds returns the absolute minimum and maximum support of item
+// sets that Data derives from cfg for the total transaction weight w
+// (MinSupport and MaxSupport), without building a bag. fpgpsp uses it
+// for data it prepares itself (the shuffle method).
+func Thresholds(cfg Config, w tract.Supp) (smin, smax tract.Supp) {
+	cfg.normalize()
+	t := computeThresholds(&cfg, w)
+	return t.supp, t.smax
+}

@@ -247,6 +247,14 @@ limit). Passes in isolation. Impact: CI noise on shared runners.
 Resolution: scale the limit, or measure work units instead of wall time.
 
 ### FEAT-1 — `fpgpsp` (Info, confirmed)
+
+> **Note (2026-10-23, issues #23, #25).** The statement below that
+> `tars.c` and `pspest.c` are missing from the archive is wrong: `tars.o`
+> and `pspest.o` are objects built from `tract/src/tract.c` (`-DTA_READ
+> -DTA_SURR`) and `tract/src/patspec.c` (`-DPSP_REPORT -DPSP_ESTIM`),
+> which are in the archive. `fpgpsp` builds from it and has since been
+> ported (`cmd/fpgpsp`, `docs/upstream/fpgpsp.md`). The record is kept
+> as written.
 Archive: `fpgrowth/src/fpgpsp.c` (748 lines, v1.3 2024.12.12) and `fpgpsp.h`
 are present; the makefile's `PSPOBJS` needs `tract/src/tars.c` (surrogate
 data: identity, randomization, pair swaps, shuffle — `TA_SURR`) and

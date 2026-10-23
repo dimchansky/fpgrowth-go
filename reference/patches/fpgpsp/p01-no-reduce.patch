@@ -1,0 +1,33 @@
+P1 (issue #23, U2-U4): do not merge equal transactions before generating
+surrogates or estimating a pattern spectrum.
+
+fpg_genpsp and fpg_estpsp prepare the data with fpg_data, which combines
+equal transactions into one weighted transaction (tbg_reduce). The
+surrogate generators count every transaction once and keep its weight
+with the slot, so swap randomization no longer preserves the item
+frequencies, single-threaded -gr loses the multiplicities (clone() sets
+weights to 1), and the estimation counts slots and the maximum support
+over the unique transactions only. With FPG_NOREDUCE every record stays
+a transaction of weight 1. Oracle-only patch (reference/build.sh
+fpgpsp-fixed); docs/differences.md rows U2-U4.
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -262,7 +262,7 @@
+                         RE_NONE, FPG_NONE, 0.0, algo, mode);
+   if (!fpgrowth) return E_NOMEM;/* create an fpgrowth miner */
+   r = (surr == FPG_SHUFFLE) ? FPG_NORECODE|FPG_NOSORT : 0;
+-  r = fpg_data(fpgrowth, tabag, r|FPG_NOPACK, +2); /* prepare the */
++  r = fpg_data(fpgrowth, tabag, r|FPG_NOPACK|FPG_NOREDUCE, +2); /* prepare the */
+   if (r) { fpg_delete(fpgrowth, 0); return r; }    /* transactions */
+ 
+   /* --- generate pattern spectrum --- */
+@@ -397,7 +397,7 @@
+   fpgrowth = fpg_create(target, supp, 100.0, 100.0, zmin, zmax,
+                         RE_NONE, FPG_NONE, 0.0, FPG_AUTO, FPG_DEFAULT);
+   if (!fpgrowth) return E_NOMEM;/* create an fpgrowth miner */
+-  r = fpg_data(fpgrowth, tabag, FPG_NOPACK, +2);
++  r = fpg_data(fpgrowth, tabag, FPG_NOPACK|FPG_NOREDUCE, +2);
+   fpg_delete(fpgrowth, 0);      /* prepare the transactions */
+   if (r) return r;              /* and check for an error */
+   supp = (supp < 0) ? -supp     /* compute absolute minimum support */

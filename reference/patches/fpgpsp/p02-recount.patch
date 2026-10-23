@@ -1,0 +1,57 @@
+P2 (issue #23, U1): recount the item frequencies of every surrogate.
+
+The miners take the item frequencies from the cache of the transaction
+bag (tbg_ifrqs(bag, 0)). Only reading, recoding, filtering and reducing
+invalidate it, and fpg_data(FPG_SURR) does none of these, so every
+surrogate after the first was mined with the first one's frequencies
+(wrong singleton supports, elimination and perfect extensions). For the
+fpgrowth program the bag is mined once and the recount changes nothing.
+Must be combined with P2b. docs/differences.md row U1.
+
+--- a/fpgrowth/src/fpgrowth.c
++++ b/fpgrowth/src/fpgrowth.c
+@@ -745,7 +745,7 @@
+   n = tbg_cnt(fpg->tabag);      /* get the number of transactions */
+   k = tbg_itemcnt(fpg->tabag);  /* and check the number of items */
+   if (k <= 0) return isr_report(fpg->report);
+-  f = tbg_ifrqs(fpg->tabag, 0); /* get the item frequencies */
++  f = tbg_ifrqs(fpg->tabag, 1); /* get the item frequencies */
+   if (!f) return -1;            /* in the transaction bag */
+   s = fpg->set = (ITEM*)malloc((size_t)(k+k) *sizeof(ITEM)
+                               +(size_t) k    *sizeof(SUPP));
+@@ -1206,7 +1206,7 @@
+   n = tbg_cnt(fpg->tabag);      /* get the number of transactions */
+   k = tbg_itemcnt(fpg->tabag);  /* and check the number of items */
+   if (k <= 0) return isr_report(fpg->report);
+-  f = tbg_ifrqs(fpg->tabag, 0); /* get the item frequencies */
++  f = tbg_ifrqs(fpg->tabag, 1); /* get the item frequencies */
+   if (!f) return -1;            /* in the transaction bag */
+   s = fpg->set = (ITEM*)malloc((size_t)(k+k) *sizeof(ITEM)
+                               +(size_t) k    *sizeof(SUPP));
+@@ -1374,7 +1374,7 @@
+   n = tbg_cnt(fpg->tabag);      /* get the number of transactions */
+   k = tbg_itemcnt(fpg->tabag);  /* and check the number of items */
+   if (k <= 0) return isr_report(fpg->report);
+-  f = tbg_ifrqs(fpg->tabag, 0); /* get the item frequencies */
++  f = tbg_ifrqs(fpg->tabag, 1); /* get the item frequencies */
+   if (!f) return -1;            /* in the transaction bag */
+   s = fpg->set = (ITEM*)malloc((size_t)(k+k) *sizeof(ITEM));
+   if (!s) return -1;            /* create item and support arrays */
+@@ -1635,7 +1635,7 @@
+   n = tbg_cnt(fpg->tabag);      /* get the number of transactions */
+   k = tbg_itemcnt(fpg->tabag);  /* and check the number of items */
+   if (k <= 0) return isr_report(fpg->report);
+-  f = tbg_ifrqs(fpg->tabag, 0); /* get the item frequencies */
++  f = tbg_ifrqs(fpg->tabag, 1); /* get the item frequencies */
+   if (!f) return -1;            /* in the transaction bag */
+   s = fpg->set = (ITEM*)malloc((size_t)(k+k) *sizeof(ITEM)
+                               +(size_t) k    *sizeof(SUPP));
+@@ -1756,7 +1756,7 @@
+   assert(fpg);                  /* check the function arguments */
+   k = tbg_itemcnt(fpg->tabag);  /* get the number of (frequent) items */
+   if (k <= 0) return 0;         /* if there are none, abort */
+-  f = tbg_ifrqs(fpg->tabag, 0); /* get the item frequencies */
++  f = tbg_ifrqs(fpg->tabag, 1); /* get the item frequencies */
+   if (!f) return -1;            /* in the transaction bag */
+   s = fpg->set = (ITEM*)malloc((size_t)(k+k) *sizeof(ITEM));
+   if (!s) return -1;            /* create item and support arrays */
