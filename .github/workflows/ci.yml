@@ -364,15 +364,19 @@ jobs:
       - name: Check that every archive has both programs
         run: |
           n=0
+          # listings are read in full first: grep -q would close the pipe
+          # early and fail the step under pipefail
           for a in dist/*.tar.gz; do
+            list=$(tar -tzf "$a")
             for b in fpgrowth fpgpsp; do
-              tar -tzf "$a" | grep -q "/$b\$" || { echo "::error::$a lacks $b"; exit 1; }
+              grep -q "/$b\$" <<<"$list" || { echo "::error::$a lacks $b"; exit 1; }
             done
             n=$((n + 1))
           done
           for a in dist/*.zip; do
+            list=$(unzip -l "$a")
             for b in fpgrowth.exe fpgpsp.exe; do
-              unzip -l "$a" | grep -q "/$b\$" || { echo "::error::$a lacks $b"; exit 1; }
+              grep -q "/$b\$" <<<"$list" || { echo "::error::$a lacks $b"; exit 1; }
             done
             n=$((n + 1))
           done
