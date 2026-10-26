@@ -149,6 +149,18 @@ The release workflow publishes the section whose heading matches the tag
   notes in the audit records (#25). The `[0.1.0]` notes below keep the
   original wording.
 
+- Tests: three gaps of the differential test harness
+  (`reference/difftest`) are closed; the library and the programs are
+  unchanged. In count-only mode the brute force now checks the `-Z`
+  statistics per size, not only the total, so upstream's wrong count
+  under M1 is recognized as M1 (seed 1, case 31717). With an evaluation
+  measure, equal counts with different `-Z` statistics are a membership
+  difference, which R2 excuses (seed 11, case 10442). A case of M2
+  (`-s0`) with items of frequency 0 is compared in full with upstream
+  run with `-s-1`, since the kept items change upstream's tie order and
+  with it the order-dependent `-ax` evaluation (seed 1, case 67615; the
+  M2 row of `docs/differences.md` now describes this) (#29).
+
 - The command-line program applies absolute support thresholds written
   as integers exactly (audit ALG-3, #18; `docs/differences.md` N3, a
   known limitation of v0.1.0): `-s-<n>`, `-S-<n>` and negative `-F`

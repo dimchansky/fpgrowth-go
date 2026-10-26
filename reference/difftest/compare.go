@@ -74,6 +74,7 @@ type outcome struct {
 	cExempt    bool     // ... and differed only in channels the deviations excuse
 	rerun      rerunFunc
 	reruns     int     // differences classified by a rerun with the measure (countByRerun, recordsByRerun)
+	m2Rerun    bool    // M2 with items of frequency 0: compared with C rerun with -s-1 (withMinSupportOne)
 	bfChecked  bool    // Go was checked against the brute force
 	bfSubset   bool    // ... only as a subset (evaluation measure)
 	maxRel     float64 // largest relative difference of equal 17-digit values (relTol)
@@ -122,7 +123,9 @@ func (o *outcome) fail(format string, args ...any) {
 
 // evaluate compares the C and Go runs of a case. rerun, if not nil, lets
 // count-only cases with an evaluation measure be rerun with an output
-// file to classify differing counts (see countByRerun).
+// file to classify differing counts (see countByRerun), and replaces
+// the C run of a case of M2 with items of frequency 0 by a run with the
+// port's effective minimum support (-s-1).
 func evaluate(c *tcase, cr, gr *runResult, rerun rerunFunc) *outcome {
 	o := &outcome{rerun: rerun}
 	if cr.runErrMsg != "" || gr.runErrMsg != "" {
@@ -139,6 +142,28 @@ func evaluate(c *tcase, cr, gr *runResult, rerun rerunFunc) *outcome {
 		return o
 	}
 	o.deviations = caseDeviations(c, db)
+	if rerun != nil && slices.Contains(o.deviations, "M2") && hasZeroFrequency(c, db) {
+		// M2: upstream (-s0) keeps the items of frequency 0, the port
+		// drops them. Besides upstream's crashes and support-0 sets,
+		// the kept items change the positions of the others in
+		// upstream's unstable frequency sort, and with them the tie
+		// order of items of equal frequency (P5), on which the default
+		// item set evaluation (-ax, P6), and so the values, the sets an
+		// evaluation threshold selects and the output order, depend
+		// (difftest seed 1 case 67615). The port's result must be
+		// upstream's with the port's effective minimum support:
+		// compare with C rerun with -s-1, in full and without M2's
+		// exemptions. (Removing the absent items from the -R selection
+		// instead does not give the port's order: it moves the other
+		// items in the sort's input as well.)
+		if vc := c.withMinSupportOne(db); vc != nil {
+			if vcr, _ := rerun(vc); vcr.runErrMsg == "" {
+				c, cr = vc, vcr
+				o.deviations = caseDeviations(c, db)
+				o.m2Rerun = true
+			}
+		}
+	}
 	o.byteEqual = !cr.signaled && cr.exit == gr.exit && bytes.Equal(cr.stdout, gr.stdout) &&
 		bytes.Equal(cr.stderr, gr.stderr) && bytes.Equal(cr.out, gr.out) && bytes.Equal(cr.psp, gr.psp) &&
 		cr.hasOut == gr.hasOut && cr.hasPsp == gr.hasPsp
@@ -263,9 +288,12 @@ func (o *outcome) compareC(c *tcase, db *bfDB, cr, gr *runResult) []cdiff {
 	if c.countOnly {
 		if (!bytes.Equal(cr.stdout, gr.stdout) || !bytes.Equal(cr.stderr, gr.stderr)) && !o.countByRerun(c, db, cr, gr) {
 			switch {
-			case reportedCount(cr.stderr) != reportedCount(gr.stderr) && c.eval != 'x':
+			case c.eval != 'x' && (reportedCount(cr.stderr) != reportedCount(gr.stderr) || !bytes.Equal(cr.stdout, gr.stdout)):
 				// different sets or rules passed the measure, which the
-				// brute force (a subset check) cannot decide
+				// brute force (a subset check) cannot decide: different
+				// counts, or equal counts with different -Z statistics
+				// (sets of other sizes; R2 with -p > 0, difftest seed 11
+				// case 10442)
 				kind = diffRecords
 			case reportedCount(cr.stderr) != reportedCount(gr.stderr) || !bytes.Equal(cr.stdout, gr.stdout):
 				kind = diffCount

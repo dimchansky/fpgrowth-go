@@ -521,6 +521,20 @@ func (c *tcase) writeFiles(dir string) error {
 	return nil
 }
 
+// withMinSupportOne returns a copy of a case with the absolute minimum
+// support 1 (-s-1), the effective minimum support of the port for a
+// case of deviation M2 (-s0), or nil if the copy still triggers M2 (for
+// rules, a minimum confidence of 0 keeps the rule item threshold at 0).
+// Upstream must give the port's result on the copy.
+func (c *tcase) withMinSupportOne(db *bfDB) *tcase {
+	rc := *c
+	rc.sArg = -1
+	if slices.Contains(caseDeviations(&rc, db), "M2") {
+		return nil
+	}
+	return &rc
+}
+
 // selectionSet returns the item selection as a set, or nil.
 func (c *tcase) selectionSet() map[string]bool {
 	if c.selection == nil {
