@@ -45,8 +45,11 @@ linked documents.
 
 ## Open problems
 
-- None blocking known. Post-v0.1.0 roadmap: issue #24. Still open there:
-  `fpgpsp` (#23).
+- None blocking known. Post-v0.1.0 roadmap: issue #24.
+- FEAT-1 (`fpgpsp`), issue #23: ported as `cmd/fpgpsp` with upstream's
+  defects fixed (U1-U25 in `docs/differences.md`); oracle
+  `reference/build.sh fpgpsp-fixed`, `TestFpgpsp`. The documentation of
+  the reason it had been deferred (#25) is corrected.
 - FEAT-2 (zlib-compressed output `-z`), issue #22: resolved (PR #37).
   The CLI accepts `-z` like upstream's `USE_ZLIB` build and compresses
   only the item set/rule output with `compress/zlib`; `reference/build.sh
@@ -100,7 +103,7 @@ linked documents.
   literals of `-s`, `-S` and `-F` are exact up to 2^63−1, larger ones
   saturate as before, every other spelling and all results up to 2^53
   are unchanged (N3 in `docs/differences.md`).
-- Triage (outside the roadmap): #25 (fpgpsp documentation, handled by
+- Triage (outside the roadmap): #25 (fpgpsp documentation, corrected in
   #23), #29 (three difftest harness gaps), #34 (maximal check on the NEW-3 shape). Follow-up noted in PR #28:
   FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,
   Low).

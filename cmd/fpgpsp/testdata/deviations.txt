@@ -1,0 +1,2 @@
+# Cases whose Go output differs from the C oracle by design: "<name> <id> <comment>".
+onearg U6 one argument: the spectrum goes to stdout (upstream: wrong number of arguments)

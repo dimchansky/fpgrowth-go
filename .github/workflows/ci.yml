@@ -309,6 +309,9 @@ jobs:
         # skipping TestZlib.
         working-directory: reference
         run: ./build.sh zlib
+      - name: Build the fpgpsp oracle (fpgpsp-fixed)
+        working-directory: reference
+        run: ./build.sh fpgpsp-fixed
       - name: Differential tests
         working-directory: reference
         # -artifacts keeps the inputs and outputs of failing cases.
@@ -325,6 +328,8 @@ jobs:
             reference/build/release/smoke.log
             reference/build/zlib/build.log
             reference/build/zlib/smoke.log
+            reference/build/fpgpsp-fixed/build.log
+            reference/build/fpgpsp-fixed/smoke.log
             ${{ runner.temp }}/difftest-artifacts
           if-no-files-found: ignore
           retention-days: 14
@@ -356,3 +361,24 @@ jobs:
         run: |
           ls -l dist
           cat dist/checksums.txt
+      - name: Check that every archive has both programs
+        run: |
+          n=0
+          # listings are read in full first: grep -q would close the pipe
+          # early and fail the step under pipefail
+          for a in dist/*.tar.gz; do
+            list=$(tar -tzf "$a")
+            for b in fpgrowth fpgpsp; do
+              grep -q "/$b\$" <<<"$list" || { echo "::error::$a lacks $b"; exit 1; }
+            done
+            n=$((n + 1))
+          done
+          for a in dist/*.zip; do
+            list=$(unzip -l "$a")
+            for b in fpgrowth.exe fpgpsp.exe; do
+              grep -q "/$b\$" <<<"$list" || { echo "::error::$a lacks $b"; exit 1; }
+            done
+            n=$((n + 1))
+          done
+          echo "$n archives with fpgrowth and fpgpsp"
+          [ "$n" -eq 6 ]

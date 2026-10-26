@@ -154,3 +154,8 @@ func gammaQ(n, x float64) float64 {
 func chi2cdfQ(x, df float64) float64 {
 	return gammaQ(0.5*df, 0.5*x)
 }
+
+// LogGamma is logGamma for other internal packages: ln(Gamma(n)) for
+// n > 0, a port of gamma.c's logGamma (used by fpgpsp's estimation,
+// internal/psp).
+func LogGamma(n float64) float64 { return logGamma(n) }

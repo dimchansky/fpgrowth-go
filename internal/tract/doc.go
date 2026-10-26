@@ -62,11 +62,14 @@
 //	tbg_tract(bag, j), j = 0..n-1    Bag.All
 //	tbg_tract(bag, j), j = n-1..0    Bag.Backward
 //
-// Not ported (unreachable from fpgrowth or replaced by the prefix tree):
-// item weights (IB_WEIGHTS, WTRACT), the transaction tree, writing,
-// surrogates, ib_add2ta/ib_finta, tbg_trim, tbg_mirror, tbg_unpack,
+// Not ported here (unreachable from fpgrowth or replaced by the prefix
+// tree): item weights (IB_WEIGHTS, WTRACT), the transaction tree,
+// writing, ib_add2ta/ib_finta, tbg_trim, tbg_mirror, tbg_unpack,
 // tbg_icnts, the bucket sort of tbg_sort and ptr_mrgsort. Reading the
-// input format and -R files is done by package tabread.
+// input format and -R files is done by package tabread. The surrogate
+// generators of TA_SURR (tbg_ident, tbg_random, tbg_swap, tbg_shuffle,
+// tbg_istab), which fpgpsp uses, are ported by package psp on arrays of
+// transactions it builds from a Bag.
 //
 // # Deviations from upstream
 //

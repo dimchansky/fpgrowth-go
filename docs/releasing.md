@@ -203,7 +203,7 @@ public at this point (see [Cutting a release](#cutting-a-release)).
    attestation). It
    - extracts the tag's section of `CHANGELOG.md` as the release notes;
    - runs GoReleaser with the pinned Go toolchain and no restored build
-     cache: `fpgrowth` binaries for linux, darwin and windows on amd64 and
+     cache: `fpgrowth` and `fpgpsp` binaries for linux, darwin and windows on amd64 and
      arm64, built with `CGO_ENABLED=0 -trimpath -ldflags="-s -w"` and file
      times from the commit (reproducible: rebuilding the same commit with
      the same toolchain gives the same `checksums.txt`);

@@ -336,3 +336,121 @@ The full list with evidence and tests is in
 Kept as upstream: `-n0`, `-S0` and infinite values are accepted (empty or
 saturated results), and integer option values are truncated from C `long`
 to `int` like upstream.
+
+# Command-line reference: `fpgpsp`
+
+`cmd/fpgpsp` is a Go port of upstream's second program, `fpgpsp` 1.3
+(2024.12.12, part of the FP-Growth 6.21 sources): it generates a pattern
+spectrum from surrogate data sets (randomized versions of the input that
+destroy the dependencies between items) or estimates it, and optionally
+prints the decision border it induces. The spectrum is the average number
+of item sets per (size, support) signature in the surrogates; item sets of
+the real data whose support exceeds the border are unlikely under the
+null model of the surrogates (pattern spectrum filtering). Upstream's
+defects are fixed (rows U1-U20 and U25 of [differences.md](differences.md),
+[upstream/fpgpsp.md](upstream/fpgpsp.md)); otherwise options, formats,
+messages and exit codes are upstream's.
+
+```bash
+go install github.com/dimchansky/fpgrowth-go/cmd/fpgpsp@latest
+```
+
+```text
+fpgpsp [options] infile [outfile]
+```
+
+- Without arguments: the usage text on standard output, status 0; `-!`
+  prints the variants and methods. With arguments, the banner and the log
+  go to standard error.
+- `infile` is required (`-` for standard input). The spectrum goes to
+  `outfile`, `-` for standard output, and also to standard output when
+  `outfile` is omitted (upstream requires it although its usage calls it
+  optional; U6). Each line is `size support value`, where value is the
+  average count per surrogate (`%g`, so 6 significant digits).
+- `-D` prints the decision border on standard output after the spectrum.
+- The option syntax is fpgrowth's (clusters, `strtol`/`strtod` values,
+  character options, string options from the rest of the argument or the
+  next argument).
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `-t#` | `s` | Target: `s` frequent, `c` closed, `m` maximal item sets, `g` generators. |
+| `-m#`, `-n#` | 1, no limit | Minimum and maximum item set size. |
+| `-s#` | 10 | Minimum support: percentage if >= 0, else absolute (negated). |
+| `-A#` | `c` | FP-growth variant (`s`, `c`, `d`, `t`), as fpgrowth's `-A`. |
+| `-x`, `-i`, `-u`, `-l#` | | No perfect extension pruning; no reordering (fpgrowth's `-j`); no head union tail pruning; items of the 16-items machine (16). |
+| `-g#` | `e` | Method: `e` estimate (no surrogates), `i` identity (the data itself, one data set), `r` transaction randomization (item frequencies and transaction sizes kept), `p` permutation by pair swaps (frequencies and sizes kept exactly), `s` column shuffle of table-derived data (every column's values kept). |
+| `-c#` | 1000 | Number of surrogate data sets; for `-ge` the number of surrogates the estimate stands for (counts are rounded to it). |
+| `-e#` | 0.5 | `-ge`: probability dispersion factor; <= 0 assumes equal item probabilities. |
+| `-z#` | 1000 | `-ge`: item set samples per size. |
+| `-S#` | time | Seed of the random numbers; 0 also means the time. |
+| `-Z#` | all CPUs | Number of chains (upstream: threads); <= 0 means all CPUs (`runtime.NumCPU`). At most GOMAXPROCS chains run at a time; the result does not depend on that. |
+| `-D` | | Print the induced decision border. |
+| `-R#` | | Item selection file. |
+| `-r# -f# -b# -C#` | | Record and field separators, blanks, comment characters (as fpgrowth). |
+
+## Reproducibility
+
+The surrogates are generated in chains, one per thread of upstream's
+program: with `-Z k` and `-c n`, chain `i` (seed `S+i`) generates
+`ceil(n/k)` data sets (the last ones fewer, chains without data sets are
+not started), and the spectra are added. The result depends only on the
+input, the options, the seed and this partition, never on the machine or
+the scheduling; it does depend on `-Z` (more chains, other random
+numbers) and on `-A`, `-i` and `-t`, which change the internal item
+order. With fixed `-S` and `-Z` the output is byte for byte that of the
+C oracle (upstream with the fixes of `reference/patches/fpgpsp`). When
+`-S` or `-Z` is left at its default, the log shows the values used, for
+example `using -S1729593600 -Z8 (8 chain(s))`; pass them to repeat the
+run. The estimation depends on `-S` only through its samples (`-e` > 0)
+and not on `-Z`; its last digits can depend on the platform's `log` and
+`exp`.
+
+The surrogates are made from the data after the `-s` and `-m` filters
+(infrequent items are removed, transactions with fewer than `-m` items
+emptied), as upstream does: the null model depends on these options.
+
+## Using the decision border with fpgrowth
+
+The border lists, for every size from `-m` on, the smallest support that
+exceeds every support of the spectrum at that and all larger sizes. Its
+values are absolute supports, while fpgrowth's `-F` reads positive values
+as percentages, so negate every value and use the same `-m`:
+
+```bash
+b=$(fpgpsp -gp -s-5 -m2 -c200 -S1 -D in.tab /dev/null)   # e.g. 20:17:15:10:7
+fpgrowth -s-5 -m2 -F"$(printf '%s' "$b" | sed 's/[0-9][0-9]*/-&/g')" in.tab out.txt
+```
+
+Passed as `-F20:17:...`, the values would mean 20%, 17%, ... of the
+transactions.
+
+## Exit status
+
+As fpgrowth's where the messages agree; specific to fpgpsp:
+
+| Status | Message (after `fpgpsp: `) |
+| --- | --- |
+| 8 | `wrong number of arguments` (no input file, or more than two file names) |
+| 9 | `invalid target type '<c>'` |
+| 10 | `invalid item set size <n>` |
+| 11 | `invalid minimum support <x>` |
+| 12 | `invalid fpgrowth variant '<c>'` |
+| 13 | `invalid number of surrogates <n>`; `invalid probability dispersion factor nan`, `invalid number of item set samples <n>` (`-ge`, U15) |
+| 14 | `invalid surrogate data generation method '<c>'` |
+| 15 | `no (frequent) items found` |
+| 27 | `transactions are not table-derived` (`-gs`) |
+| 130 | `interrupted` (SIGINT) |
+
+## Deviations from upstream
+
+All in [differences.md](differences.md), rows U1-U25 (section
+"fpgpsp"): the defect fixes U1-U5, U11-U20 and U25 change results (surrogates
+from all records, every surrogate mined on its own, the full decision
+border, the frequency repair, the estimation's frequencies and slot
+counts, the 16-items machine on table data, no data races), and U6-U9,
+U14, U15 and U21-U24 concern the command line (one argument, negative
+seeds of `-ge`, ordered progress, chain errors, messages, validation,
+SIGINT, the CPU count, 64-bit seeds, the log line of default seeds).

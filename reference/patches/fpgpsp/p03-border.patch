@@ -1,0 +1,31 @@
+P3 (issue #23, U5): decision border (-D) up to the largest pattern size
+with a signature, also for a single size.
+
+The largest size of the border is the largest size zmax for which
+psp_max4sz(psp, zmax) >= psp_min4sz(psp, zmin), i.e. the largest support
+at zmax is compared with the lower end of the counter array of the
+smallest size, which depends on the resize history (BLKSIZE steps); on
+dense data the border is empty. Comparing with the row's own lower end
+selects the largest size whose row holds a signature. The border was
+also not printed at all when it has a single size (zmax == zmin).
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -735,7 +735,7 @@
+   /* --- print decision border --- */
+   if (decbdr) {                 /* if to print the decision border */
+     for (zmax = psp_max(psp); zmax >= zmin; zmax--)
+-      if (psp_max4sz(psp, zmax) >= psp_min4sz(psp, zmin))
++      if (psp_max4sz(psp, zmax) >= psp_min4sz(psp, zmax))
+         break;                  /* find the largest pattern size */
+     bmin   = (RSUPP)smin;       /* get the minimum support */
+     border = (RSUPP*)malloc(((size_t)zmax+1) *sizeof(RSUPP));
+@@ -746,7 +746,7 @@
+       bmin = border[m];         /* get min. support for significance */
+     }                           /* and ensure a monotone border */
+     for (m = zmin; m < zmax; m++) printf("%"RSUPP_FMT":", border[m]);
+-    if (zmax > zmin) { printf("%"RSUPP_FMT"\n", border[zmax]); }
++    if (zmax >= zmin) { printf("%"RSUPP_FMT"\n", border[zmax]); }
+   }                             /* print the decision border */
+ 
+   /* --- clean up --- */

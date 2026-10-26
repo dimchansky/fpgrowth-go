@@ -1,0 +1,27 @@
+P6 (issue #23, U16): give every surrogate new closed/maximal and
+generator filters.
+
+The item set reporter filters closed and maximal item sets with a
+repository of the sets found so far (clomax) and generators with a hash
+table of the generators found so far (gentab). The reporter is reused
+for every surrogate and neither repository is reset, so later
+surrogates are checked against the sets of earlier ones: closed and
+maximal sets are lost (e.g. -gp -tm -s-2 on a 4-item data set from the
+third surrogate on) and for generators the program crashes (SIGSEGV in
+is_isgen, report.c, from the second surrogate on, e.g. -gr -tg -s-4 on
+dense data). isr_settarg with the reporter's target and mode and the
+direction of fpg_report (-1) deletes both and creates new ones. Extends
+clrpex of P2b, which is called after every fpg_mine.
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -208,7 +208,8 @@
+   for (n = rep->pxpp[0] & ~ITEM_MIN; --n >= 0; )
+     rep->pxpp[*rep->pexs++] &= ~ITEM_MIN;
+   rep->pxpp[0] &= ITEM_MIN;     /* unmark the items, clear the count */
+-}  /* clrpex() */
++  isr_settarg(rep, rep->target, rep->mode, -1); /* P6: new c/m and */
++}  /* clrpex() */                /* generator filters (fpg_report: -1) */
+ 
+ static WORKERDEF(worker, p)
+ {                               /* --- worker function for a thread */

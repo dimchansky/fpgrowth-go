@@ -1,0 +1,5 @@
+fpgpsp - generate or estimate a pattern spectrum (FP-growth)
+version 1.3 (2024.12.12)         (c) 2015-2024   Christian Borgelt
+reading table.tab ... [9 item(s), 14 transaction(s)] done [T].
+generating pattern spectrum ...         20[12 signature(s)] done [T].
+writing <stdout> ... [12 signature(s)] done [T].

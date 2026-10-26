@@ -283,3 +283,21 @@ func TestThresholdsHugeWeights(t *testing.T) {
 		t.Errorf("0.8 of 5·2^60: set minimum %d (upstream %d)", th.supp, upSetMin(5<<60, 0.8))
 	}
 }
+
+// TestThresholdsExported checks that Thresholds gives the thresholds that
+// Data derives (MinSupport, MaxSupport).
+func TestThresholdsExported(t *testing.T) {
+	for _, c := range []struct {
+		smin, smax float64
+		w          tract.Supp
+		lo, hi     tract.Supp
+	}{
+		{10, 100, 25, 3, 25}, {-4, 100, 25, 4, 25}, {0, 50, 9, 1, 4}, {33.4, -7, 3, 2, 7},
+	} {
+		cfg := DefaultConfig()
+		cfg.SMin, cfg.SMax = c.smin, c.smax
+		if lo, hi := Thresholds(cfg, c.w); lo != c.lo || hi != c.hi {
+			t.Errorf("Thresholds(%g, %g, %d) = %d, %d, want %d, %d", c.smin, c.smax, c.w, lo, hi, c.lo, c.hi)
+		}
+	}
+}

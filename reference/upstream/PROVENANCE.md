@@ -37,9 +37,15 @@ archive matches. No newer source release was found.
 | `math/src` | Rule evaluation measures (`ruleval.c`), chi² and gamma functions |
 | `util/src` | Table reader/scanner, symbol table, arrays, memory system, escapes |
 
-Note: `fpgrowth/src/makefile` also describes an `fpgpsp` program that needs
-`tract/src/tars.c` and `tract/src/pspest.c`. Those files are **not**
-included in this archive, so `fpgpsp` cannot be built from it.
+Note: `fpgrowth/src/makefile` also builds a second program, `fpgpsp`
+(pattern spectra from surrogate data). Its objects `tract/src/tars.o` and
+`tract/src/pspest.o` are compiled from `tract.c` (with `-DTA_READ
+-DTA_SURR`) and `patspec.c` (with `-DPSP_REPORT -DPSP_ESTIM`), which are in
+the archive, so `fpgpsp` builds from it (`reference/build.sh fpgpsp`); it
+also links `util/src/random.c` and the system's pthreads library. An
+earlier version of this note said that `tars.c` and `pspest.c` were
+missing; that was a misreading of the makefile (corrected 2026-10-23,
+issues #23 and #25).
 
 ## License
 

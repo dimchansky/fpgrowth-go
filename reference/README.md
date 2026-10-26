@@ -2,14 +2,17 @@
 
 This directory builds Christian Borgelt's unmodified C implementation
 (`upstream/fpgrowth-6.21/`) into the `fpgrowth` executables that serve
-as the oracle for differential tests of the Go port. Nothing here is
-part of the published Go module.
+as the oracle for differential tests of the Go port, and into upstream's
+second program `fpgpsp` (pattern spectra from surrogate data). Nothing
+here is part of the published Go module.
 
 ```bash
 cd reference
 ./build.sh                 # release, debug, asan and native
-./build.sh release         # one or more of: release | debug | asan | native | zlib | all
+./build.sh release         # one or more of: release | debug | asan | native | zlib | fpgpsp | fpgpsp-fixed | all
 ./build.sh zlib            # release with USE_ZLIB (option -z); needs zlib
+./build.sh fpgpsp          # the fpgpsp program (release flags, -lpthread)
+./build.sh fpgpsp-fixed    # fpgpsp with patches/fpgpsp/*.patch: the oracle of cmd/fpgpsp
 CC=gcc ./build.sh          # another compiler (the default is cc)
 ```
 
@@ -19,7 +22,12 @@ and must produce identical output. `native` is the upstream build with
 no added flags, for performance comparisons only. `zlib` is `release`
 compiled with `-DUSE_ZLIB` and linked with `-lz`, upstream's optional
 build with option `-z` (zlib-compressed output); it is the oracle of
-`difftest`'s `TestZlib` and is not part of `all`.
+`difftest`'s `TestZlib` and is not part of `all`. `fpgpsp` builds the
+make target `fpgpsp` instead of `fpgrowth`, with the `release` flags;
+it is not part of `all` either. `fpgpsp-fixed` is `fpgpsp` with the
+oracle-only patches in `patches/fpgpsp/` applied in name order (see
+[fpgpsp oracle patches](#fpgpsp-oracle-patches)); it is the oracle of
+`difftest`'s `TestFpgpsp`.
 
 `build.sh` prints one `<variant> <absolute path>` line per binary on
 stdout; progress goes to stderr. It exits non-zero if the pristine
@@ -51,6 +59,8 @@ linker flags, e.g. `-D_FILE_OFFSET_BITS=64`; empty by default).
 | `asan` | `-ffp-contract=off` | `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer` | `$(ADDFLAGS) -g -fsanitize=address,undefined` | on | oracle, sanitizers |
 | `native` | (empty) | upstream default `-DNDEBUG -O3 -funroll-loops` | upstream default | off | performance only |
 | `zlib` | `-ffp-contract=off -DUSE_ZLIB` | as `release` | as `release`; `ADDLIBS=-lz` | off | oracle of `-z` (`TestZlib`) |
+| `fpgpsp` | `-ffp-contract=off` | as `release` | as `release`; the makefile adds `-lpthread` | off | pristine `fpgpsp` program (issue #23) |
+| `fpgpsp-fixed` | `-ffp-contract=off` | as `release` | as `fpgpsp` | off | oracle of `cmd/fpgpsp` (`TestFpgpsp`) |
 
 `$(CFBASE)` is the upstream warning set plus `-c` and `$(ADDFLAGS)`:
 `-Wall -Wextra -Wno-unused-parameter -Wconversion -pedantic -c $(ADDFLAGS)`
@@ -101,6 +111,8 @@ reference/build/debug/fpgrowth/src/fpgrowth
 reference/build/asan/fpgrowth/src/fpgrowth
 reference/build/native/fpgrowth/src/fpgrowth
 reference/build/zlib/fpgrowth/src/fpgrowth
+reference/build/fpgpsp/fpgrowth/src/fpgpsp
+reference/build/fpgpsp-fixed/fpgrowth/src/fpgpsp
 ```
 
 Each `reference/build/<variant>/` directory is a full copy of
@@ -140,8 +152,15 @@ upstream directory is never written to.
    `ADDLIBS`/`ADDOBJS` are referenced but never assigned upstream, so they
    are set empty to keep the environment out of the build; `MAKEFLAGS`
    and friends are unset for the same reason. Only the `fpgrowth` target
-   is built: the default `all` target also wants `fpgpsp`, whose sources
-   (`tract/src/tars.c`, `pspest.c`) are not in the archive.
+   is built, or the `fpgpsp` target for the `fpgpsp` variant. All sources
+   of `fpgpsp` are in the archive: the makefile's `tars.o` and `pspest.o`
+   are object files compiled from `tract/src/tract.c` (with `-DTA_READ
+   -DTA_SURR`, the surrogate generators) and `tract/src/patspec.c` (with
+   `-DPSP_REPORT -DPSP_ESTIM`, the estimation); it also links
+   `util/src/random.c`, `fpgrowth.c` (without `FPG_MAIN`) and `fpgpsp.c`
+   (with `-DFPGPSP_MAIN`), and `-lpthread`. (Earlier versions of this
+   file said that `tars.c` and `pspest.c` were missing; that was a
+   misreading of the makefiles, see issue #25.)
 
 4. **Checks.** Every compile command in `build.log` must contain
    `-ffp-contract=off` (and none may for `native`). `nm` must show the
@@ -149,9 +168,39 @@ upstream directory is never written to.
    glibc/musl) in `debug` and `asan` but not in `release`/`native`, and
    `__asan_init`/`__ubsan_*` in `asan`. Each binary then mines
    `fpgrowth/ex/test1.tab` at 50% support; the `zlib` binary must also
-   list `-z` in its usage message and write a zlib header with `-z`.
+   list `-z` in its usage message and write a zlib header with `-z`. The
+   `fpgpsp` binary must list `-g#` in its usage message and write a
+   pattern spectrum for `-ge -S1`, `-gr -c4 -S1 -Z1` and
+   `-gp -c4 -S1 -Z2` (two threads) at `-s-2`.
 
 A clean build of all four variants takes about 18 s on an M-series Mac.
+
+## fpgpsp oracle patches
+
+Upstream's `fpgpsp` has defects that change its results (issue #23,
+`docs/upstream/fpgpsp.md`, `docs/differences.md` rows U1-U20, U25). The Go
+port fixes them, and the differential oracle is upstream with the
+smallest source changes that fix them. The patches live in
+`patches/fpgpsp/`, are applied only to the `fpgpsp-fixed` variant (and by
+`harness/fpgpsp/gen.sh`), and each carries its rationale in its header:
+
+| Patch | Defect | Change |
+| --- | --- | --- |
+| `p01-no-reduce.patch` | U2-U4: equal transactions are merged into weighted ones before surrogates are generated or the spectrum is estimated | `FPG_NOREDUCE` in the two `fpg_data` calls of `fpg_genpsp` and `fpg_estpsp` |
+| `p02-recount.patch` | U1: every surrogate is mined with the item frequencies of the first one (stale cache) | `tbg_ifrqs(bag, 1)` in the five miners |
+| `p02b-clear-pex.patch` | U1: the root-level perfect extensions of a surrogate stay in the reporter; with P02 alone item sets with duplicate items overflow the reporter | clear them after every `fpg_mine` (both loops) |
+| `p03-border.patch` | U5: `-D` compares with the counter array of the smallest size and prints nothing for one size | compare with the size's own row; print for `zmax >= zmin` |
+| `p04-repair.patch` | U12: the frequency repair of `tbg_random` never examines the last item of its search | examine it |
+| `p05-estim-frequencies.patch` | U13: `-ge` with `-m` > 1 divides unfiltered item frequencies by the filtered extent | frequencies of the filtered bag |
+| `p06-reset-filters.patch` | U16: the closed/maximal and generator filters of the reporter keep the sets of earlier surrogates (lost sets; crash for `-tg`) | new filters after every `fpg_mine` |
+| `p07-taslots-largest.patch` | U17: the slot counts of `-ge` ignore transactions that contain every item | start the search for the largest size at the number of items |
+| `p08-size0-row.patch` | U18: a second support for size 0 (`-ge -m0`) overflows the spectrum's row buffer | size-0 rows like all others |
+| `p09-shuffle-no-fim16.patch` | U19: `-gs` mines unrecoded data with the 16-items machine (`-As`/`-Ad`), which loses item sets | no 16-items machine for `-gs` |
+| `p10-fim16-init.patch` | U20: threads fill the static table of the 16-items machine concurrently (data race; nondeterministic spectra with `-Z` > 1) | fill it before the threads start |
+| `p11-generators-nofilter.patch` | U25: for generators the preparation empties transactions with fewer than `-m` items (core B3, fpgrowth's M3) | no `-m` filter for generators, also in the threads' copies |
+
+`patches/fpgpsp/` is never applied to the other variants (the top-level
+`patches/*.patch` would be, but there are none).
 
 ## Running the sanitizer build
 
@@ -322,6 +371,20 @@ DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -ar
   equal. `DIFFTEST_LARGE` sets the number of cases (default 300, about
   5 s; `-short` 6; 0 skips), e.g. `DIFFTEST_LARGE=10000` for a larger
   run (about 3 minutes on 10 cores).
+- **fpgpsp.** `TestFpgpsp` (`fpgpsp_test.go`) compares `cmd/fpgpsp`
+  with the `fpgpsp-fixed` oracle (built with `./build.sh fpgpsp-fixed` if
+  missing; `DIFFTEST_C_FPGPSP`, `DIFFTEST_GO_FPGPSP` override) on random
+  data sets (independent items, duplicates, tables, dense data, a
+  universal item, sparse bins) with every fpgpsp option and fixed `-S` and
+  `-Z`: byte-identical output for the surrogate methods (without the
+  progress counter of threaded runs, which is racy upstream), the
+  estimation within one count of one cell per case and in at most 1 +
+  0.1% of the estimations, every tolerated cell logged
+  (`docs/upstream/fpgpsp.md` §7); on darwin Apple's `%g` ties are
+  normalized (F-2).
+  Options that would trigger a miner deviation (M1, M4, M5, M9) are
+  avoided. `DIFFTEST_FPGPSP_CASES` (default 3000, `-short` 300),
+  `DIFFTEST_FPGPSP_ONLY`, `-artifacts`.
 - **Report.** The summary lists cases per verdict (byte-equal,
   semantic-equal, tolerated, error-equal, deviation-verified, FAIL),
   brute-force checks, tolerated values, count-only reruns, the cases with

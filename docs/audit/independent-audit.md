@@ -158,6 +158,14 @@ INF-13..19.
 
 ### Feature completeness (1.4)
 
+> **Note (2026-10-23, issues #23, #25).** The statement in the next item that
+> `tars.c` and `pspest.c` are missing from the archive is wrong: `tars.o`
+> and `pspest.o` are objects built from `tract/src/tract.c` (`-DTA_READ
+> -DTA_SURR`) and `tract/src/patspec.c` (`-DPSP_REPORT -DPSP_ESTIM`),
+> which are in the archive. `fpgpsp` builds from it and has since been
+> ported (`cmd/fpgpsp`, `docs/upstream/fpgpsp.md`). The record is kept
+> as written.
+
 - **fpgpsp** (pattern spectrum from surrogate data, used for significance
   filtering via `-F`): `fpgpsp.c` is in the archive but needs `tars.c`,
   `pspest.c` and pthreads, which the archive does not contain. Deferred

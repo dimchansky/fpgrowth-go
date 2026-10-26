@@ -1,0 +1,23 @@
+P7 (issue #23, U17): the slot counts of the estimation include the
+transactions that contain every item.
+
+taslots counts the transactions per size in cnts[0..n] (n = number of
+items) and then searches the largest size with "while (--n > 0)", which
+starts below n: transactions with all n items are never expanded into
+their subsets, so they add nothing to the slots of the smaller sizes
+(with only such transactions nothing is estimated). The search now
+starts at n.
+
+--- a/tract/src/patspec.c
++++ b/tract/src/patspec.c
+@@ -473,8 +473,8 @@
+   if (!cnts) return NULL;       /* create a slot counter array */
+   for (r = tbg_cnt(tabag); --r >= 0; )
+     cnts[ta_size(tbg_tract(tabag, r))] += 1;
+-  while (--n > 0)               /* find the last non-zero entry */
+-    if (cnts[n] > 0) break;     /* (size of largest transaction) */
++  while ((n > 0) && (cnts[n] <= 0)) /* P7: find the last non-zero */
++    n--;                        /* entry (size of largest trans.) */
+   for (i = 0; i <= n; i++)      /* traverse the item set sizes */
+     for (k = 1; k < i; k++)     /* considering all possible subsets */
+       cnts[k] += cnts[i] *choose(i,k);

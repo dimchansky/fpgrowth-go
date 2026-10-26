@@ -1,0 +1,16 @@
+fpgrowth algorithm variants (option -A#)
+  s   simple  tree nodes with only successor and parent
+  c   complex tree nodes with children and siblings (default)
+  d   top-down processing on a single prefix tree
+  t   top-down processing of the prefix trees
+Variant 'd' does not support mining closed/maximal item sets,
+variant 't' does not support the use of a k-items machine, and
+only variant 'c' supports item reordering w.r.t. conditional support,
+but closed/maximal item sets can only be mined without reordering.
+These restrictions may be removed in future versions of this program.
+surrogate data generation methods (option -g#, default: -ge)
+  e    estimate a pattern spectrum (no surrogates)
+  i    identity (keep original data)
+  r    random transaction generation
+  p    permutation by pair swaps
+  s    shuffle table-derived data

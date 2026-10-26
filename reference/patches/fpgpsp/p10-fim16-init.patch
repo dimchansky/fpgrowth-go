@@ -1,0 +1,30 @@
+P10 (issue #23, U20): fill the static table of the 16-items machine
+before the threads start.
+
+m16_create fills the static table hibit[] on first use, testing
+hibit[0] != 0 as "not yet filled" and writing hibit[0] = 0 first. When
+two threads create their first machine at the same time, the second one
+sees hibit[0] == 0 and uses the partly filled table: a data race that
+makes multi-threaded runs with the 16-items machine (-As, -Ad, -l > 0,
+-Z > 1) nondeterministic (14 of 400 runs of one command under load gave
+7 different spectra). Creating and deleting one machine in fpg_genpsp,
+before any thread, fills the table once.
+
+--- a/fpgrowth/src/fpgpsp.c
++++ b/fpgrowth/src/fpgpsp.c
+@@ -46,6 +46,7 @@
+ #endif
+ #include "patspec.h"
+ #include "fpgpsp.h"
++#include "fim16.h"              /* P10 */
+ #ifdef FPGPSP_MAIN
+ #include "error.h"
+ #endif
+@@ -268,6 +269,7 @@
+   if (seed == 0) seed = (long)time(NULL);
+   if (surr == FPG_SHUFFLE)      /* P9: no 16-items machine for */
+     mode &= ~FPG_FIM16;         /* unrecoded data */
++  m16_delete(m16_create(+1, 1, NULL)); /* P10: fill the static table */
+ 
+   /* --- prepare data --- */
+   fpgrowth = fpg_create(target, supp, 100.0, 100.0, zmin, zmax,
