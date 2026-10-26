@@ -341,7 +341,9 @@ DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -ar
   `docs/differences.md`; `TestF1Reproducer`). The brute force checks the
   `-Z` statistics of count-only runs per size (at most, with a measure),
   and with a measure equal counts with different `-Z` statistics count
-  as a membership difference (`TestHarnessGaps`, #29).
+  as a membership difference, which with a measure any flagged deviation
+  except O3 excuses when C passes the brute force, as for records on one
+  side only (`TestHarnessGaps`, #29).
 - **Deviations.** Cases that can trigger a documented deviation
   (`docs/differences.md`: M1-M5, M9, R1-R3, R8, R11, O3, O4; predicates
   in `caseDeviations`, derived from the data: e.g. M1 only for `-At` with
@@ -358,12 +360,15 @@ DIFFTEST_SEED=1 DIFFTEST_LARGE_ONLY=17 go test ./difftest/ -run TestLarge -v -ar
   for M2, the spectrum for O3, values for R1, membership for R1/R2 and,
   with a measure, for record-level deviations). Only cases in which C
   fails the brute force, crashes or differs in an excused channel are
-  *deviation-verified*. A case of M2 (`-s0`) with items of frequency 0
-  (absent items of the `-R` file, items only in records of weight 0) is
-  compared with C rerun with `-s-1`, the port's effective minimum
-  support, in full and without M2's exemptions, since the kept items
-  change upstream's tie order of equal-frequency items and with it the
-  order-dependent `-ax` evaluation. Value-level measure deviations (R4-R7, R9)
+  *deviation-verified*. A case of M2 (`-s0`) is compared with C rerun
+  with `-s-1`, the port's effective minimum support, and the same
+  explicit `-v` (upstream's default `-v` depends on the sign of `-s`),
+  in full and without M2's exemptions (Go is not rerun): the items of
+  frequency 0 that upstream keeps (absent items of the `-R` file, items
+  only in records of weight 0) change its tie order of equal-frequency
+  items and with it the order-dependent `-ax` evaluation. Rules with
+  `-c0` still trigger M2 with `-s-1` and keep the comparison with the
+  `-s0` run and M2's exemptions. Value-level measure deviations (R4-R7, R9)
   excuse single records in the direction of the fix. Every successful Go
   run is also checked against the brute force and for consistency of its
   log count, `-Z` statistics and pattern spectrum.

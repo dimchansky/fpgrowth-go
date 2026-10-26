@@ -163,10 +163,14 @@ func run(bin, dir string, args []string) *runResult {
 	return r
 }
 
-// rerunIn returns a rerunFunc that runs both programs in dir.
+// rerunIn returns a rerunFunc that runs both programs (only C for a
+// cOnly case) in dir.
 func (b binaries) rerunIn(dir string) rerunFunc {
 	return func(c *tcase) (cr, gr *runResult) {
 		args := c.args()
+		if c.cOnly {
+			return run(b.c, dir, args), nil
+		}
 		return run(b.c, dir, args), run(b.goBin, dir, args)
 	}
 }
@@ -299,7 +303,7 @@ func (s *summary) String() string {
 	fmt.Fprintf(&b, "  largest difference of 17-digit values accepted as equal: %.3g relative;\n", s.maxRel)
 	fmt.Fprintf(&b, "    logarithmic measures (%s, b, j): %.3g relative, %.3g absolute\n", logMeasures, s.maxRelLog, s.maxAbsLog)
 	fmt.Fprintf(&b, "  cases whose differing counts or records a rerun with the measure explained: %d\n", s.reruns)
-	fmt.Fprintf(&b, "  passed cases of M2 with items of frequency 0, compared with C rerun with -s-1 (the port's minimum support): %d\n", s.m2Reruns)
+	fmt.Fprintf(&b, "  passed cases of M2 compared with C rerun with -s-1 (the port's minimum support): %d\n", s.m2Reruns)
 	fmt.Fprintf(&b, "  cases with a flagged deviation in which C passed the brute force and was compared in full: %d\n", s.devFull)
 	fmt.Fprintf(&b, "    of which C differed only in channels the deviations excuse (deviation-verified): %d\n", s.devExempt)
 	fmt.Fprintf(&b, "  deviation-verified cases whose C output the comparison accepted (C failed the brute force, e.g. O3's dropped empty set): %d\n", s.devCAgrees)

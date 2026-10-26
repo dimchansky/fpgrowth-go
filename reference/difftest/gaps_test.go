@@ -11,7 +11,8 @@ import (
 // checked only the total count (M1, difftest seed 1 case 31717), equal
 // counts with different -Z statistics were not record differences (R2,
 // seed 11 case 10442), and M2's zero-frequency items change upstream's
-// order-dependent evaluation (seed 1 case 67615).
+// order-dependent evaluation (seed 1 case 67615), so M2 cases are now
+// compared with upstream run with -s-1.
 
 // gapCase returns a case with the defaults of newCase's options.
 func gapCase(data string, f func(*tcase)) *tcase {
@@ -143,33 +144,6 @@ func TestCompareC_countOnlyStatsKind(t *testing.T) {
 	}
 }
 
-func TestHasZeroFrequency(t *testing.T) {
-	t.Parallel()
-	weighted := gapCase("a b|c", func(c *tcase) {})
-	weighted.txs[1].weight = 0
-	tests := []struct {
-		name string
-		c    *tcase
-		want bool
-	}{
-		{"absent selected item", m2Case(), true},
-		{"all selected items present", gapCase("a|b c", func(c *tcase) { c.selection = []string{"a", "c"} }), false},
-		{"item only in records of weight 0", weighted, true},
-		{"absent item of the appearance file", gapCase("a|b c", func(c *tcase) {
-			c.target, c.appear, c.appearLst = 'r', map[string]string{"z": "both"}, []string{"z"}
-		}), true},
-		{"no selection", gapCase("a|b c", func(c *tcase) {}), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := hasZeroFrequency(tt.c, newTestBF(t, tt.c)); got != tt.want {
-				t.Errorf("hasZeroFrequency = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestWithMinSupportOne(t *testing.T) {
 	t.Parallel()
 	c := m2Case()
@@ -235,6 +209,19 @@ func TestHarnessGaps(t *testing.T) {
 			// brute force and C's -s0 comparison
 			mutate: func(cr, gr *runResult) { *gr = *cr },
 		},
+		{
+			// M2 without items of frequency 0 (upstream crashes with
+			// -s0 here): still compared with C rerun with -s-1
+			name: "M2 without zero-frequency items", c: gapCase("a|b", func(c *tcase) { c.sArg, c.zmin, c.hasZMin = 0, 2, true }),
+			reason: func(o *outcome, _ *tcase, _ *bfDB, _ *runResult) string {
+				if o.verdict == verdictFail || !o.m2Rerun || slices.Contains(o.deviations, "M2") {
+					return "want a pass against C rerun with -s-1, without M2"
+				}
+				return ""
+			},
+			// Go reports the support-0 set {a,b}
+			mutate: func(_, gr *runResult) { gr.out = append(gr.out, "a b (0)\n"...) },
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -244,7 +231,14 @@ func TestHarnessGaps(t *testing.T) {
 			}
 			args := tt.c.args()
 			cr, gr := run(b.c, dir, args), run(b.goBin, dir, args)
-			o := evaluate(tt.c, cr, gr, b.rerunIn(dir))
+			rerun := b.rerunIn(dir)
+			o := evaluate(tt.c, cr, gr, func(rc *tcase) (*runResult, *runResult) {
+				vcr, vgr := rerun(rc)
+				if slices.Contains(rc.args(), "-s-1") && (!rc.cOnly || vgr != nil) {
+					t.Errorf("the -s-1 rerun ran Go too (cOnly %v)", rc.cOnly)
+				}
+				return vcr, vgr
+			})
 			if msg := tt.reason(o, tt.c, newTestBF(t, tt.c), cr); msg != "" {
 				t.Errorf("%s: verdict %s, deviations %v, m2Rerun %v, cFull %v, cExempt %v; %s\nC:  %q %q %q\nGo: %q %q %q\nfailures: %q",
 					args, o.verdict, o.deviations, o.m2Rerun, o.cFull, o.cExempt, msg,

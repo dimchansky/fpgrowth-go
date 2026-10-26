@@ -87,6 +87,8 @@ type tcase struct {
 	countOnly bool // no output file
 	stats     bool // -Z
 	spectrum  bool // -P
+
+	cOnly bool // a rerun runs only the C program (no option; see rerunFunc)
 }
 
 // isRules reports whether the target is association rules.

@@ -163,24 +163,6 @@ func topLevelElimination(c *tcase, db *bfDB, smin int64) bool {
 	return kept > 0 && elim > 0
 }
 
-// hasZeroFrequency reports whether upstream registers an item of
-// frequency 0, which it keeps with -s0 (M2): an item of the -R selection
-// or the appearance file that the data lacks, or an item only in
-// records of weight 0.
-func hasZeroFrequency(c *tcase, db *bfDB) bool {
-	for i := range db.items {
-		if db.supp[1<<i] == 0 {
-			return true
-		}
-	}
-	for _, it := range append(slices.Clone(c.selection), c.appearLst...) {
-		if _, ok := db.index[it]; !ok {
-			return true
-		}
-	}
-	return false
-}
-
 // noUsableItems reports whether no item has a positive support (and, for
 // rules, may appear in a rule): with a minimum support of at least 1 the
 // port must then fail with "no (frequent) items found".

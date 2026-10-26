@@ -155,11 +155,15 @@ The release workflow publishes the section whose heading matches the tag
   statistics per size, not only the total, so upstream's wrong count
   under M1 is recognized as M1 (seed 1, case 31717). With an evaluation
   measure, equal counts with different `-Z` statistics are a membership
-  difference, which R2 excuses (seed 11, case 10442). A case of M2
-  (`-s0`) with items of frequency 0 is compared in full with upstream
-  run with `-s-1`, since the kept items change upstream's tie order and
-  with it the order-dependent `-ax` evaluation (seed 1, case 67615; the
-  M2 row of `docs/differences.md` now describes this) (#29).
+  difference, as different counts already were; with a measure, any
+  flagged deviation except O3 excuses it when upstream passes the brute
+  force (seed 11, case 10442, R2). A case of M2 (`-s0`) is compared in
+  full with upstream run with `-s-1` and the same explicit `-v`, since
+  the zero-frequency items upstream keeps change its tie order and with
+  it the order-dependent `-ax` evaluation (seed 1, case 67615; the M2
+  row of `docs/differences.md` now describes this); rules with `-c0`,
+  which `-s-1` does not take out of M2, keep the previous comparison
+  (#29).
 
 - The command-line program applies absolute support thresholds written
   as integers exactly (audit ALG-3, #18; `docs/differences.md` N3, a
