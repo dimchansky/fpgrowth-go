@@ -1,6 +1,7 @@
 package fpg
 
 import (
+	"math"
 	"math/bits"
 	"slices"
 
@@ -690,7 +691,7 @@ func (c *extChecker) gallop(t int32) bool {
 type scanParams struct {
 	gallopMin, gallopRatio int        // keepSeek: |t| >= gallopMin, walk > gallopRatio·|candidates|
 	guard                  int        // stage b: more than guard candidates per cover transaction
-	mguard                 int        // scanMaximal: defer transactions of more than mguard items per cover transaction
+	mguard                 int        // scanMaximal: defer transactions of more than mguard items per cover transaction (< 0: all, tests)
 	lookup                 lookupMode // scanDeferred: search or count a deferred transaction (tests)
 }
 
@@ -858,7 +859,7 @@ func (c *extChecker) keepSeek(t int32) {
 // would raise it.)
 func (c *extChecker) scanMaximal(n int) bool {
 	touched := c.cand[:0]
-	long := c.setLen + c.mguard*n
+	long := c.deferLen(n)
 	ok := true
 	work := 0 // item visits (whole transactions), for the sibling rows
 scan:
@@ -955,6 +956,20 @@ scan:
 	}
 	c.deferred = def[:0]
 	return ok, touched, work
+}
+
+// deferLen returns the length above which scanMaximal defers a light
+// cover transaction of a cover of n transactions: |X| + mguard·n,
+// saturated at the maximum int (no overflow with 32-bit int); a negative
+// mguard (tests) defers every light transaction.
+func (c *extChecker) deferLen(n int) int {
+	switch {
+	case c.mguard < 0:
+		return -1
+	case c.mguard > 0 && n > (math.MaxInt-c.setLen)/c.mguard:
+		return math.MaxInt
+	}
+	return c.setLen + c.mguard*n
 }
 
 // countTx adds transaction t to the counts of scanMaximal (touched: the

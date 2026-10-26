@@ -1,6 +1,7 @@
 package fpg
 
 import (
+	"math"
 	"math/bits"
 	"math/rand/v2"
 	"os"
@@ -16,7 +17,7 @@ import (
 // Tests of the deferred long transactions of scanMaximal (issue #34).
 
 // plainGuard makes scanMaximal defer nothing: the plain scan.
-const plainGuard = 1 << 30
+const plainGuard = math.MaxInt
 
 // TestExtCheckMaximalMixedScaling guards the work of maximal checks on
 // covers of one long and short transactions (the lp shapes of
