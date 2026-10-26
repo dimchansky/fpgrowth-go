@@ -211,6 +211,9 @@ brute-force definitions. M3 is carried into the preparation by U25.
   (counting, recoding, the prefix-tree bag, the miner, a new reporter):
   that is P2, P2b and P6 by construction, and recoding does not change
   the spectrum (D5). The 16-items machine runs on recoded data only (P9).
+  When no item is frequent, the empty set is reported for the frequent,
+  closed and generator targets but not for maximal sets, as upstream and
+  `internal/oracle` define them (a maximal set is not empty).
 - Chains run in at most GOMAXPROCS goroutines (`cmd/fpgpsp`), the spectra
   are summed in part order; the library packages start no goroutines.
 - Floating point: the oracle is compiled with `-ffp-contract=off`; every

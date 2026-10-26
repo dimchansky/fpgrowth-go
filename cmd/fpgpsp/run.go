@@ -223,8 +223,8 @@ func (r *runner) estimate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 }
 
 // generate is fpg_genpsp: prepare the data, then generate and mine the
-// surrogate data sets of every part (one goroutine per part, like
-// upstream's threads) and sum their spectra in part order.
+// surrogate data sets of every part (upstream's threads; at most
+// GOMAXPROCS parts run at once) and sum their spectra in part order.
 func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string],
 	recs [][]tract.Item, method psp.Method, parts []psp.Part) (*report.Spectrum, *cliError) {
 	cfg := r.o.minerConfig()
@@ -233,7 +233,10 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 	if method == psp.Shuffle {
 		zmin := cfg.ZMin
 		if cfg.Target == report.TargetGenerators {
-			zmin = 0 // no -m filter for generators (U25, see psp.PrepConfig)
+			// No -m filter for generators (U25, see psp.PrepConfig). Table
+			// records all have the same size, so this changes no output;
+			// it keeps -gs consistent with the other methods.
+			zmin = 0
 		}
 		d = psp.TableData(recs, ib.Len(), zmin)
 		smin, smax = fpg.Thresholds(cfg, ib.TotalWeight())

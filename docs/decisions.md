@@ -57,8 +57,9 @@ goroutines, explicit evaluation filtering.
 
 ## D7. fpgpsp: a separate command with upstream's defects fixed (issue #23)
 
-Decided by the maintainer on 2026-10-23 (issue #23; design and its
-review in the issue's cycle notes).
+Proposed on 2026-10-23 for issue #23 and reviewed by two independent
+critics (`docs/reviews/post-v0.1.0/issue-23-*.md`); awaiting the
+maintainer's sign-off.
 
 - **Shape.** A second command, `cmd/fpgpsp`, with upstream's options,
   formats, messages and exit codes; no library API for now (a later
@@ -94,14 +95,17 @@ review in the issue's cycle notes).
   and the prefix tree costs time and memory: measured against the C
   oracle (-O3) on sparse, table and dense data, Go needs 1.8-3.3 times
   C's instructions and 1.4-2.5 times its user time, and about twice its
-  maximum resident memory at -Z64 (80-92 MB against 41 MB). Reusing the
+  maximum resident memory at -Z64 (80-92 MB against 41 MB, measured
+before the chains were bounded by GOMAXPROCS; afterwards 62-83 MB at
+-Z128 in the review). Reusing the
   item base and the recoding across surrogates is the follow-up, issue
   #39.
 - **Floating point.** The estimation follows C compiled with
-  `-ffp-contract=off` (explicit rounding of products, `mulAdd`); it is
-  compared with C by a derived tolerance of one count per cell, not by
-  byte goldens, because `log` and `exp` may differ in the last bit between
-  Go and the platform's libm.
+  `-ffp-contract=off` (explicit rounding of products, `mulAdd`). Because
+  `log` and `exp` may differ in the last bit between Go and the
+  platform's libm, its unrounded values are compared with a C trace to a
+  relative 1e-10, and printed counts may differ from C's by one count in
+  at most one cell of a rare estimation (`docs/upstream/fpgpsp.md` §7).
 - **Command line.** One argument is allowed (output to standard output,
   U6); `-` keeps working. SIGINT stops the program with status 130, as
   fpgrowth.
