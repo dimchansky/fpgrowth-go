@@ -81,8 +81,26 @@
 //     with C in full (records, order, stdout, stderr, spectrum) like any
 //     other case, so a flagged deviation does not hide differences.
 //
-// In count-only mode (no output file) only the counts can be compared.
-// If they differ and the case has an evaluation measure, both programs
+// A case of M2 (-s0) is compared with C rerun with -s-1, the port's
+// effective minimum support, and the same explicit -v (upstream's
+// default -v depends on the sign of -s; the cases always pass -v), in
+// full and without M2's exemptions; Go is not rerun. Upstream keeps the
+// items of frequency 0 (absent items of the -R file, items only in
+// records of weight 0), which besides crashes and support-0 sets change
+// the tie order of its unstable item sort (P5), and with it the values
+// of the order-dependent item set evaluation (-ax, P6) and the output
+// order. Rules with -c0 still trigger M2 with -s-1 (the rule item
+// threshold ceil(smin*conf) stays 0); they keep the comparison with the
+// -s0 run and M2's exemptions.
+//
+// In count-only mode (no output file) only the counts and the -Z
+// statistics can be compared; the brute force checks both (the number of
+// sets or rules per size: exactly, or at most, with a measure). With a
+// measure, equal counts with different -Z statistics are a membership
+// difference like different counts, which with a measure any flagged
+// deviation but O3 excuses (exempted) if C passes the brute force, as
+// for records on one side only. If they differ and the case has an
+// evaluation measure, both programs
 // are rerun with an output file and the measure in the format
 // (countByRerun); the difference is tolerated if the records differ only
 // at the threshold or by a value-level deviation, and each count matches

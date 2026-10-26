@@ -49,15 +49,24 @@ func (o *outcome) verifyGo(c *tcase, db *bfDB, gr *runResult) {
 
 // checkBF checks the result of a successful run (of either program)
 // against the brute force: exactly without an evaluation measure, as a
-// subset (with exact supports) with one. In count-only mode only the
-// logged count is checked. It returns the differences (nil: the result
-// passes) and whether the check was a subset check.
+// subset (with exact supports) with one. In count-only mode the logged
+// count and the -Z statistics (sets or rules per size) are checked. It
+// returns the differences (nil: the result passes) and whether the check
+// was a subset check.
 func checkBF(c *tcase, db *bfDB, devs []string, r *runResult) (bad []string, subset bool) {
 	subset = c.eval != 'x'
 	want := map[string][3]int64{} // key -> supp, body supp, head supp
+	var perSize []int64           // number of sets or rules per size
+	count := func(size int) {
+		for len(perSize) <= size {
+			perSize = append(perSize, 0)
+		}
+		perSize[size]++
+	}
 	if c.isRules() {
 		for _, r := range db.rules(c.ruleParams(db.total)) {
 			want[ruleKey(r.head, r.body)] = [3]int64{r.supp, r.bsup, r.hs}
+			count(len(r.body) + 1)
 		}
 	} else {
 		p := c.setParams(db.total)
@@ -70,12 +79,16 @@ func checkBF(c *tcase, db *bfDB, devs []string, r *runResult) (bad []string, sub
 		}
 		for _, s := range db.sets(p) {
 			want[setKey(s.items)] = [3]int64{s.supp}
+			count(len(s.items))
 		}
 	}
 	if c.countOnly {
 		n := reportedCount(r.stderr)
 		if n < 0 || (!subset && n != int64(len(want))) || n > int64(len(want)) {
 			bad = append(bad, fmt.Sprintf("counted %d, brute force %d (subset %v)", n, len(want), subset))
+		}
+		if c.stats {
+			bad = append(bad, checkStats(r.stdout, n, perSize, subset)...)
 		}
 		return bad, subset
 	}
@@ -109,6 +122,36 @@ func checkBF(c *tcase, db *bfDB, devs []string, r *runResult) (bad []string, sub
 		}
 	}
 	return bad, subset
+}
+
+// checkStats checks the -Z statistics of a count-only run against the
+// brute force's number of sets or rules per size (want): exactly, or,
+// with an evaluation measure (subset), at most as many per size. Their
+// total must equal the logged count n. Without records, the statistics
+// are the only evidence of which sets were counted, and equal totals can
+// hide sets of the wrong sizes (deviation M1, difftest seed 1 case 31717).
+func checkStats(stdout []byte, n int64, want []int64, subset bool) []string {
+	all, per, ok := parseStats(stdout)
+	switch {
+	case !ok:
+		return []string{fmt.Sprintf("bad -Z statistics %q", stdout)}
+	case all != n:
+		return []string{fmt.Sprintf("-Z all %d, log %d", all, n)}
+	}
+	var bad []string
+	for k := range max(len(per), len(want)) {
+		var got, w int64
+		if k < len(per) {
+			got = per[k]
+		}
+		if k < len(want) {
+			w = want[k]
+		}
+		if got > w || (!subset && got != w) {
+			bad = append(bad, fmt.Sprintf("-Z size %d: %d, brute force %d (subset %v)", k, got, w, subset))
+		}
+	}
+	return bad
 }
 
 // selfCheck checks the consistency of the Go outputs: the logged count,

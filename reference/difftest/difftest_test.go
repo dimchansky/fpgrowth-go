@@ -163,10 +163,14 @@ func run(bin, dir string, args []string) *runResult {
 	return r
 }
 
-// rerunIn returns a rerunFunc that runs both programs in dir.
+// rerunIn returns a rerunFunc that runs both programs (only C for a
+// cOnly case) in dir.
 func (b binaries) rerunIn(dir string) rerunFunc {
 	return func(c *tcase) (cr, gr *runResult) {
 		args := c.args()
+		if c.cOnly {
+			return run(b.c, dir, args), nil
+		}
 		return run(b.c, dir, args), run(b.goBin, dir, args)
 	}
 }
@@ -187,6 +191,7 @@ type summary struct {
 	devFull      int            // flagged cases compared with C in full (C passed the brute force)
 	devExempt    int            // ... deviation-verified: C differed only in excused channels
 	reruns       int            // cases classified by a rerun with the measure in the output
+	m2Reruns     int            // passed M2 cases compared with C rerun with -s-1
 	bfExact      int            // cases whose Go result equals the brute force
 	bfSubset     int            // ... is a subset of the brute force (measures)
 	recordDevs   int
@@ -239,6 +244,9 @@ func (s *summary) add(c *tcase, o *outcome, gr *runResult, artifact string) {
 		}
 	}
 	s.reruns += o.reruns
+	if o.m2Rerun && o.verdict != verdictFail {
+		s.m2Reruns++
+	}
 	if o.bfChecked && o.verdict != verdictFail {
 		if o.bfSubset {
 			s.bfSubset++
@@ -271,8 +279,12 @@ func (s *summary) add(c *tcase, o *outcome, gr *runResult, artifact string) {
 	}
 	s.targets[fmt.Sprintf("-t%c -A%c", c.target, algo)]++
 	if o.verdict == verdictFail {
-		msg := fmt.Sprintf("%s\n  deviations %v\n  reproduce: %s\n  files: %s\n  %s",
-			c.describe(), o.deviations, fmt.Sprintf(s.reproduce, c.index), artifact, strings.Join(o.failures, "\n  "))
+		devs := fmt.Sprint(o.deviations)
+		if o.m2Rerun {
+			devs += " (M2: compared with C rerun with -s-1; the files hold the original C run)"
+		}
+		msg := fmt.Sprintf("%s\n  deviations %s\n  reproduce: %s\n  files: %s\n  %s",
+			c.describe(), devs, fmt.Sprintf(s.reproduce, c.index), artifact, strings.Join(o.failures, "\n  "))
 		s.failures = append(s.failures, msg)
 	}
 }
@@ -291,6 +303,7 @@ func (s *summary) String() string {
 	fmt.Fprintf(&b, "  largest difference of 17-digit values accepted as equal: %.3g relative;\n", s.maxRel)
 	fmt.Fprintf(&b, "    logarithmic measures (%s, b, j): %.3g relative, %.3g absolute\n", logMeasures, s.maxRelLog, s.maxAbsLog)
 	fmt.Fprintf(&b, "  cases whose differing counts or records a rerun with the measure explained: %d\n", s.reruns)
+	fmt.Fprintf(&b, "  passed cases of M2 compared with C rerun with -s-1 (the port's minimum support): %d\n", s.m2Reruns)
 	fmt.Fprintf(&b, "  cases with a flagged deviation in which C passed the brute force and was compared in full: %d\n", s.devFull)
 	fmt.Fprintf(&b, "    of which C differed only in channels the deviations excuse (deviation-verified): %d\n", s.devExempt)
 	fmt.Fprintf(&b, "  deviation-verified cases whose C output the comparison accepted (C failed the brute force, e.g. O3's dropped empty set): %d\n", s.devCAgrees)

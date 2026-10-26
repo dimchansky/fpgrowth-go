@@ -275,6 +275,12 @@ func testZlibRandom(t *testing.T, zc, goBin string) {
 				zpair := func(c *tcase) (cr, gr *runResult) {
 					args := c.args()
 					cr, cerr := zrun(zc, dir, args)
+					if c.cOnly {
+						if cerr != nil && !cr.signaled && cr.exit == 0 {
+							zerrs = append(zerrs, "C: "+cerr.Error())
+						}
+						return cr, nil
+					}
 					gr, gerr := zrun(goBin, dir, args)
 					// Go always finishes the stream it opened; C does so
 					// when it succeeds (a crash or an error exit leaves a
