@@ -459,6 +459,48 @@ reached, accepted by the repository (3.4) and passes the check.
     Results in §7.5: every `lp-*` `-n1` row from seconds to ≤ 0.1 s
     and linear; rows that stay quadratic for other reasons are listed
     there.
+  - Deferred long transactions (maximal scan, issue #34). The maximal
+    scan counted every item of every cover transaction and stopped only
+    at a count of smin, so a long first cover transaction of weight
+    below smin was counted in full by every check (the `-tm` rows of
+    the lp shapes, quadratic). With P the visited cover transactions
+    and rest the weight of the others, every item has
+    cnt_P(j) ≤ supp(X ∪ {j}) ≤ cnt_P(j) + rest (weights are positive),
+    so:
+    - a cover transaction of more than |X| + 4·n items (`scanMaxGuard`;
+      0 with `fpgforce`) and weight below smin is deferred;
+    - once rest < smin, only the touched items with cnt ≥ smin − rest
+      can be frequent extensions (no untouched one); each deferred
+      transaction t is then searched for them by binary search if
+      |candidates|·bitlen(|t|) < |t|, else counted in full, and the
+      candidates are filtered by the same bound after each one; none
+      left proves X maximal;
+    - while rest ≥ smin the deferred transactions are counted in full,
+      in cover order.
+
+    The issue's rule (a cover transaction t with w(t) > supp(X) − smin
+    holds every frequent extension) is the case P = {t}; the bound
+    above needs neither supp(X) (the sibling rows' verify mode passes
+    0) nor a pass over the cover. Exactness: counts are sums over
+    distinct cover transactions (≤ the support, so reaching smin
+    proves non-maximality), candidates' counts are exact, and an item
+    is dropped only when cnt + rest < smin, which bounds its support
+    over the whole cover; order and choice of the deferred
+    transactions change only the cost.
+
+    Cap: the plain scan may stop inside or soon after the first
+    deferred transaction t1. The transactions counted after t1 while it
+    is deferred may hold at most |t1| items; the next one that would
+    exceed this counts the deferred ones in full and the scan goes on in
+    cover order. With the deferred ones taken in cover order, the scan
+    visits at most V + |t1| ≤ 2·V items, V being the plain scan's
+    visits up to its exit with t1 counted in full (randomized test:
+    `TestExtCheckMaximalDeferProperty` checks the bound on every call).
+    A cap on the total length of all deferred transactions would not
+    bound this (deferrals after the plain exit would raise it).
+    Not covered: covers whose deferred transactions together weigh smin
+    or more (`lpc20000 -tm`: several long chains) stay quadratic, about
+    the shortest chain per check.
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
   unlimited as before); `xable2`/`deeper` are the size gates. The miner
@@ -482,7 +524,8 @@ differ):
 | `671474e` | incremental per prefix depth (`checkPath`, bit sets only) | as above |
 | Stage 3 fix S3-1 | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
 | issue #19 | as S3-1 | as S3-1, plus sibling rows for maximal checks (§4.1) |
-| issue #20 (this version) | as S3-1; the closed scan starts from a short cover transaction and searches long ones exponentially (§4) | as #19 |
+| issue #20 | as S3-1; the closed scan starts from a short cover transaction and searches long ones exponentially (§4) | as #19 |
+| issue #34 (this version) | as #20; the maximal scan defers long transactions of weight below smin (§4) | as #19 |
 
 The 64 MiB floor of the first two versions was a memory-for-speed
 trade-off: on `sparse-large` (2,592 frequent items at `-s0.05`, 3,115
@@ -1129,6 +1172,7 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
     exact pruning exists (if a cover transaction t has
     w(t) > supp(X) − smin, every frequent extension is in t), left to a
     separate issue;
+    *Note (issue #34):* done, see §4 (deferred long transactions);
   - `adv1f` (challenge L2: three equal chains, one chain with four rare
     items, fillers; `-At -q-2`): the first and shortest cover
     transaction's 4 probes are the rare items, so every check copies n
@@ -1201,6 +1245,48 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
   caught (the full scan skipping the first transaction of every cover
   word once the start moved, K10); `TestExtCheckFirstOfWord` (18 cover
   words, every transaction lacking one item of all others) catches it.
+
+### 7.6 Maximal checks on long and short transactions (issue #34)
+
+CLI, output to `/dev/null`, `/usr/bin/time -l`, instructions retired,
+minimum of 2 interleaved runs (C: 1 run); Apple M1 Max, Go 1.27.3,
+load average 2.1–4.4. `main` is `e6d02b0`. Outputs of the branch and
+`main` are byte-identical (md5) on every row below and on the ordinary
+rows checked (sparse-large `-n2`/`-n3`, d2000, d1000, d5000, d20000
+`-n2`, tier, split, dense `-n3`/`-n4`).
+
+| row (`-As -tm -s-2 -n1`) | `main` | v0.1.0 | C 6.21 | branch |
+| --- | ---: | ---: | ---: | ---: |
+| `lp12500` | 8.04 G | 7.72 G | 2.04 G | **0.22 G** |
+| `lp25000` | 31.68 G | 30.45 G | 8.01 G | **0.44 G** |
+| `lp50000` | 125.9 G (5.46 s) | 120.9 G | 31.78 G (3.28 s) | **0.90 G (0.05 s)** |
+| `lp50000s2` (2 lookups per check) | 126.0 G | — | — | **0.99 G** |
+| `lp50000w` (`-w`) | 126.0 G | — | — | **0.96 G** |
+| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 15.99 G |
+
+Instrumented in-process runs (deferrals, caps, searches, item visits,
+and every deferring check re-run with the plain scan): on lp12500,
+lp25000 and lp50000 every check defers and visits 1 item instead of
+n + 1 (12,500 vs 156,262,500 visits at 12.5k); lp50000s2 1.8 M vs
+2.5 G visits with 50,000 searches; no check loses an early exit (new
+visits above the plain scan's: 0 checks). On all 17 ordinary `-tm -n`
+rows (sparse-large, d1000/d2000/d5000/d20000 with their variants,
+tier, split, dense `-n3`/`-n4`) no check defers: the verdicts, the
+check work and the sibling-row builds are identical with and without
+the deferral, so the #19 cost signal is unchanged there.
+Instructions against `main`: −0.24 % to +0.19 % with the first version
+on all 17 rows except tier (+1.0 to +1.5 %: the cap's bookkeeping per
+cover transaction);
+with the plain loop separated from the deferral (`scanDefer`) tier
++0.09 to +0.15 %, sparse-large +0.09/+0.10 %, split +0.09 %, dense
+`-n4` −0.01 %.
+
+Tests: `FPG_M5_CASES=20000` oracle (440,000 comparisons) and the
+deferral property test with 30,000 bags (6.2 M checks against a brute
+force; 2.6 M deferred, 136 k with searches, 165 k capped; the 2× visit
+bound held on every call) pass in the default and the `fpgforce`
+build; 10 mutants of the deferral are killed (`TestExtCheckMaximal*`,
+oracle, brute force).
 
 ## 8. Decision
 

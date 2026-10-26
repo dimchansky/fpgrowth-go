@@ -773,6 +773,36 @@ benchstat (6 interleaved runs) `frequent` +1.4 %, `count-only` +1.0 %,
 +0.33 % and +0.65 %. The T4 and wide-line rows are unchanged by this
 (e.g. `t4-25000` 1.04 G, `t4b-6000` 0.156 G, same output).
 
+*Update (2026-10-27, issue #34):* maximal checks on a long transaction
+of weight below the minimum support plus many short ones (the lp shapes
+with `-tm`) were quadratic in Go and C; the maximal scan now visits such
+a transaction last and searches it only for the items that can still
+be frequent extensions
+([M5 §4, §7.6](m5-investigation.md#76-maximal-checks-on-long-and-short-transactions-issue-34)).
+Instructions retired (`/usr/bin/time -l`, minimum of 2 interleaved runs,
+load average 2.1–4.4; output byte-identical to `main`):
+
+| `-As -tm -s-2 -n1` | Go `main` | Go v0.1.0 | C 6.21 (1 run) | Go branch |
+| --- | ---: | ---: | ---: | ---: |
+| `lp12500` | 8.04 G | 7.72 G | 2.04 G | 0.22 G |
+| `lp25000` | 31.68 G | 30.45 G | 8.01 G | 0.44 G |
+| `lp50000` | 125.9 G | 120.9 G | 31.78 G | 0.90 G |
+| `lp50000s2` | 126.0 G | — | — | 0.99 G |
+| `lp50000w` (`-w`) | 126.0 G | — | — | 0.96 G |
+| `lpc20000` | 16.31 G | — | 39.37 G | 15.99 G |
+
+Per doubling `main` grows 3.9–4.0×, the branch 2.0× (linear; lp50000
+5.46 s → 0.05 s). `lpc20000 -tm` stays quadratic: its covers hold
+several long chains that together reach the minimum support, so the
+shortest of them is still counted in full (−2 %). On the 17 ordinary
+`-tm -n` rows of `configs.txt` no check defers anything (instrumented
+run). With the first version the instructions differed from `main` by
+−0.24 % to +0.19 %, except tier (`t100000x204c4`) +1.0 to +1.5 %: the
+deferral's bookkeeping per cover transaction. The final version keeps
+the plain loop free of it; re-measured on the rows that had moved
+(tier ×3, sparse-large `-n2`/`-n3`, split, dense `-n4`): −0.01 % to
++0.15 %.
+
 ### Profiles after optimization
 
 CPU profiles of the final code (3 s each; flat % / cum %, package

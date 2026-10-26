@@ -66,6 +66,9 @@ The release workflow publishes the section whose heading matches the tag
   `one-*` and `t4b-*` rows in the Go-vs-C comparison, and
   `go run ./bench/gen -list` no longer panics on the probe trap
   datasets (#21).
+- Benchmarks: maximal rows for the long-and-short shapes
+  (`lp-12500-m-As`, `lp-25000-m-As`, `lp-50000s2-m-n1`, `lp-50000w-m`,
+  `lp-c20000-m`) in the Go-vs-C comparison (#34).
 
 ### Changed
 
@@ -108,6 +111,21 @@ The release workflow publishes the section whose heading matches the tag
   by the miner, scaled below the maximum size by how many such children
   were actually checked. Data with few checked children per parent
   therefore keeps its speed (#19, audit M5A-1).
+
+- Maximal item sets with a maximum size (`-tm -n`, `TargetMaximal` with
+  `MaxSize`) no longer take quadratic time when one long transaction of
+  weight below the minimum support and many short ones contain the same
+  items. The complete extension check visits such a long transaction
+  last, and once the transactions left weigh less than the minimum
+  support it only searches them for the items that can still reach it.
+  A cap keeps the reordering within twice the item visits of the plain
+  scan. One line of 50,000 items plus 50,000 one-item lines
+  (`-As -tm -s-2 -n1`) now takes 0.05 s and 0.90 G instructions instead
+  of 5.5 s and 126 G (C: 3.3 s, 31.8 G), and the time grows linearly
+  with the size. The output is unchanged; ordinary maximal data is
+  within 0.2 % of the previous instruction counts. Covers with two or more such long transactions that
+  together reach the minimum support (for example `lpc20000 -tm`) stay
+  quadratic (#34).
 - The values of the information (`i`) and the G-test p-value (`g`), and
   of the Fisher tests (`f h m s`) for total weights above 170, differ from
   upstream's (and v0.1.0's) in the last bits on ordinary data: they are

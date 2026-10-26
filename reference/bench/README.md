@@ -126,6 +126,7 @@ bench/compare.sh -n 5 -m devnull '^lp-(12500|25000|50000|c20000-c\*)'   # issue 
 bench/compare.sh -n 5 -m devnull '^adv5-'              # issue #20, the probe trap
 bench/compare.sh -n 3 -m devnull '^lp-100000'          # issue #20, slow in C (lp-c20000-c-q0: C does not finish)
 bench/compare.sh -n 3 -m devnull '^(t4|one|t4b)-'     # issue #21, perfect extensions beyond -n
+bench/compare.sh -n 5 -m devnull '^lp-.*-m'            # issue #34, maximal checks on the lp shapes
 ```
 `go test ./bench/...` checks that
 

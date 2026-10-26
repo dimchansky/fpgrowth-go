@@ -85,6 +85,8 @@ type extChecker struct {
 	inSet    []uint32     // inSet[i] == setStamp: i is in the checked set
 	cnt      []tract.Supp // maximal: supp(X ∪ {i}) so far
 	cand     []tract.Item // candidates / touched items
+	deferred []int32      // scanMaximal: deferred long transactions
+	alive    []tract.Item // scanMaximal: candidates of the deferred transactions
 	setStamp uint32
 	setLen   int // items of the checked set (len(set) of markSet)
 
@@ -489,7 +491,7 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 func (c *extChecker) decide(n int, supp tract.Supp) bool {
 	if h, v := c.costs(n); h <= v {
 		if c.maximal {
-			return c.scanMaximal()
+			return c.scanMaximal(n)
 		}
 		return c.scanClosed(n)
 	}
@@ -686,15 +688,17 @@ func (c *extChecker) gallop(t int32) bool {
 // scanGallopMin, scanGallopRatio and scanGuard when the checker is
 // built (tests may change them on a checker).
 type scanParams struct {
-	gallopMin, gallopRatio int // keepSeek: |t| >= gallopMin, walk > gallopRatio·|candidates|
-	guard                  int // stage b: more than guard candidates per cover transaction
+	gallopMin, gallopRatio int        // keepSeek: |t| >= gallopMin, walk > gallopRatio·|candidates|
+	guard                  int        // stage b: more than guard candidates per cover transaction
+	mguard                 int        // scanMaximal: defer transactions of more than mguard items per cover transaction
+	lookup                 lookupMode // scanDeferred: search or count a deferred transaction (tests)
 }
 
 // scanDefaults returns the thresholds of a build: the production
 // constants (extcheck_thresh.go) or, with the build tag fpgforce, the
 // lowered ones of extcheck_force.go.
 func scanDefaults() scanParams {
-	return scanParams{gallopMin: scanGallopMin, gallopRatio: scanGallopRatio, guard: scanGuard}
+	return scanParams{gallopMin: scanGallopMin, gallopRatio: scanGallopRatio, guard: scanGuard, mguard: scanMaxGuard}
 }
 
 // scanStats counts the use of the paths of scanClosed (tests, docs).
@@ -702,6 +706,10 @@ type scanStats struct {
 	moved   int // candidates from a transaction other than t0
 	stageB  int // passes over the cover for the shortest transaction
 	gallops int // intersections by exponential search
+	// scanMaximal (issue #34)
+	deferred int // checks with deferred long transactions
+	lookups  int // deferred transactions searched for the candidates only
+	capped   int // deferrals ended by the cap
 }
 
 // scanProbes is the number of spread cover transactions that scanClosed
@@ -800,11 +808,57 @@ func (c *extChecker) keepSeek(t int32) {
 	c.cand = c.cand[:n]
 }
 
-// scanMaximal accumulates supp(X ∪ {j}) over the cover transactions (the
-// bits of c.cover, enumerated lazily) and stops at the first frequent
-// extension.
-func (c *extChecker) scanMaximal() bool {
+// scanMaximal decides the marked set from its n cover transactions (the
+// bits of c.cover, enumerated lazily): it accumulates cnt[j], the weight
+// of the visited cover transactions that contain j, and stops at the
+// first frequent extension (cnt[j] >= smin).
+//
+// Long transactions are deferred (issue #34): a cover transaction of
+// more than mguard items per cover transaction besides the set, and of
+// weight below smin (a heavier one decides within |X| + 1 items), is
+// visited after the others. Let rest be the weight of the cover
+// transactions not yet visited. Every j has
+//
+//	cnt[j] <= supp(X ∪ {j}) <= cnt[j] + rest
+//
+// (weights are positive), so once rest < smin only the touched items with
+// cnt[j] >= smin − rest can be frequent extensions, and the deferred
+// transactions are searched for these candidates only (scanDeferred).
+// On a cover of one long line and short ones (the lp shapes of
+// reference/bench) a check then costs the short lines instead of the
+// long one.
+//
+// The visiting order and the choice of deferred transactions change only
+// the cost, never the verdict: the counts are sums over distinct cover
+// transactions, and an item is dropped only by the bound above. Without
+// a deferred transaction the scan is the plain one, in cover order: the
+// loop here is the plain scan plus one length test per transaction, and
+// the scan continues in scanDefer at the first deferred transaction
+// (with the cap's bookkeeping in this loop, ordinary maximal rows took
+// up to 1.5 % more instructions; split, at most 0.15 %).
+//
+// Deferral cap: the plain scan may stop inside or soon after a long
+// transaction t1 (the first deferred one), which the deferral skips. So
+// the transactions counted after t1 while it is deferred may have at
+// most |t1| items in all; the next one that would exceed that ends the
+// deferral: the deferred transactions are counted in full, in cover
+// order, and the scan goes on in cover order. The deferred ones are also
+// visited in cover order at the end (scanDeferred). Let V be the item
+// visits of the plain scan up to its exit, counting t1 in full (the
+// plain scan visits all of t1 unless it stops inside it). The scan
+// visits at most V + |t1| <= 2·V items: the cover transactions up to the
+// plain scan's exit are all counted before the deferred ones after it
+// (the deferred ones are taken in cover order, and the exit item reaches
+// smin once all of these are counted, or earlier); beyond them it can
+// only have counted the short transactions taken out of order, at most
+// |t1| items. A search costs less than the full visit it replaces; the
+// candidates add one pass over the touched items and their filters.
+// (A cap on the total length of all deferred transactions instead of
+// |t1| would not bound this: deferrals after the plain scan's exit
+// would raise it.)
+func (c *extChecker) scanMaximal(n int) bool {
 	touched := c.cand[:0]
+	long := c.setLen + c.mguard*n
 	ok := true
 	work := 0 // item visits (whole transactions), for the sibling rows
 scan:
@@ -812,7 +866,14 @@ scan:
 		for x := c.cover[i]; x != 0; x &= x - 1 {
 			t := w*64 + int32(bits.TrailingZeros64(x))
 			wt := c.txW[t]
-			work += int(c.txOff[t+1] - c.txOff[t])
+			l := c.txOff[t+1] - c.txOff[t]
+			if l > long && wt < c.smin {
+				// the first deferred transaction: the rest of the scan
+				// (kept out of this loop, which stays the plain scan)
+				ok, touched, work = c.scanDefer(i, x, long, touched, work)
+				break scan
+			}
+			work += l
 			for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
 				if c.inSet[it] == c.setStamp {
 					continue
@@ -833,6 +894,166 @@ scan:
 	c.cand = touched
 	c.work += int64(work)
 	return ok
+}
+
+// scanDefer continues scanMaximal from its first deferred transaction t1,
+// the lowest bit of x in cover word i: it defers t1 and the later long
+// transactions of weight below smin, counts the others up to the cap
+// (|t1| items in all), and either ends the deferral at the cap (the
+// deferred ones are counted, then the scan goes on in cover order) or
+// decides the deferred ones at the end (scanDeferred). It returns the
+// verdict, touched and the work.
+func (c *extChecker) scanDefer(i int, x uint64, long int, touched []tract.Item, work int) (bool, []tract.Item, int) {
+	def := c.deferred[:0]
+	var rest tract.Supp // weight of the deferred transactions
+	budget := -1        // items the scan may count after t1 while it is deferred
+	capped := false
+	ok := true
+scan:
+	for ; i < len(c.nz); i++ {
+		w := c.nz[i]
+		if budget >= 0 || capped { // not t1's word: all its transactions
+			x = c.cover[i]
+		}
+		for ; x != 0; x &= x - 1 {
+			t := w*64 + int32(bits.TrailingZeros64(x))
+			wt := c.txW[t]
+			l := c.txOff[t+1] - c.txOff[t]
+			if !capped {
+				if l > long && wt < c.smin {
+					if budget < 0 {
+						budget = l // t1
+					}
+					def = append(def, t)
+					rest += wt
+					continue
+				}
+				if budget -= l; budget < 0 { // the cap: back to cover order
+					c.scanStat.capped++
+					capped = true
+					for _, d := range def {
+						work += c.txLen(d)
+						var found bool
+						if touched, found = c.countTx(d, touched); found {
+							ok = false
+							break scan
+						}
+					}
+					def, rest = def[:0], 0
+				}
+			}
+			work += l
+			var found bool
+			if touched, found = c.countTx(t, touched); found {
+				ok = false // a frequent superset with one more item
+				break scan
+			}
+		}
+	}
+	if ok && len(def) > 0 {
+		ok, touched, work = c.scanDeferred(def, rest, touched, work)
+	}
+	c.deferred = def[:0]
+	return ok, touched, work
+}
+
+// countTx adds transaction t to the counts of scanMaximal (touched: the
+// items with a count) and reports whether an item reached smin.
+func (c *extChecker) countTx(t int32, touched []tract.Item) ([]tract.Item, bool) {
+	wt := c.txW[t]
+	for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
+		if c.inSet[it] == c.setStamp {
+			continue
+		}
+		if c.cnt[it] == 0 {
+			touched = append(touched, it)
+		}
+		if c.cnt[it] += wt; c.cnt[it] >= c.smin {
+			return touched, true
+		}
+	}
+	return touched, false
+}
+
+// lookupMode selects how scanDeferred visits a deferred transaction once
+// it has candidates.
+type lookupMode uint8
+
+const (
+	lookupAuto   lookupMode = iota // search if cheaper than a full count (production)
+	lookupAlways                   // always search the candidates (tests)
+	lookupNever                    // always count in full (tests)
+)
+
+// scanDeferred is the end of scanMaximal: the deferred transactions def
+// (in cover order) of total weight rest, after all other cover
+// transactions (counts in cnt, touched items in touched). It returns the
+// verdict, touched and the work.
+//
+// While rest >= smin a deferred transaction is counted in full. At the
+// first one with rest < smin (rest including it) the candidates are the
+// touched items with cnt[j] >= smin − rest: every other item, touched or
+// not, has supp(X ∪ {j}) <= cnt[j] + rest < smin. From then on each
+// deferred transaction t either is searched for the candidates (binary
+// search: the items of a transaction are ascending), if |candidates| ·
+// bitlen(|t|) < |t|, or is counted in full (which adds to the candidates'
+// counts as well); then rest drops by w(t) and the candidates are
+// filtered by the same bound. No candidate left: X is maximal.
+func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.Item, work int) (bool, []tract.Item, int) {
+	c.scanStat.deferred++
+	alive := c.alive[:0]
+	cands := false // alive holds the only possible frequent extensions
+	ok := true
+	for _, t := range def {
+		wt := c.txW[t]
+		items := c.txItems[c.txOff[t]:c.txOff[t+1]]
+		if !cands && rest < c.smin {
+			for _, it := range touched {
+				if c.cnt[it] >= c.smin-rest {
+					alive = append(alive, it)
+				}
+			}
+			cands = true
+		}
+		if cands && len(alive) == 0 {
+			break // ok: no frequent extension is possible
+		}
+		cost := len(alive) * bits.Len(uint(len(items)))
+		if cands && (c.lookup == lookupAlways || c.lookup == lookupAuto && cost < len(items)) {
+			c.scanStat.lookups++
+			work += cost
+			for _, it := range alive {
+				if _, in := slices.BinarySearch(items, it); in {
+					if c.cnt[it] += wt; c.cnt[it] >= c.smin {
+						ok = false
+						break
+					}
+				}
+			}
+		} else {
+			work += len(items)
+			var found bool
+			if touched, found = c.countTx(t, touched); found {
+				ok = false
+			}
+		}
+		if !ok {
+			break
+		}
+		rest -= wt
+		if cands {
+			k := 0
+			for _, it := range alive {
+				if c.cnt[it] >= c.smin-rest {
+					alive[k] = it
+					k++
+				}
+			}
+			alive = alive[:k]
+		}
+	}
+	c.alive = alive[:0]
+	return ok, touched, work
 }
 
 // vertClosed tests every item at least as frequent as the set against the
