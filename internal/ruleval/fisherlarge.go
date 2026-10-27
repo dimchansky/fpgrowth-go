@@ -346,33 +346,68 @@ func fetProbLarge(supp, body, head, base tract.Supp, abort func() error) (float6
 	return t.fisherSum(&st, [2]tract.Supp{0, a}, [2]tract.Supp{s, b})
 }
 
+// infoUnderflows reports whether the FisherInfo p-value certainly rounds
+// to 0 in float64, given the computed S(supp) = ss (issue #40, review of
+// #16, P-9), for n = base. It is true when S(supp) > 6·ln(n+1) + 800:
+// the computed ss has a relative error below 59u (infoNats), and the
+// factor 1 + 2^-40 covers it and the rounding of the cutoff.
+//
+// Every table x that infoSum sums has S(x) >= S(supp) - 2^-65000 (its
+// region; cmpXLogX counts only smaller differences as ties), and every
+// table has P(x) <= (n+1)·e^-S(x) (entropy bounds of the binomial
+// coefficients), so the exact p-value is below
+// (body+1)·(n+1)·e^-S(supp)·2 < e^-750, whose correctly rounded value is
+// 0. The cutoff also makes infoSum itself return 0: the observed table
+// is then far from the mode, so each summed range lies on one side of
+// the expected support, its walk starts at the end nearest to it with
+// ln P below -799, and, by the error bound of lnP (lnPErr), the scaled
+// sum q is at most 2^60·e^(3·ln(n+1) + 2^-45·S + 1), so
+// exp(lnA + ln q) is below the smallest subnormal. That bound on q
+// holds for S(supp) up to 1.88·10^16; beyond it the identity with
+// infoSum rests on the actual error of lnP (scans in the design record).
+// Proof: docs/reviews/post-v0.1.0/issue-40-design.md.
+func (t *hyperTable) infoUnderflows(ss float64) bool {
+	// The cutoff is at least 800, so ordinary tables skip the logarithm.
+	return ss > 800 && ss > float64(float64(6*math.Log(float64(t.ft.base)+1))+800)*(1+0x1p-40)
+}
+
 // fetInfoLarge is FisherInfo for base > maxFact: the tables with
-// I(x) >= I(supp). I decreases strictly up to the expected support
-// E = body·head/base and increases beyond it, so these are the tables
-// from supp outwards on its side of E and a range beyond the first table
-// with I(x) >= I(supp) on the other side.
+// I(x) >= I(supp). It returns 0 without summing when the p-value
+// certainly underflows (infoUnderflows), else infoSum.
 func fetInfoLarge(supp, body, head, base tract.Supp, abort func() error) (float64, error) {
 	t := newHyperTable(supp, body, head, base)
 	st := stepper{abort: abort}
+	ss := infoNats(t.ft.supp, t.ft.body, t.ft.head, t.ft.base)
+	if t.infoUnderflows(ss) {
+		return 0, nil
+	}
+	return t.infoSum(ss, &st)
+}
+
+// infoSum sums the FisherInfo region given S(supp) = ss. I decreases
+// strictly up to the expected support E = body·head/base and increases
+// beyond it, so the region holds the tables from supp outwards on its
+// side of E and a range beyond the first table with I(x) >= I(supp) on
+// the other side.
+func (t *hyperTable) infoSum(ss float64, st *stepper) (float64, error) {
 	s, b := t.ft.supp, t.ft.body
 	neg, hi, lo := crossDiff(s, b, t.ft.head, t.ft.base)
 	if hi|lo == 0 { // independent: every table has I >= 0 = I(supp)
-		return t.fisherSum(&st, [2]tract.Supp{0, b})
+		return t.fisherSum(st, [2]tract.Supp{0, b})
 	}
-	ss := infoNats(s, b, t.ft.head, t.ft.base)
 	ge := func(x tract.Supp) bool { return t.infoAtLeast(x, ss) }
 	if neg { // supp < E
-		c, err := firstTrue(s+1, b, &st, ge)
+		c, err := firstTrue(s+1, b, st, ge)
 		if err != nil {
 			return math.NaN(), err
 		}
-		return t.fisherSum(&st, [2]tract.Supp{0, s}, [2]tract.Supp{c, b})
+		return t.fisherSum(st, [2]tract.Supp{0, s}, [2]tract.Supp{c, b})
 	}
-	a, err := lastTrue(0, s-1, &st, ge)
+	a, err := lastTrue(0, s-1, st, ge)
 	if err != nil {
 		return math.NaN(), err
 	}
-	return t.fisherSum(&st, [2]tract.Supp{0, a}, [2]tract.Supp{s, b})
+	return t.fisherSum(st, [2]tract.Supp{0, a}, [2]tract.Supp{s, b})
 }
 
 // fetChi2Large is FisherChi2 for base > maxFact: the tables with

@@ -286,7 +286,8 @@ func (m Measure) AbortFunc() AbortFunc {
 // FisherProb tables more than 1024 apart). That happens only for tables
 // whose computed probabilities (information) agree within their rounding
 // error bound, costs at most a few milliseconds per evaluation, and is
-// skipped for FisherProb when its p-value certainly underflows to 0.
+// skipped for FisherProb and FisherInfo when their p-value certainly
+// underflows to 0.
 func Eval(m Measure, supp, body, head, base tract.Supp) float64 {
 	return m.info().fn(supp, body, head, base)
 }

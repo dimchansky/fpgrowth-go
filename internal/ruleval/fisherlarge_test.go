@@ -562,3 +562,108 @@ func TestFisherNearTieCost(t *testing.T) {
 		t.Errorf("far comparison made %.0f allocations, want at most 2500", a)
 	}
 }
+
+// infoCutoff is the threshold of infoUnderflows for total weight n.
+func infoCutoff(n tract.Supp) float64 {
+	return float64(float64(6*math.Log(float64(n)+1))+800) * (1 + 0x1p-40)
+}
+
+// slowFisherInfo is FisherInfo for base > maxFact without the underflow
+// shortcut: the region sum that fetInfoLarge computes otherwise.
+func slowFisherInfo(supp, body, head, base tract.Supp) float64 {
+	ht := newHyperTable(supp, body, head, base)
+	var st stepper
+	v, _ := ht.infoSum(infoNats(ht.ft.supp, ht.ft.body, ht.ft.head, ht.ft.base), &st)
+	return v
+}
+
+// TestFisherInfoUnderflow checks the underflow shortcut of FisherInfo
+// (issue #40, review of #16, P-9) on the issue's table scan: strongly
+// associated tables at large totals, whose p-value underflows to 0.
+// Without the shortcut each evaluation decided its near-ties with
+// cmpXLogX and made 542 to 11,369 allocations (n = 10^15 to 9·10^18,
+// measured on arm64); with it, none. The value must be the one of the
+// region sum, bit for bit. Not parallel: AllocsPerRun.
+func TestFisherInfoUnderflow(t *testing.T) {
+	for _, n := range []tract.Supp{1e15, 1e16, 1e18, 9e18} {
+		for _, f := range []float64{0.05, 0.2, 0.24, 0.7} {
+			s, b, h := tract.Supp(f*float64(n)), n/2, n/2+1
+			if f > 0.5 { // positive association: supp > E = n/4
+				s, h = tract.Supp(f*float64(n/2)), n/2
+			}
+			ht := newHyperTable(s, b, h, n)
+			if ss := infoNats(ht.ft.supp, ht.ft.body, ht.ft.head, ht.ft.base); !ht.infoUnderflows(ss) {
+				t.Errorf("n=%d s=%d: shortcut not taken (S(supp) = %v)", n, s, ss)
+			}
+			v := Eval(FisherInfo, s, b, h, n)
+			if slow := slowFisherInfo(s, b, h, n); math.Float64bits(v) != math.Float64bits(slow) || v != 0 {
+				t.Errorf("n=%d s=%d: FisherInfo = %v, region sum %v, want 0 for both", n, s, v, slow)
+			}
+			if a := testing.AllocsPerRun(10, func() { Eval(FisherInfo, s, b, h, n) }); a != 0 {
+				t.Errorf("n=%d s=%d: %v allocations", n, s, a)
+			}
+		}
+	}
+}
+
+// TestFisherInfoUnderflowCutoff checks the shortcut around its cutoff
+// against the exact reference: tables with at most 1024 tables (body
+// from 200 to 1000, supp near body) and S(supp) from 0.5 to 1.25 times
+// the cutoff, at totals from 10^13 to 9·10^18. A table for which the
+// shortcut fires must have the exact value 0 and the region sum 0 (bit
+// for bit); every value must match the reference.
+func TestFisherInfoUnderflowCutoff(t *testing.T) {
+	t.Parallel()
+	ref, _ := oracle.RefByLetter('m')
+	r := rand.New(rand.NewPCG(40, 1))
+	count := 40
+	if testing.Short() || raceEnabled {
+		count = 15
+	}
+	fired, unfired, positive := 0, 0, 0
+	for i := range count {
+		b := tract.Supp(200 + r.IntN(800))
+		n := tract.Supp(math.Exp(math.Log(1e13) + r.Float64()*(math.Log(9e18)-math.Log(1e13))))
+		// three bands: positive p-values, around the cutoff, beyond it
+		lo, w := [3]float64{0.5, 0.95, 1.05}[i%3], [3]float64{0.2, 0.1, 0.2}[i%3]
+		target := infoCutoff(n) * (lo + w*r.Float64())
+		s := b - tract.Supp(r.IntN(4))
+		// S(supp) decreases as head grows: bisect head in [b, n/2] for
+		// the first head with S(supp) <= target.
+		hl, hh := b, n/2
+		for hl < hh {
+			mid := hl + (hh-hl)/2
+			if infoNats(s, b, mid, n) > target {
+				hl = mid + 1
+			} else {
+				hh = mid
+			}
+		}
+		h := hl
+		ht := newHyperTable(s, b, h, n)
+		ss := infoNats(ht.ft.supp, ht.ft.body, ht.ft.head, ht.ft.base)
+		want, err := ref.Eval(s, b, h, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Eval(FisherInfo, s, b, h, n)
+		if ht.infoUnderflows(ss) {
+			fired++
+			if slow := slowFisherInfo(s, b, h, n); want.V != 0 || math.Float64bits(got) != math.Float64bits(slow) {
+				t.Errorf("shortcut for (%d, %d, %d, %d): exact %v, region sum %v, got %v", s, b, h, n, want, slow, got)
+			}
+		} else {
+			unfired++
+		}
+		if want.V > 0 {
+			positive++
+		}
+		if !want.Matches(got) {
+			t.Errorf("FisherInfo(%d, %d, %d, %d) = %v, reference %v", s, b, h, n, got, want)
+		}
+	}
+	t.Logf("shortcut fired %d times, not fired %d times (%d positive values)", fired, unfired, positive)
+	if fired == 0 || unfired == 0 || positive == 0 {
+		t.Error("the sweep does not straddle the cutoff")
+	}
+}
