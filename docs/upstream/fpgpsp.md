@@ -214,6 +214,19 @@ brute-force definitions. M3 is carried into the preparation by U25.
   When no item is frequent, the empty set is reported for the frequent,
   closed and generator targets but not for maximal sets, as upstream and
   `internal/oracle` define them (a maximal set is not empty).
+  - *Note of 2026-10-27 (issue #39):* the pipeline of every surrogate is
+    unchanged, but runs on reused storage: `tract.DenseBase` counts and
+    recodes like a new `ItemBase[Item]` (same first-seen identifiers,
+    same codes, same bag) without a map, and a worker's `psp.Workspace`
+    keeps it, the bag's nodes and the miner's buffers (`fpg.Workspace`)
+    from one surrogate to the next. The item base is not shared across
+    surrogates: pair swaps keep the item frequencies but not the
+    size-weighted ones that order the items with `-q 2` (the default),
+    column shuffles change the first-seen order that breaks ties, and
+    the repair of `tbg_random` can fail (U12), so the frequencies of
+    `-gr` surrogates can differ. `tbg_random`'s two linear searches are
+    a Fenwick tree and a bit set that find the same entries (§3);
+    `docs/reviews/post-v0.1.0/issue-39-design.md`.
 - Chains run in at most GOMAXPROCS goroutines (`cmd/fpgpsp`), the spectra
   are summed in part order; the library packages start no goroutines.
 - Floating point: the oracle is compiled with `-ffp-contract=off`; every

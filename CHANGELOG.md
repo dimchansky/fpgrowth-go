@@ -78,6 +78,25 @@ The release workflow publishes the section whose heading matches the tag
 
 ### Changed
 
+- `fpgpsp` generates surrogate data sets with fewer instructions and
+  almost no allocation per data set. Every surrogate is still counted,
+  recoded and mined on its own with the item codes, prefix-tree bag and
+  miner of the fresh pipeline, but on reused storage: a dense item base
+  without a map (`tract.DenseBase`), the bag's node storage, the
+  miner's arenas, scratch arrays and 16-items machines (`fpg.Workspace`)
+  are kept per worker (`psp.Workspace`). Transaction randomization
+  (`-gr`) finds its draws in a prefix-sum (Fenwick) tree and its repair
+  items in a bit set instead of linear searches, with the same random
+  numbers and surrogates; transactions are sorted by a key of their first
+  two items. Against main (instructions retired, Apple M1 Max): 20,000
+  sparse transactions `-gr` -68 % (now 0.61 times the C oracle's
+  instructions, 1.93 before), `-gp` -16 %; a 5,000 x 10 table `-gs`
+  -20 %, `-gp` -18 %; 4,000 x 40 dense `-gp -c64` -25 % (`-Z64` -17 %);
+  `-ge` is unchanged (it generates no surrogates). About 0.09 MB
+  instead of 3.3 MB allocated per surrogate. The output is byte-identical
+  for every method, target, variant and number of chains or workers
+  (#39).
+
 - Frequent item sets and generators with a small maximum size (`-n`,
   `MaxSize`) no longer take quadratic time on long single paths. Perfect
   extensions that cannot change any result are skipped: a chain item of
