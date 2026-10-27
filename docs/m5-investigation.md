@@ -1347,6 +1347,81 @@ lpc, advB and tier `-As` rows: within 0.7 % of the numbers above, same
 output; a 14th mutant (repeated prechecks) is killed by
 `TestExtCheckMaximalOnePrecheck`.
 
+### 7.7 Small maximum sizes against v0.1.0 (issue #42)
+
+The final performance audit found maximal rows with `-n3`/`-n4` slower
+than v0.1.0 by instructions, the whole increase arriving with #19
+(ba63d14): dense `-tm -s5 -n3` +7.1 %, `-n4` +9.7 %, tier `-n3`
++4.8 %, split `-n3` +3.4 %, with identical outputs. Two causes,
+measured (CLI instructions, CPU profiles, the compiler's assembly, and
+an in-process timing of each unit):
+
+- **The scan loop spilled.** #19 added the work counter to
+  `scanMaximal`'s transaction loop. With `append` (a call) in the item
+  loop, the register allocator moved the touched count between
+  registers at the back edge: 2–3 more instructions per item visited
+  (12 → 15 on the in-set path). The tier row builds no rows at all and
+  visits 360 M items: +1.2 G. `sibBuild` had the same shape (append
+  and a `clear` call per new row).
+- **Rows that cost more than they saved.** The build rule weighed a
+  child's actual work against the build cost B in one unit. A build
+  visit costs 1.4–1.9 ns (about 39 instructions) and a scan visit
+  1.4–1.6 ns, as #19 calibrated, but a word test of a vertical check
+  (`vertMaximal`) 0.58–0.63 ns (about 15 instructions). Every child
+  of `dense` is checked vertically, so the saving was over-valued by
+  about 2.5×: `-n3` built 435 levels for 7.7 children each, `-n4`
+  1,049 levels for 3.2. With the rows off, `-n3` took 4.30 G instead of
+  4.70 G and `-n4` 8.76 G instead of 9.78 G. On `d20000x200d30` (the
+  #19 target) 99 % of the level work is scan visits and a level serves
+  70 children, so the rule is right there.
+
+A smaller cost was left as it is: without any build, the rule's pass
+over the lengths of a parent's cover (B) runs on tier 15,417 times and
+always fails the B/2 test, +0.40 G (+1.9 %) against rows off.
+
+Fix: the scan and build loops write the touched items by index into a
+buffer with room for every item (no call in the loop) and keep the hot
+fields in locals; the build clears all rows up front (B already counts
+them). `vertMaximal` counts its word tests apart (`vwork`), and the
+build rule scales the saving by 1 − 0.6·vwork/work (`sibWordCost` =
+0.4): never above the rule without it, unchanged on scan levels; the
+B/2 condition is unchanged. Tried on the four rows and d5000 with
+sibWordCost 1.0 / 0.5 / 0.4 / 0.33: dense `-n3` +4.4 / +0.3 / −0.8 /
+−2.0 % against v0.1.0, `-n4` +2.6 / −5.3 / −5.9 / −6.7 %, d5000 −20.2 /
+−23.2 / −23.8 / −24.0 %; 0.4 is the measured ratio.
+
+Instructions, minimum of 2 interleaved runs (C: 1 run), output to
+`/dev/null`, Apple M1 Max, load 2.4–2.9; `main` is `bd39eec`. The md5
+of the output equals `main`'s on all 31 checked rows, among them every
+row below except `-At` d20000:
+
+| row | v0.1.0 | `main` | branch | C | branch / `main` | branch / v0.1.0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense `-tm -s5 -n3` | 4.463 G | 4.780 G | 4.421 G | 2.369 G | −7.5 % | −0.9 % |
+| dense `-tm -s5 -n4` | 9.470 G | 10.387 G | 8.914 G | 2.388 G | −14.2 % | −5.9 % |
+| tier `-tm -n3` | 25.961 G | 27.233 G | 21.162 G | 5.324 G | −22.3 % | −18.5 % |
+| split `-tm -n3` | 16.688 G | 17.250 G | 14.141 G | 3.249 G | −18.0 % | −15.3 % |
+| dense `-tm -s5 -n2` | 1.587 G | 1.591 G | 1.586 G | 1.582 G | −0.3 % | −0.1 % |
+| sparse-large `-tm -n2` | 5.665 G | 5.706 G | 5.479 G | 1.193 G | −4.0 % | −3.3 % |
+| sparse-large `-tm -n3` | 6.200 G | 6.257 G | 5.905 G | 1.197 G | −5.6 % | −4.7 % |
+| sparse `-tm -s0.05 -n3` | 0.800 G | 0.812 G | 0.762 G | 0.222 G | −6.2 % | −4.8 % |
+| d1000 `-tm -n2` | 0.087 G | 0.087 G | 0.087 G | 1.639 G | −0.3 % | −0.8 % |
+| d2000 `-tm -n2` / `-n3` | 0.165 / 0.450 G | 0.165 / 0.451 G | 0.164 / 0.450 G | 1.03 / 6.07 G | −0.4 / −0.2 % | −0.3 / +0.2 % |
+| d5000 `-tm -n3` | 3.695 G | 3.048 G | 2.816 G | 1.126 G | −7.6 % | −23.8 % |
+| d20000 `-tm -n2` / `-s-2 -n2` | 5.747 / 5.741 G | 5.752 / 5.740 G | 5.732 / 5.731 G | 41.3 / 46.1 G | −0.3 / −0.2 % | −0.3 / −0.2 % |
+| tier `-n3 -As` / `-At` | 27.09 / 38.45 G | 28.37 / 39.70 G | 22.28 / 33.58 G | 5.57 / 11.37 G | −21.5 / −15.4 % | −17.8 / −12.7 % |
+| split `-n3 -As` / `-At` | 16.71 / 27.78 G | 17.29 / 28.35 G | 14.18 / 25.24 G | 3.16 / 9.67 G | −18.0 / −11.0 % | −15.1 / −9.1 % |
+| d20000 `-tm -s2 -n3` (#19 target) | (97 s) | 293.6 G (18.9 s) | 269.2 G (17.9 s) | 118.0 G (37.5 s) | −8.3 % | |
+| d20000 `-tm -s2 -n3 -At` | (120 s) | 392.4 G (40.3 s) | 368.0 G (40.0 s) | — | −6.2 % | |
+| lp50000 `-As -tm -s-2 -n1` (#34) | 120.9 G | 0.912 G | 0.889 G | 31.8 G | −2.5 % | |
+| advB-151-152 `-q0` | — | 7.901 G | 7.861 G | — | −0.5 % | |
+| advC-300-750 `-q0` | — | 20.276 G | 20.227 G | — | −0.2 % | |
+
+(v0.1.0 and C of lp50000 from the #34 baseline, d20000 v0.1.0 wall
+times from §7.2; not re-run.) The other #34 rows (lp12500 to lpc20000,
+advB-101, advC-100-250, the pinned `advb-101` and `advc-100-250`) are
+0.2–2.4 G runs; see the rerun note below.
+
 ## 8. Decision
 
 The size-limited search with the complete extension check is exactly
@@ -1399,3 +1474,10 @@ the bit sets by fix S3-1. Possible follow-up: maximal checks of maximal
 sets on sparse data still count every cover transaction. The pre-change
 M5 rows in `docs/benchmarks.md` describe the old full-exploration
 path.
+
+*Update (2026-10-27, issue #42):* the sibling rows had made maximal
+checks with `-n3`/`-n4` up to 9.7 % slower than v0.1.0 by instructions
+(register spills in the scan loop, and rows built on vertically checked
+levels where a word test costs 0.4 of a build visit). Fixed (§7.7):
+those rows are now 0.9–18.5 % below v0.1.0, the #19 target is a further
+8 % faster, and the output is unchanged.
