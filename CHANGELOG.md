@@ -125,9 +125,9 @@ The release workflow publishes the section whose heading matches the tag
   (`-As -tm -s-2 -n1`) now takes 0.05 s and 0.90 G instructions instead
   of 5.5 s and 126 G (C: 3.3 s, 31.8 G), and the time grows linearly
   with the size. The output is unchanged; ordinary maximal data is
-  within 0.5 % of the previous instruction counts. Covers with two or more such long transactions that
-  together reach the minimum support (for example `lpc20000 -tm`) stay
-  quadratic (#34).
+  within 0.5 % of the previous instruction counts. Covers with two or
+  more such long transactions that together reach the minimum support
+  (for example `lpc20000 -tm`) stay quadratic (#34).
 - The values of the information (`i`) and the G-test p-value (`g`), and
   of the Fisher tests (`f h m s`) for total weights above 170, differ from
   upstream's (and v0.1.0's) in the last bits on ordinary data: they are

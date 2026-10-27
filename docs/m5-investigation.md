@@ -514,8 +514,9 @@ reached, accepted by the repository (3.4) and passes the check.
     A cap on the total length of all deferred transactions would not
     bound this (deferrals after the plain exit would raise it).
     Not covered: covers whose deferred transactions together weigh smin
-    or more (`lpc20000 -tm`: several long chains) stay quadratic, about
-    the shortest chain per check.
+    or more (`lpc20000 -tm`: several long chains) stay quadratic: the
+    deferred chains are counted in full in cover order, about one chain
+    per check.
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
   unlimited as before); `xable2`/`deeper` are the size gates. The miner

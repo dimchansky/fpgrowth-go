@@ -322,10 +322,11 @@ func TestExtCheckMaximalDeferProperty(t *testing.T) {
 	}
 }
 
-// visits are the actual item visits of a scanMaximal call (whole
-// transactions minus the items not visited after a stop, plus the
-// binary-search probes) and, of these, the probes of the precheck and of
-// the search that stopped the call.
+// visits are the actual work of a scanMaximal call: its item visits
+// (whole transactions minus the items not visited after a stop, plus the
+// binary-search probes) and the touched items scanned by the precheck;
+// exitSearch: of these, the probes of the precheck and of the search
+// that stopped the call.
 type visits struct{ real, exitSearch int }
 
 // measureScan returns the visits of the scanMaximal call(s) in f.
@@ -334,7 +335,7 @@ func measureScan(c *extChecker, f func()) visits {
 	f()
 	st := c.scanStat
 	return visits{
-		real:       int(c.work-w0) - (st.skipped - st0.skipped),
+		real:       int(c.work-w0) - (st.skipped - st0.skipped) + st.prepass - st0.prepass,
 		exitSearch: st.presteps - st0.presteps + st.exitsteps - st0.exitsteps,
 	}
 }
@@ -456,13 +457,67 @@ func TestExtCheckMaximalOnePrecheck(t *testing.T) {
 	}
 	c.markSet([]tract.Item{a})
 	nn := c.bitCover([]tract.Item{a})
-	var ok bool
+	c.mguard = plainGuard
+	var okP, ok bool
+	p := measureScan(c, func() { okP = c.scanMaximal(nn) })
+	c.mguard = 4
+	c.markSet([]tract.Item{a})
 	v := measureScan(c, func() { ok = c.scanMaximal(nn) })
-	if !ok {
-		t.Fatal("{a}: not maximal, want maximal")
+	if !ok || !okP {
+		t.Fatalf("{a}: maximal %v (plain %v), want maximal", ok, okP)
 	}
-	if st := c.scanStat; st.prepass > v.real || st.prepass == 0 {
-		t.Fatalf("precheck passes scanned %d touched items, %d actual item visits", st.prepass, v.real)
+	if st := c.scanStat; st.prepass == 0 || st.prepass > v.real-st.prepass || v.real > 2*p.real+v.exitSearch {
+		t.Fatalf("precheck passes scanned %d touched items, actual work %d, plain scan %d", st.prepass, v.real, p.real)
 	}
-	t.Logf("%d actual item visits, %+v", v.real, c.scanStat)
+	t.Logf("actual work %d (plain scan %d), %+v", v.real, p.real, c.scanStat)
+}
+
+// TestExtCheckMaximalCapSecondLong guards the cap's budget against later
+// deferrals (correctness review of PR #43, F3: a budget reset at every
+// deferral passed all other tests). Set {a}, smin 2: a long light line
+// t1 holding y, a short line holding y (the plain scan stops there),
+// then a second, much longer light line t2 and more short lines. The
+// budget stays |t1|: the short lines counted out of order hold at most
+// |t1| items, so the actual work stays within twice the plain scan's.
+// (Adapted from TestCritic34CapSecondLong.)
+func TestExtCheckMaximalCapSecondLong(t *testing.T) {
+	line := func(p string, n int, extra ...string) []string {
+		s := append([]string{"a"}, extra...)
+		for len(s) < n {
+			s = append(s, p+strconv.Itoa(len(s)))
+		}
+		return s
+	}
+	txs := []oracle.Transaction{
+		{Items: line("t1_", 50, "y"), Weight: 1},
+		{Items: line("s1_", 40, "y"), Weight: 1},
+		{Items: line("t2_", 500), Weight: 1},
+	}
+	for k := 2; k <= 8; k++ {
+		txs = append(txs, oracle.Transaction{Items: line("s"+strconv.Itoa(k)+"_", 40), Weight: 1})
+	}
+	work := func(guard int) (bool, visits) {
+		c, ib := newTestChecker(t, txs, report.TargetMaximal, 2, rowsAuto)
+		c.mguard = guard
+		var a tract.Item
+		for i := range tract.Item(len(c.freq)) {
+			if ib.ID(i) == "a" {
+				a = i
+			}
+		}
+		c.markSet([]tract.Item{a})
+		n := c.bitCover([]tract.Item{a})
+		var ok bool
+		v := measureScan(c, func() { ok = c.scanMaximal(n) })
+		return ok, v
+	}
+	okP, wP := work(plainGuard)
+	ok, w := work(4)
+	if ok || okP {
+		t.Fatalf("{a} maximal: plain %v, deferred %v, want false", okP, ok)
+	}
+	if w.real > 2*wP.real+w.exitSearch {
+		t.Fatalf("actual work %+v, plain scan %+v", w, wP)
+	}
+	t.Logf("actual work: plain %d, deferred %d", wP.real, w.real)
 }

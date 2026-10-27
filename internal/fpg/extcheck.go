@@ -862,24 +862,30 @@ func (c *extChecker) keepSeek(t int32) {
 // in cover order, and the scan goes on in cover order. The deferred ones
 // are also visited in cover order at the end (scanDeferred).
 //
-// Bound, in actual item visits (counted items, plus one step per
-// binary-search probe): let V be the plain scan's item visits up to its
-// exit (or all of them). The scan makes at most 2·V + S of them, S the
+// Bound, in actual work (counted items, plus one step per binary-search
+// probe, plus the touched items scanned by the precheck): let V be the
+// plain scan's item visits up to its exit (or all of them). The scan
+// does at most 2·V + S of it, S the
 // binary-search steps on t1 before its deferral and on the transaction
 // in which the plain scan stops; each of these two searches costs less
 // than that transaction's length and at most bitlen(|t|) per candidate,
-// a candidate being an item already visited. Up to t1 both scans are
-// the same, and the plain scan visits all of t1 (above), so V >= the
-// visits before t1 + |t1|. After t1, the deferral counts at most |t1|
-// items of short transactions out of order; every other transaction is
-// taken in cover order, the deferred ones after the counted ones before
-// them, so the counts are at least the plain scan's at the same
-// transaction and the scan stops no later than the plain scan does; a
-// search of a deferred transaction before that one costs less than the
-// plain scan's visit of it. The candidates add passes over the touched
-// items, which were visited before. (A cap on the total length of all
-// deferred transactions would not bound this: deferrals after the plain
-// scan's exit would raise it.)
+// a candidate being an item already visited. Let pre be the visits
+// before the first long light transaction t (both scans are the same up
+// to it). The precheck's one pass P over the touched items costs at most
+// pre. If it hits, the scan stops: pre + P + S <= 2·V + S. If it
+// declines, the rest is the plain scan: V + P <= 2·V. If t is deferred
+// (t1), the plain scan visits all of t1 (above), so V >= pre + |t1|.
+// After t1, the deferral counts at most |t1| items of short transactions
+// out of order; every other transaction is taken in cover order, the
+// deferred ones after the counted ones before them, so the counts are at
+// least the plain scan's at the same transaction and the scan stops no
+// later than the plain scan does; a search of a deferred transaction
+// before that one costs less than the plain scan's visit of it. So the
+// visits are at most V + |t1| + S, and with P <= pre the work is at
+// most V + pre + |t1| + S <= 2·V + S. The candidates' filters are passes
+// over touched items, which were visited before (not counted). (A cap
+// on the total length of all deferred transactions would not bound
+// this: deferrals after the plain scan's exit would raise it.)
 //
 // The scan's work counter (c.work, the sibling rows' cost signal) counts
 // whole transactions; scanStat.skipped counts the items of a transaction

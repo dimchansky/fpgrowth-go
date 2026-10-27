@@ -796,7 +796,7 @@ output byte-identical to `main`):
 Per doubling `main` grows 3.9–4.0×, the branch 2.0× (linear; lp50000
 5.46 s → 0.05 s). `lpc20000 -tm` stays quadratic: its covers hold
 several long chains that together reach the minimum support, so the
-shortest of them is still counted in full (+0.6 %). The advB shape of
+first of them in cover order is still counted in full (+0.6 %). The advB shape of
 the PR review, where the plain scan stops early inside the long line,
 is at `main`'s cost (−0.2 % to +0.5 %; 4.3× before the precheck). On
 the ordinary `-tm -n` rows of `configs.txt` no check defers anything
