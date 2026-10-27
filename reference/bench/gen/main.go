@@ -147,7 +147,7 @@ func printList(w io.Writer) error {
 		}
 		avg := float64(sum) / float64(max(s.Transactions, 1))
 		fmt.Fprintf(tw, "%s\t%d\t%d\t%.1f\t%d\t%d\t%.3f\t%v\t%d\t%x\t\n", s.Name, s.Transactions, nused, avg,
-			minLen, maxLen, avg/float64(max(nused, 1)), s.MaxWeight > 0, cw.n, h.Sum(nil)[:6])
+			minLen, maxLen, avg/float64(max(nused, 1)), s.weighted(), cw.n, h.Sum(nil)[:6])
 	}
 	return tw.Flush()
 }

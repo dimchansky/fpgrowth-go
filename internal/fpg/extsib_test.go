@@ -577,8 +577,8 @@ func TestExtCheckSiblingBound(t *testing.T) {
 	c, p = newChecker()
 	desc := run(c, p, true, exact)
 	// pinned for these data: a change of the rule moves them
-	if asc != 16 || desc != 4 {
-		t.Fatalf("built at child %d (ascending, code bound) and %d (descending, miner bound), want 16 and 4", asc, desc)
+	if asc != 31 || desc != 4 {
+		t.Fatalf("built at child %d (ascending, code bound) and %d (descending, miner bound), want 31 and 4", asc, desc)
 	}
 	if asc < 0 || desc < 0 || desc >= asc {
 		t.Fatalf("built at child %d (ascending, code bound) and %d (descending, miner bound), want both, descending first",
@@ -601,4 +601,72 @@ func TestExtCheckSiblingBound(t *testing.T) {
 		t.Fatalf("second parent below the maximum size: built at child %d, want about %d", b, desc)
 	}
 	t.Logf("built at child %d (ascending), %d (descending)", asc, desc)
+}
+
+// TestExtCheckSiblingWordCost checks the build rule's unit of the
+// vertical checks (issue #42): a word test of vertMaximal costs about
+// sibWordCost of a build visit, so a level whose children are checked
+// vertically needs about 1/sibWordCost times the children of a level
+// checked by scans before the rows pay. The children of the parent are
+// maximal and checked vertically (fewer word tests than cover visits),
+// with a constant miner bound of the later children: with 16 later
+// children the rows are not built (they were before #42: dense -tm -n3
+// and -n4 built rows that saved less than they cost), with 32 they are.
+// The level counts its vertical word tests apart (vwork); a scan adds
+// none.
+func TestExtCheckSiblingWordCost(t *testing.T) {
+	r := rand.New(rand.NewPCG(19, 3))
+	txs := sibData(r, 3000, 40, 0.3, 1)
+	// run checks the children of parent p (descending codes) with the
+	// constant bound left and returns the child at which rows were built.
+	run := func(c *extChecker, p tract.Item, left int) (built int) {
+		built, b0 := -1, c.sibStat.builds
+		for n := range int(p) {
+			h := p - 1 - tract.Item(n)
+			c.left = left
+			if !c.checkPath([]tract.Item{p, h}, []tract.Item{p, h}, 1) {
+				t.Fatalf("{%d, %d} not maximal", p, h)
+			}
+			if h, v := c.costs(c.path[1].n); h <= v {
+				t.Fatalf("child %d: scan (h %d, v %d), want a vertical check", n, h, v)
+			}
+			if built < 0 && c.sibStat.builds > b0 {
+				built = n
+			}
+			if s := &c.sibs[0]; !s.built && s.vwork != s.work {
+				t.Fatalf("parent %d, child %d: level work %d, of it vertical %d, want all", p, n, s.work, s.vwork)
+			}
+		}
+		return built
+	}
+	newChecker := func() (*extChecker, tract.Item) {
+		c, _ := newTestChecker(t, txs, report.TargetMaximal, 140, rowsAuto)
+		return c, tract.Item(len(c.freq) - 1)
+	}
+	c, p := newChecker()
+	if b := run(c, p, 16); b >= 0 {
+		t.Fatalf("16 later children: rows built at child %d", b)
+	}
+	// the next parent starts its level afresh (work and vwork reset)
+	if b := run(c, p-1, 16); b >= 0 {
+		t.Fatalf("second parent, 16 later children: rows built at child %d", b)
+	}
+	c, p = newChecker()
+	if b := run(c, p, 32); b < 0 {
+		t.Fatal("32 later children: no rows built")
+	}
+	// a scan adds no vertical work
+	c, _ = newTestChecker(t, txs, report.TargetMaximal, 140, rowsAuto)
+	c.markSet([]tract.Item{0})
+	c.work, c.vwork = 0, 0
+	n := c.bitCover([]tract.Item{0})
+	c.scanMaximal(n)
+	if c.work == 0 || c.vwork != 0 {
+		t.Fatalf("scan: work %d, vertical %d, want work and no vertical work", c.work, c.vwork)
+	}
+	c.work = 0
+	c.vertMaximal()
+	if c.work == 0 || c.vwork != c.work {
+		t.Fatalf("vertical: work %d, vertical %d, want equal", c.work, c.vwork)
+	}
 }

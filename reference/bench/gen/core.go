@@ -102,7 +102,40 @@ type benchSpec struct {
 	// k mod Transactions). With -s-1 -n1 (Transactions 1 or 2) the
 	// common items are perfect extensions of the empty set.
 	Wide int
+	// Plane > 0 selects the affine-plane adversary of issue #34 (PR #43
+	// performance review, "advB") instead (every other field but Name,
+	// Items, Transactions and Classes must be 0): with q = Plane (a
+	// prime), for every point (x, y) of the plane AG(2, q) the line
+	// {b z p(x,y)}, then one line of all points (x-major) and b, then
+	// Classes ≤ q+1 parallel classes of q lines each: class m < q holds
+	// the lines {p(x, (m·x+c) mod q) : x < q}, class q the vertical
+	// lines {p(c, y) : y < q}, for c < q. Items are numbered in this
+	// order of first appearance (b = 0, z = 1, p(x, y) = 2+q·x+y), so
+	// with -q0 the data equal the review's genadv.py up to the item
+	// names. With -As -tm -s-2 -n1 the maximal check of a point defers
+	// the long light line and has an early exit at b in it. Items must
+	// be q²+2 and Transactions q²+1+Classes·q.
+	Plane, Classes int
+	// Filter > 0 selects the candidate-filter adversary of issue #34
+	// (PR #43 review round 2, "advC") instead (every other field but
+	// Name, Items, Transactions, Deferred and FilterSupp must be 0;
+	// weighted, written with the weight as the last field): with
+	// k = Filter, D = Deferred, s = FilterSupp and l = 4(k+D), the k
+	// lines S_i = {s(i,0) … s(i,l−1)} of weight 2, the line F of the
+	// l+2 items f(j) of weight s, the D lines {u(d)} of weight s, the k
+	// lines S_i ∪ {x} of weight s−2 and the D lines F ∪ {u(d), x} of
+	// weight 1. Items are numbered in this order of first appearance
+	// (s(i,j) = i·l+j, f(j) = k·l+j, u(d) = k·l+l+2+d, x = k·l+l+2+D),
+	// so with -q0 the data equal the review's genadvc.py up to the item
+	// names. With -w -As -tm -s-<s> -n1 the cover of x is k short lines
+	// and D long light ones, which scanMaximal defers and searches for
+	// its candidates. Items must be k·l+l+3+D and Transactions 2k+2D+1.
+	Filter, Deferred, FilterSupp int
 }
+
+// weighted reports whether the dataset has transaction weights (written
+// as the last field).
+func (s benchSpec) weighted() bool { return s.MaxWeight > 0 || s.Filter > 0 }
 
 // longShortCount returns the number of transactions of a Short > 0 spec.
 func (s benchSpec) longShortCount() int {
@@ -195,6 +228,13 @@ var benchSpecs = []benchSpec{
 	{Name: "one-12500", Transactions: 1, Items: 12500, Wide: 12500},
 	{Name: "t4b-3000", Transactions: 2, Items: 6000, Wide: 3000},
 	{Name: "t4b-6000", Transactions: 2, Items: 12000, Wide: 6000},
+	// Adversaries of the maximal check's deferral (issue #34, PR #43
+	// performance reviews), pinned by issue #42: advb-101 is the review's
+	// advB with q = 101 and all 102 classes, advc-100-250 its advC with
+	// k = 100, D = 250 and s = 1000.
+	{Name: "advb-101", Transactions: 101*101 + 1 + 102*101, Items: 101*101 + 2, Plane: 101, Classes: 102},
+	{Name: "advc-100-250", Transactions: 2*100 + 2*250 + 1, Items: 100*1400 + 1400 + 3 + 250,
+		Filter: 100, Deferred: 250, FilterSupp: 1000},
 }
 
 // benchSpecByName returns the spec with the given name.
@@ -253,8 +293,35 @@ func (s benchSpec) validate() error {
 		s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 ||
 		s.Trap != 0 || s.Chain != 0 || s.MaxWeight != 0):
 		return fmt.Errorf("benchgen %s: invalid wide lines", s.Name)
+	case s.Plane < 0 || s.Plane > 0 && (s.Plane < 2 || !benchPrime(s.Plane) || s.Classes < 0 ||
+		s.Classes > s.Plane+1 || s.Items != s.Plane*s.Plane+2 ||
+		s.Transactions != s.Plane*s.Plane+1+s.Classes*s.Plane || s.MinLen != 0 || s.MaxLen != 0 ||
+		s.Skew != 0 || s.Patterns != 0 || s.Density != 0 || s.Short != 0 || s.Trap != 0 ||
+		s.Chain != 0 || s.Wide != 0 || s.MaxWeight != 0) || s.Plane == 0 && s.Classes != 0:
+		return fmt.Errorf("benchgen %s: invalid affine plane", s.Name)
+	case s.Filter < 0 || s.Filter > 0 && (s.Deferred < 0 || s.FilterSupp < 3 ||
+		s.Items != (s.Filter+1)*4*(s.Filter+s.Deferred)+3+s.Deferred ||
+		s.Transactions != 2*s.Filter+2*s.Deferred+1 ||
+		int64(s.FilterSupp)*int64(2*s.Filter+s.Deferred+1)+int64(s.Deferred) > math.MaxInt32 ||
+		s.MinLen != 0 || s.MaxLen != 0 || s.Skew != 0 || s.Patterns != 0 || s.Density != 0 ||
+		s.Short != 0 || s.Trap != 0 || s.Chain != 0 || s.Wide != 0 || s.MaxWeight != 0 || s.Plane != 0) ||
+		s.Filter == 0 && (s.Deferred != 0 || s.FilterSupp != 0):
+		return fmt.Errorf("benchgen %s: invalid candidate-filter lines", s.Name)
 	}
 	return nil
+}
+
+// benchPrime reports whether n is a prime.
+func benchPrime(n int) bool {
+	if n < 2 {
+		return false
+	}
+	for d := 2; d*d <= n; d++ {
+		if n%d == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // benchGenerate calls fn for every transaction of the dataset, in order.
@@ -277,6 +344,12 @@ func benchGenerate(s benchSpec, fn func(tx benchTx) error) error {
 	}
 	if s.Wide > 0 {
 		return benchWide(s, fn)
+	}
+	if s.Plane > 0 {
+		return benchPlane(s, fn)
+	}
+	if s.Filter > 0 {
+		return benchFilter(s, fn)
 	}
 	r := &benchRNG{src: rand.NewPCG(s.Seed, 0x9e3779b97f4a7c15)}
 	// cumulative popularity for inverse-CDF sampling
@@ -486,9 +559,107 @@ func benchWide(s benchSpec, fn func(tx benchTx) error) error {
 	return nil
 }
 
+// benchPlane generates the affine-plane adversary of issue #34
+// (benchSpec.Plane).
+func benchPlane(s benchSpec, fn func(tx benchTx) error) error {
+	q := int32(s.Plane)
+	p := func(x, y int32) int32 { return 2 + q*x + y }
+	items := make([]int32, 0, s.Items)
+	emit := func() error { return fn(benchTx{Items: items, Weight: 1}) }
+	for x := range q {
+		for y := range q {
+			items = append(items[:0], 0, 1, p(x, y)) // b z p(x,y)
+			if err := emit(); err != nil {
+				return err
+			}
+		}
+	}
+	items = items[:0]
+	for x := range q {
+		for y := range q {
+			items = append(items, p(x, y))
+		}
+	}
+	items = append(items, 0) // and b
+	if err := emit(); err != nil {
+		return err
+	}
+	for m := range int32(s.Classes) {
+		for c := range q {
+			items = items[:0]
+			for i := range q {
+				if m == q { // vertical lines
+					items = append(items, p(c, i))
+				} else {
+					items = append(items, p(i, (m*i+c)%q))
+				}
+			}
+			if err := emit(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// benchFilter generates the candidate-filter adversary of issue #34
+// (benchSpec.Filter).
+func benchFilter(s benchSpec, fn func(tx benchTx) error) error {
+	k, d := int32(s.Filter), int32(s.Deferred)
+	l := 4 * (k + d)
+	f0, u0 := k*l, k*l+l+2 // f(0), u(0)
+	x := u0 + d
+	smin := int64(s.FilterSupp)
+	items := make([]int32, 0, l+3)
+	emit := func(w int64) error { return fn(benchTx{Items: items, Weight: w}) }
+	short := func(i int32) {
+		items = items[:0]
+		for j := range l {
+			items = append(items, i*l+j)
+		}
+	}
+	long := func() {
+		items = items[:0]
+		for j := range l + 2 {
+			items = append(items, f0+j)
+		}
+	}
+	for i := range k {
+		short(i)
+		if err := emit(2); err != nil {
+			return err
+		}
+	}
+	long()
+	if err := emit(smin); err != nil {
+		return err
+	}
+	for j := range d {
+		items = append(items[:0], u0+j)
+		if err := emit(smin); err != nil {
+			return err
+		}
+	}
+	for i := range k {
+		short(i)
+		items = append(items, x)
+		if err := emit(smin - 2); err != nil {
+			return err
+		}
+	}
+	for j := range d {
+		long()
+		items = append(items, u0+j, x)
+		if err := emit(1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // benchWrite writes the dataset in upstream's default table format (items
 // separated by single spaces, one transaction per line, the weight as the
-// last field if s.MaxWeight > 0) or, with csv, as comma-separated values
+// last field if the dataset is weighted) or, with csv, as comma-separated values
 // (the weight as the last column).
 func benchWrite(w io.Writer, s benchSpec, csv bool) error {
 	bw := bufio.NewWriterSize(w, 1<<16)
@@ -505,7 +676,7 @@ func benchWrite(w io.Writer, s benchSpec, csv bool) error {
 			}
 			line = strconv.AppendInt(line, int64(i), 10)
 		}
-		if s.MaxWeight > 0 {
+		if s.weighted() {
 			line = append(line, sep)
 			line = strconv.AppendInt(line, tx.Weight, 10)
 		}

@@ -71,6 +71,8 @@ committed; files are written to temporary directories.
 | `d20000x200d30` (M5A-1) | 20,000 | 200 | 60.0 / 36 / 86 | 0.300 | independent, 30 % | — | no | 4,137,790 | `a91a38aab4da` |
 | `t100000x204c4` (#19) | 100,000 | 204 | 20.8 / 5 / 43 | 0.102 | independent: 4 items 20 %, 200 items 10 % | — | no | 7,144,752 | `768bd8ccd3c2` |
 | `s50000x414` (#19) | 50,000 | 414 | 67.2 / 39 / 98 | 0.162 | 4 exclusive items (80 %), 10 at 65 %, 400 at 15 % | — | no | 12,205,031 | `0f109186d108` |
+| `advb-101` (#34, #42) | 20,504 | 10,203 | 52.7 / 3 / 10,202 | 0.005 | affine plane AG(2,101): point lines, one long line, 102 parallel classes | — | no | 5,251,622 | `1f778307fa40` |
+| `advc-100-250` (#34, #42) | 701 | 141,653 | 902.6 / 1 / 1,404 | 0.006 | 100 short and 250 long light lines with x | — | 1, 2, 998, 1000 | 4,209,399 | `fe8288011f22` |
 
 Density is the average length divided by the number of items used. The
 three `dNxKdP` datasets (added by review fix S3-2, seeds 1–3) are the
@@ -84,6 +86,12 @@ not the same bytes. `t100000x204c4` (seed 6) is two-tier data from the
 PR review of #19 (performance finding F1): every pair of rare items is a
 parent with only the 4 common items as maximal children, a guard
 against building sibling rows that cannot pay off (`m5-tier-*` rows).
+`advb-101` and `advc-100-250` (issue #42) are the adversaries of the
+maximal check's deferral from the performance reviews of PR #43 (issue
+#34, `genadv.py` with q = 101 and all 102 classes, `genadvc.py` with
+k = 100, D = 250, smin 1000); with `-q0` they equal the reviews' files
+up to the item names (numbered in order of first appearance). Rows
+`advb-101-m` and `advc-100-250-m`, about 0.2 s each.
 "Keep" is the probability that each item of a chosen planted pattern is
 included; `dense` keeps whole patterns, so many item sets have perfect
 extensions and the closed sets are far fewer than the frequent ones.
@@ -101,7 +109,7 @@ test time is unchanged.
 | File | Benchmarks | What is measured |
 | --- | --- | --- |
 | `benchmarks_test.go` | `BenchmarkSuiteTargets` | public API (`MineItemsets`, in-memory source, counting callback): 4 datasets × 1–2 thresholds × frequent/closed/maximal/generators |
-| | `BenchmarkSuiteMaxSize` | `MaxSize` 3 and 5 on `dense` at 2 % (output capped by size) |
+| | `BenchmarkSuiteMaxSize` | `MaxSize` 3 and 5 on `dense` at 2 % (output capped by size); maximal sets with `MaxSize` 3 and 4 at 5 % (issue #42) |
 | | `BenchmarkSuiteVariants` | `Algorithm`/`Tuning`: simple (`-As -l0`), simple+fim16 (`-As`), complex (`-Ac -j`), complex+reorder (`-Ac`), single (`-Ad`), top-down (`-At`); dense frequent/closed/maximal, sparse frequent |
 | | `BenchmarkSuiteRules` | `MineRules`, sparse and dense, without and with `Evaluation{Measure: Lift, Filter, Threshold 1.5}` |
 | | `BenchmarkSuiteSources` | the same mining from `FromSlice` (string and int items), `TableFile` and `CSVFile` (MB/s = file size per op) |
