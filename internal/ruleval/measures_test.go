@@ -221,6 +221,8 @@ func BenchmarkEval(b *testing.B) {
 		{"", FisherInfo, 35, 60, 70, 1000},
 		{"", FisherSupport, 35, 60, 70, 1000},
 		{"FisherProb/1e6", FisherProb, 35000, 60000, 70000, 1000000},
+		// issue #40: strong association at 10^16 (underflow shortcut)
+		{"FisherInfo/1e16", FisherInfo, 5e14, 5e15, 5e15 + 1, 1e16},
 	} {
 		name := bc.name
 		if name == "" {
