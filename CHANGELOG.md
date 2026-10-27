@@ -121,7 +121,8 @@ The release workflow publishes the section whose heading matches the tag
   Before deferring, it checks whether the plain scan would have stopped
   inside that transaction, and a cap limits the reordering: the check
   visits at most twice the items the plain scan visits, plus two binary
-  searches (four times, counting its passes over candidate items). One line of 50,000 items plus 50,000 one-item lines
+  searches (four times, counting its passes over candidate items). One
+  line of 50,000 items plus 50,000 one-item lines
   (`-As -tm -s-2 -n1`) now takes 0.05 s and 0.90 G instructions instead
   of 5.5 s and 126 G (C: 3.3 s, 31.8 G), and the time grows linearly
   with the size. The output is unchanged; ordinary maximal data is
