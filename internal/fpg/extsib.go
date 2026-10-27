@@ -88,12 +88,18 @@ type sibHook struct {
 const sibBudget = 2
 
 // sibWordCost is the cost of a word test (a vertical maximal check's or a
-// sibling row's AND and population count of one word) in build visits
-// (issue #42, measured in process on dense, d5000x60d40, s50000x414 and
-// t100000x204c4: a word test 0.58-0.63 ns, a build visit 1.4-1.9 ns,
-// about 15 and 39 instructions; a scan visit 1.4-1.6 ns). It scales only
-// the saving of the build rule, never more than the rule without it
-// would allow (sibWorth).
+// sibling row's AND and population count of one word) in build visits.
+// It is a calibration of one machine: issue #42 measured it in process
+// on Apple M1 Max (arm64) with Go 1.27.3, on dense, d5000x60d40,
+// s50000x414 and t100000x204c4: a word test 0.58-0.63 ns, a build visit
+// 1.4-1.9 ns, a scan visit 1.4-1.6 ns. The instruction ratio, about
+// 15/39 ≈ 0.38, is the more portable figure. The rule is not sensitive
+// to it: with any value from 0.25 to 0.6 every measured row stays below
+// main (bd39eec) and within about 2 % of v0.1.0; only a value near 1.0
+// (word tests priced like build visits, as before #42) brings dense
+// -tm -s5 -n3/-n4 back to +4.4/+2.6 % against v0.1.0. It scales only the
+// saving of the build rule, never more than the rule without it would
+// allow (sibWorth).
 const sibWordCost = 0.4
 
 // sibLevel holds the sibling rows of one path level.

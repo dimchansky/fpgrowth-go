@@ -47,11 +47,22 @@ Two independent costs, both added by #19 (ba63d14):
    f = 1 - (1 - sibWordCost)·vwork/work with sibWordCost = 0.4 (the
    measured ratio, 0.36-0.42). f <= 1, so the rule never builds where
    main did not; on scan levels f is 1. The B/2 condition is unchanged,
-   so a level that still builds builds at the same child.
+   but the smaller gain can delay a build: a level that still builds
+   does so at the same or a later child (TestExtCheckSiblingBound's
+   pinned child moved from 16 to 31).
 
 sibWordCost tried at 1.0 / 0.5 / 0.4 / 0.33 (instructions, minimum of
 2 runs, against v0.1.0): dense -n3 +4.4 / +0.3 / -0.8 / -2.0 %, -n4
 +2.6 / -5.3 / -5.9 / -6.7 %, d5000 -20.2 / -23.2 / -23.8 / -24.0 %.
+
+The value 0.4 is a calibration of one machine (Apple M1 Max, arm64,
+Go 1.27.3); the instruction ratio, about 15/39 ≈ 0.38, is the more
+portable figure. The performance review measured the tolerance: with
+0.25 / 0.4 / 0.6 / 1.0, dense -n3 is -2.9 / -1.0 / +1.3 / +4.4 % and
+-n4 -6.7 / -5.9 / -4.5 / +2.6 % against v0.1.0; tier, split, large,
+d20000 and weighted move by at most ±0.3 %. So any value from 0.25 to
+0.6 keeps every row below main and within about 2 % of v0.1.0; only a
+value near 1.0 brings dense back above v0.1.0 (still below main).
 
 ## Correctness
 

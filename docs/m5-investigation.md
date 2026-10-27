@@ -1385,10 +1385,18 @@ fields in locals; the build clears all rows up front (B already counts
 them). `vertMaximal` counts its word tests apart (`vwork`), and the
 build rule scales the saving by 1 − 0.6·vwork/work (`sibWordCost` =
 0.4): never above the rule without it, unchanged on scan levels; the
-B/2 condition is unchanged. Tried on the four rows and d5000 with
+B/2 condition is unchanged, but the smaller saving can delay a build to
+the same or a later child. Tried on the four rows and d5000 with
 sibWordCost 1.0 / 0.5 / 0.4 / 0.33: dense `-n3` +4.4 / +0.3 / −0.8 /
 −2.0 % against v0.1.0, `-n4` +2.6 / −5.3 / −5.9 / −6.7 %, d5000 −20.2 /
-−23.2 / −23.8 / −24.0 %; 0.4 is the measured ratio.
+−23.2 / −23.8 / −24.0 %. 0.4 is the ratio measured on this machine
+(Apple M1 Max, arm64, Go 1.27.3); the instruction ratio, about
+15/39 ≈ 0.38, is the more portable figure. The performance review
+measured the tolerance: with 0.25 / 0.6 dense `-n3` is −2.9 / +1.3 %
+and `-n4` −6.7 / −4.5 % against v0.1.0, the other rows move by at most
+±0.3 %, so any value from 0.25 to 0.6 keeps every row below `main` and
+within about 2 % of v0.1.0; only a value near 1.0 brings dense back to
++4.4 / +2.6 % (still below `main`).
 
 Instructions, minimum of 2 interleaved runs (C: 1 run), output to
 `/dev/null`, Apple M1 Max, load 2.4–2.9; `main` is `bd39eec`. The md5

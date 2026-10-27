@@ -173,10 +173,13 @@ The release workflow publishes the section whose heading matches the tag
   The sibling rows of #19 had made the check's item loop spill its
   registers (`dense -tm -s5 -n3`/`-n4`, two-tier and split data: +3 to
   +10 % instructions against v0.1.0), and they were built on dense data
-  whose children are checked by word tests, which cost about 0.4 of a
+  whose children are checked by word tests, which cost much less than a
   build visit, so the rows saved less than they cost. The loops are
-  rewritten without calls, and the build rule counts word tests at that
-  cost. Instructions against v0.1.0: dense `-n3` −0.9 %, `-n4` −5.9 %,
+  rewritten without calls, and the build rule prices a word test at 0.4
+  of a build visit, a ratio calibrated on Apple M1 Max (arm64) with Go
+  1.27.3 (about 15/39 ≈ 0.38 by instructions); with any value from
+  0.25 to 0.6 the measured rows stay within about 2 % of v0.1.0 or
+  below it. Instructions against v0.1.0: dense `-n3` −0.9 %, `-n4` −5.9 %,
   `t100000x204c4 -n3` −18.5 %, `s50000x414 -n3` −15.3 %; the output is
   unchanged (#42).
 
