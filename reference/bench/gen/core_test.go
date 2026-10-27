@@ -63,6 +63,8 @@ func TestDatasetsPinned(t *testing.T) {
 		"one-12500":     "d9c59cb765fc",
 		"t4b-3000":      "d7ca30496461",
 		"t4b-6000":      "7916bc9a4675",
+		"advb-101":      "1f778307fa40",
+		"advc-100-250":  "fe8288011f22",
 	}
 	for _, s := range benchSpecs {
 		h := sha256.New()

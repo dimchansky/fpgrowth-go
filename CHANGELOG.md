@@ -69,6 +69,12 @@ The release workflow publishes the section whose heading matches the tag
 - Benchmarks: maximal rows for the long-and-short shapes
   (`lp-12500-m-As`, `lp-25000-m-As`, `lp-50000s2-m-n1`, `lp-50000w-m`,
   `lp-c20000-m`) in the Go-vs-C comparison (#34).
+- Benchmarks: `dense -tm -s5 -n3`/`-n4` rows (`dense-m-n3`,
+  `dense-m-n4`) in the Go-vs-C comparison and as
+  `BenchmarkSuiteMaxSize/dense/s=5/maximal/n=3`/`n=4`; the two
+  adversaries of the maximal check's deferral from the reviews of #34
+  are pinned datasets (`advb-101`, `advc-100-250`) with rows
+  `advb-101-m` and `advc-100-250-m` (#42).
 
 ### Changed
 
@@ -161,6 +167,18 @@ The release workflow publishes the section whose heading matches the tag
   permissive (see Fixed); maxima switch above 2^52.
 
 ### Fixed
+
+- Maximal item sets with a small maximum size (`-tm -n`,
+  `TargetMaximal` with `MaxSize`) are no longer slower than in v0.1.0.
+  The sibling rows of #19 had made the check's item loop spill its
+  registers (`dense -tm -s5 -n3`/`-n4`, two-tier and split data: +3 to
+  +10 % instructions against v0.1.0), and they were built on dense data
+  whose children are checked by word tests, which cost about 0.4 of a
+  build visit, so the rows saved less than they cost. The loops are
+  rewritten without calls, and the build rule counts word tests at that
+  cost. Instructions against v0.1.0: dense `-n3` −0.9 %, `-n4` −5.9 %,
+  `t100000x204c4 -n3` −18.5 %, `s50000x414 -n3` −15.3 %; the output is
+  unchanged (#42).
 
 - Documentation: the reason given for not porting `fpgpsp` (that its
   modules `tars.c` and `pspest.c` are missing from the upstream archive)

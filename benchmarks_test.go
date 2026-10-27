@@ -166,7 +166,8 @@ func BenchmarkSuiteTargets(b *testing.B) {
 }
 
 // BenchmarkSuiteMaxSize caps an otherwise exploding output with MaxSize
-// (dense data at 2 % support).
+// (dense data at 2 % support), and mines maximal sets of a small maximum
+// size at 5 % (issue #42: vertical checks, sibling rows of few children).
 func BenchmarkSuiteMaxSize(b *testing.B) {
 	src := FromSlice(suiteData(b, "dense"))
 	for _, tg := range suiteTargets[:3] {
@@ -176,6 +177,12 @@ func BenchmarkSuiteMaxSize(b *testing.B) {
 				suiteLoop(b, "sets", func() uint64 { return suiteCount(b, src, opt) })
 			})
 		}
+	}
+	for _, z := range []int{3, 4} {
+		opt := Options[string]{Target: TargetMaximal, MinSupport: pct(5), MaxSize: z}
+		b.Run(fmt.Sprintf("dense/s=5/maximal/n=%d", z), func(b *testing.B) {
+			suiteLoop(b, "sets", func() uint64 { return suiteCount(b, src, opt) })
+		})
 	}
 }
 

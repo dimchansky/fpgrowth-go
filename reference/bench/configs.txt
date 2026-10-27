@@ -68,6 +68,12 @@ m5-d1000-m-n2*  d1000x30d80.tab   -tm -s10 -n2
 m5-d1000-c      d1000x30d80.tab   -tc -s30
 m5-d5000-c-n3*  d5000x60d40.tab   -tc -s5 -n3
 m5-d5000-m-n3*  d5000x60d40.tab   -tm -s5 -n3
+# Maximal sets of the planted-pattern dense data with a small maximum
+# size (issue #42): their checks are vertical, and sibling rows (issue
+# #19) built for the few children of a parent did not pay off (+7 % and
+# +10 % against v0.1.0 by instructions before #42).
+dense-m-n3*     dense.tab         -tm -s5 -n3
+dense-m-n4*     dense.tab         -tm -s5 -n4
 # Dense maximal sets of exactly the maximum size (independent audit
 # M5A-1, issue #19): every 3-set of d20000x200d30 is frequent at -s2 and
 # no 4-set is, so -tm -n3 reports all C(200,3) = 1,313,400 3-sets, each
@@ -126,6 +132,13 @@ lp-25000-m-As*     lp25000.tab       -As -tm -s-2 -n1
 lp-50000s2-m-n1*   lp50000s2.tab     -As -tm -s-2 -n1
 lp-50000w-m*       lp50000w.tab      -w -As -tm -s-2 -n1
 lp-c20000-m*       lpc20000.tab      -As -tm -s-2 -n1
+# Adversaries of the maximal check's deferral (issue #34, PR #43
+# performance reviews; datasets pinned by issue #42): advb-101, the
+# affine plane AG(2,101), where the plain scan has an early exit in the
+# long light line; advc-100-250, weighted, where the cover of x is 100
+# short lines and 250 long light ones (candidate filters).
+advb-101-m*        advb-101.tab      -As -tm -s-2 -n1 -q0
+advc-100-250-m*    advc-100-250.tab  -w -As -tm -s-1000 -n1 -q0
 # The probe trap (issue #20, challenge H1): the first cover transaction
 # of {a_i} holds a covering item among its 4 probes, the shortest one
 # does not, so the first one must still be probed.
