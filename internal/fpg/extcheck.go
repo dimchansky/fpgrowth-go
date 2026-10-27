@@ -717,6 +717,7 @@ type scanStats struct {
 	// check stopped in that were not visited. Actual visits of
 	// scanMaximal = its work − skipped (tests).
 	prechecks, presteps, searches, exitsteps, skipped int
+	prepass                                           int // touched items scanned by prechecks
 }
 
 // scanProbes is the number of spread cover transactions that scanClosed
@@ -849,10 +850,11 @@ func (c *extChecker) keepSeek(t int32) {
 // cnt[j] >= smin − w(t) before t (an untouched item has cnt 0 and
 // w(t) < smin). So before the first transaction t1 is deferred, these
 // items of the counts so far are searched in t1 (binary search, if
-// cheaper than |t1|; otherwise t1 is counted in cover order and not
-// deferred): one found is a frequent extension, the plain scan's verdict
-// at about the same point. Without a hit the plain scan visits all of
-// t1.
+// cheaper than |t1|; otherwise nothing is deferred in this check and the
+// scan goes on in cover order): one found is a frequent extension, the
+// plain scan's verdict at about the same point. Without a hit the plain
+// scan visits all of t1. There is at most one precheck per check, and
+// its pass over the touched items costs at most the visits before t1.
 //
 // Deferral cap: the transactions counted after t1 while it is deferred
 // may have at most |t1| items in all; the next one that would exceed
@@ -927,7 +929,8 @@ scan:
 // would defer, the lowest bit of x in cover word i. Until one is
 // deferred, each such t is first checked for an early exit (precheck):
 // a hit decides the set, a miss defers t (t1), and a check that would
-// cost |t| or more counts t in cover order instead. After t1 it defers
+// cost |t| or more ends the deferral for this check: t and the rest are
+// counted in cover order. So there is at most one precheck per check. After t1 it defers
 // the later long transactions of weight below smin, counts the others up
 // to the cap (|t1| items in all), and either ends the deferral at the
 // cap (the deferred ones are counted, then the scan goes on in cover
@@ -967,7 +970,11 @@ scan:
 						rest += wt
 						continue
 					}
-					// else: counted in cover order, as by the plain scan
+					// too costly to check: t and the rest of the cover are
+					// counted in cover order, as by the plain scan (one
+					// precheck per check: its pass over the touched items
+					// costs at most the visits so far)
+					capped = true
 				} else if budget >= 0 {
 					if budget -= l; budget < 0 { // the cap: back to cover order
 						c.scanStat.capped++
@@ -1008,18 +1015,23 @@ scan:
 func (c *extChecker) precheck(t int32, touched []tract.Item, work int) (hit, cheap bool, _ int) {
 	items := c.txItems[c.txOff[t]:c.txOff[t+1]]
 	thr := c.smin - c.txW[t]
+	bl := bits.Len(uint(len(items)))
+	lim := len(items) // the search must cost less
+	if c.lookup == lookupNever {
+		lim = bl // tests: never search
+	}
 	n := 0
-	for _, it := range touched {
+	for k, it := range touched {
 		if c.cnt[it] >= thr {
-			n++
+			if n++; n*bl >= lim {
+				c.scanStat.prepass += k + 1
+				return false, false, work
+			}
 		}
 	}
+	c.scanStat.prepass += len(touched)
 	if n == 0 {
 		return false, true, work // no item can reach smin in t
-	}
-	bl := bits.Len(uint(len(items)))
-	if c.lookup == lookupNever || n*bl >= len(items) {
-		return false, false, work
 	}
 	c.scanStat.prechecks++
 	steps := 0

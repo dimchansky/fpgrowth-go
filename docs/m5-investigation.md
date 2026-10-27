@@ -491,9 +491,11 @@ reached, accepted by the repository (3.4) and passes the check.
     Precheck: the plain scan stops inside a light t at an item j iff
     j ∈ t and cnt[j] ≥ smin − w(t) before t. Before the first
     transaction t1 is deferred, these touched items are searched in t1
-    (binary search, if cheaper than |t1|; otherwise t1 is counted in
-    cover order and not deferred). A hit decides the set (not maximal);
-    without one the plain scan visits all of t1. (The first version
+    (binary search, if cheaper than |t1|; otherwise nothing is
+    deferred in this check and the scan goes on in cover order, so
+    there is one precheck per check and its pass over the touched items
+    costs at most the items visited before). A hit decides the set (not
+    maximal); without one the plain scan visits all of t1. (The first version
     lacked this: on the review's AG(2,q) shape the plain scan stopped
     in the long line after a few items and the deferral made every
     check count the lines through the point, quadratic; PR #43
@@ -1276,7 +1278,7 @@ are equal on every row.
 | `lp50000` | 125.9 G (5.46 s) | 120.9 G | 31.78 G (3.28 s) | **0.91 G (0.05 s)** |
 | `lp50000s2` (2 lookups per check) | 126.0 G | — | — | **1.04 G** |
 | `lp50000w` (`-w`) | 126.0 G | — | — | **0.98 G** |
-| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 16.41 G (+0.6 %) |
+| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 16.41 G (+0.6 to +0.7 %) |
 | review shape `advB-101-102 -q0` | 2.44 G | — | — | 2.44 G (−0.1 %) |
 | `advB-151-152 -q0` | 7.89 G | — | — | 7.92 G (+0.3 %) |
 | `advB-151-152 -q2` | 8.18 G | — | — | 8.16 G (−0.2 %) |
@@ -1310,7 +1312,13 @@ deferral property test with 30,000 bags (6.9 M checks against a brute
 force; 2.3 M deferred, 133 k with lookups, 248 k capped; the bound
 R ≤ 2·V + S in actual visits held on every call) pass in the default
 and the `fpgforce` build; 13 mutants of the deferral and the precheck
-are killed (`TestExtCheckMaximal*`, oracle, brute force).
+are killed (`TestExtCheckMaximal*`, oracle, brute force). A later
+change (one precheck per check, from the correctness review: a
+declined precheck had been repeated at every long transaction, each
+time with a pass over the touched items) was re-measured on the lp,
+lpc, advB and tier `-As` rows: within 0.7 % of the numbers above, same
+output; a 14th mutant (repeated prechecks) is killed by
+`TestExtCheckMaximalOnePrecheck`.
 
 ## 8. Decision
 

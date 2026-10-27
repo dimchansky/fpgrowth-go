@@ -414,3 +414,55 @@ func TestExtCheckMaximalEarlyExit(t *testing.T) {
 		t.Fatalf("%d checks, %d actual item visits", checks, def.real)
 	}
 }
+
+// TestExtCheckMaximalOnePrecheck guards the cost of the precheck's pass
+// over the touched items (correctness review of PR #43, round 2: when
+// every long light transaction that was not deferred ran its own pass,
+// a check took one pass per long transaction). Set {a}, smin 3: 100
+// short transactions of 40 own items (4,000 touched items of count 1),
+// then 2 short ones sharing 300 items E (count 2, touched last), then 50
+// long light transactions of own items. In a long one the items of E
+// can reach smin, too many to search, so the precheck declines after a
+// pass over almost all touched items, and the scan goes on in cover
+// order: one pass per check, at most the items visited before it.
+func TestExtCheckMaximalOnePrecheck(t *testing.T) {
+	id := 0
+	own := func(x []string, ln int) []string {
+		for len(x) < ln {
+			id++
+			x = append(x, "x"+strconv.Itoa(id))
+		}
+		return x
+	}
+	var txs []oracle.Transaction
+	for range 100 {
+		txs = append(txs, oracle.Transaction{Items: own([]string{"a"}, 41), Weight: 1})
+	}
+	e := []string{"a"}
+	for k := range 300 {
+		e = append(e, "e"+strconv.Itoa(k))
+	}
+	txs = append(txs, oracle.Transaction{Items: e, Weight: 1}, oracle.Transaction{Items: e, Weight: 1})
+	for range 50 {
+		txs = append(txs, oracle.Transaction{Items: own([]string{"a"}, 700), Weight: 1})
+	}
+	c, ib := newTestChecker(t, txs, report.TargetMaximal, 3, rowsAuto)
+	c.mguard = 4
+	var a tract.Item
+	for i := range tract.Item(len(c.freq)) {
+		if ib.ID(i) == "a" {
+			a = i
+		}
+	}
+	c.markSet([]tract.Item{a})
+	nn := c.bitCover([]tract.Item{a})
+	var ok bool
+	v := measureScan(c, func() { ok = c.scanMaximal(nn) })
+	if !ok {
+		t.Fatal("{a}: not maximal, want maximal")
+	}
+	if st := c.scanStat; st.prepass > v.real || st.prepass == 0 {
+		t.Fatalf("precheck passes scanned %d touched items, %d actual item visits", st.prepass, v.real)
+	}
+	t.Logf("%d actual item visits, %+v", v.real, c.scanStat)
+}
