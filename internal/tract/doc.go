@@ -61,6 +61,8 @@
 //	tbg_extent                       Bag.Extent
 //	tbg_tract(bag, j), j = 0..n-1    Bag.All
 //	tbg_tract(bag, j), j = n-1..0    Bag.Backward
+//	(fpgpsp's surrogates, mined      DenseBase: Count, Recode, BuildBag
+//	one after the other)             as above, without a map, reused
 //
 // Not ported here (unreachable from fpgrowth or replaced by the prefix
 // tree): item weights (IB_WEIGHTS, WTRACT), the transaction tree,
