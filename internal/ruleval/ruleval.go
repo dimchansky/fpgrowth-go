@@ -52,7 +52,7 @@
 // form near p = 1, and the Fisher tests for base > maxFact use Stirling's
 // formula with an exact deviation and visit only the contributing tables
 // (fisherlarge.go). The bounds hold for every valid table with supports
-// below 2^63: Chi2 and Yates relative 8 ulps; Info relative 32 ulps;
+// below 2^63: Chi2 and Yates relative 8 ulps; Info relative 64 ulps;
 // Certainty absolute 2^-40; the p-values of chi², Yates and G relative
 // 2^-36·(1+x) for the statistic x; the Fisher tests relative 2^-36 (for
 // base <= maxFact, FisherChi2 and FisherSupport keep upstream's

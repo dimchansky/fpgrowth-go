@@ -20,7 +20,7 @@ import (
 //
 // Accuracy: the values are accurate for every valid rule up to a total
 // transaction weight of math.MaxInt64: Chi2 and Yates within 8 ulps
-// (relative), Information within 32 ulps, Certainty within 2^-40
+// (relative), Information within 64 ulps, Certainty within 2^-40
 // (absolute), the p-values of the chi², Yates and G statistics within
 // 2^-36·(1+x) relative for the statistic x, and the Fisher measures
 // within 2^-36 relative (plus 2^-1000 absolute; for total weights up to

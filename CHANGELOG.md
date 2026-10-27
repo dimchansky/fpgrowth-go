@@ -166,6 +166,13 @@ The release workflow publishes the section whose heading matches the tag
   allocations on the issue's scan at 10^15 to 9·10^18); they no longer
   allocate. The result is the same 0. The proof is in
   `docs/reviews/post-v0.1.0/issue-40-design.md` (#40).
+- The documented error bound of the information (`i`, `Info`) is now
+  relative 64 ulps (2^-46) instead of 32 ulps (2^-47), and the
+  reference tolerance changes with it. The earlier derivation used two
+  constants that were slightly too small. Corrected, it gives about
+  65.5u (u = 2^-53), which 2^-47 = 64u does not cover and 2^-46 = 128u
+  does. The values are unchanged; the largest error measured is 12.85u
+  (#40).
 - Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
   `-s`, `-S`, `-F`, `-c`) follow a threshold contract
   (`docs/differences.md` N2 and "Threshold contract", #17). Behavior

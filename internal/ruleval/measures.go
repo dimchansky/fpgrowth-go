@@ -337,7 +337,7 @@ func reYatesPVal(supp, body, head, base tract.Supp) float64 {
 // error unbounded near independence (where the G-test p-value amplifies
 // it) and destroys the value for totals beyond about 10^13. Here the
 // information is computed from infoNats, a sum of non-negative terms with
-// a relative error below 32 ulps for every valid table, and it is exactly
+// a relative error below 64 ulps for every valid table, and it is exactly
 // 0 for independent tables. The values differ from upstream's in the
 // last bits on ordinary data.
 func reInfo(supp, body, head, base tract.Supp) float64 {

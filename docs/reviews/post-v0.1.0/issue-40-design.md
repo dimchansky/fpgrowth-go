@@ -219,6 +219,14 @@ therefore no longer proves. The measured maximum (12.85u for S, oracle
 tolerance tests passing) is far inside it. I did not change the
 contract; this is reported for a decision.
 
+Decision (2026-10-27, maintainer via the coordinator): widen the
+contract for the information to a relative 2^-46 (64 ulps = 128u). It
+now covers the proven bound of about 65.5u. This is not a breaking
+change, because v0.1.0 does not contain the contract: #16 added it after
+the release. The new bound applies in `docs/differences.md` (numeric
+contract), the GoDoc of `measure.go` and `internal/ruleval`, and the
+oracle's `infoTau`. infoTau is still below ratTau = 2^-44.
+
 ## Cancellation
 
 The shortcut returns before any abort check, like `probUnderflows`. An

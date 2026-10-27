@@ -138,7 +138,7 @@ bounds, so the reference comparisons check them):
 | Measure | Bound |
 | --- | --- |
 | `n` Chi2, `y` Yates | relative 8 ulps (2^-49) |
-| `i` Information | relative 32 ulps (2^-47) |
+| `i` Information | relative 64 ulps (2^-46) |
 | `p t g` p-values | relative 2^-36·(1 + x) for the statistic x (plus 2^-1000) |
 | `z` Certainty | absolute 2^-40 |
 | `f h m s` Fisher | relative 2^-36 (plus 2^-1000); for base <= 170, `h` and `s` absolute 2^-36 (upstream's complement sums) |

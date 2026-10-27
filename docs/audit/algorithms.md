@@ -241,6 +241,9 @@ All under `_audit/alg/` in the clone (a leading underscore keeps them out of `./
   Σ E·g(δ) with g >= 0 and an exact δ, so it is exactly 0 at independence (the G-test p-value
   exactly 1) and within 32 ulps relative near it; `oracle.DefectALG6` and the exemption were
   removed, and root `TestALG6Regression` pins the case.
+- **Note (2026-10-27, issue #40):** the documented bound is now 64 ulps (2^-46) relative, not
+  32 ulps. The corrected first-order derivation gives about 65.5u; the measured maximum is
+  12.85u.
 
 ### ALG-7: Library `IncludeEmpty` with no frequent item (Info)
 
