@@ -392,19 +392,23 @@ func infoRaw(supp, body, head, base tract.Supp) float64 {
 // where 1+δ = c/E; the second form adds Σ (E - c) = 0. Every term is
 // non-negative, so the sum does not cancel, and δ = ±D/(r·k) (signs +,
 // -, -, + for the cells supp, body-supp, head-supp and the rest) comes
-// from the exact D (crossDiff) with a relative error of at most 5u
-// (u = 2^-53: the rounding of D, of r·k and of the quotient). infoCell
-// evaluates E·g(δ) as r·k·g(δ) (the sum is divided by n once).
+// from the exact D (crossDiff) with a relative error of at most 6u
+// (u = 2^-53: the rounding of D, of r·k and of the quotient, and for
+// n > 2^53 of the margins converted to float64). infoCell evaluates
+// E·g(δ) as r·k·g(δ) (the sum is divided by n once).
 //
-// Error bound (first order, in u): δ carries 5u, which g amplifies by
-// |δ·g'(δ)/g(δ)| <= 2.1 (10.5u) in the series range and the direct range
-// alike. The series form of g adds at most 9u, the direct form at most
-// 4u·|(1+δ)·ln(1+δ)|/g(δ) + u <= 40u (the cancellation factor is largest,
-// 9.7, at |δ| = 1/4) and the form for δ < -1/2 at most 22u (no
-// cancellation: g >= 0.15 there). The product r·k·g adds 4u, the sum of
-// four non-negative terms 3u and the final division 1.5u, so S has a
-// relative error below 59u (29.5 ulps); InfoPValue's statistic 2·S has
-// the same, and Info adds 1.5u for the division by n·ln 2.
+// Error bound (first order, in u): δ carries 6u, which g amplifies by
+// |δ·g'(δ)/g(δ)| <= 2.26 (13.6u; the maximum is at δ = -1/2) in the
+// series range and the direct range alike. The series form of g adds at
+// most 9u, the direct form at most 4u·|(1+δ)·ln(1+δ)|/g(δ) + u <= 40u
+// (the cancellation factor is largest, 9.7, at |δ| = 1/4) and the form
+// for δ < -1/2 at most 22u (no cancellation: g >= 0.15 there). The
+// product r·k·g adds 4u, and 2u more for n > 2^53 (the margins), the
+// sum of four non-negative terms 3u and the final division 1.5u, so S
+// has a relative error below 65u (about 64u; measured at most 12.85u,
+// proof review of #40); InfoPValue's statistic 2·S has the same, and
+// Info adds 1.5u for the division by n·ln 2. (Corrected in #40 from
+// 59u: issue #16 used 5u for δ and 2.1 for its amplification.)
 func infoNats(supp, body, head, base tract.Supp) float64 {
 	if marginsDegenerate(body, head, base) {
 		return 0

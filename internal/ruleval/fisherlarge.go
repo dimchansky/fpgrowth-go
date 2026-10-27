@@ -98,11 +98,11 @@ func newHyperTable(supp, body, head, base tract.Supp) hyperTable {
 // -S(x) = -n·I(x) (infoNats), the linear terms cancel, and M is the
 // product of the margins divided by n. It also returns S(x).
 //
-// Error (u = 2^-53): S(x) has a relative error below 59u (infoNats); the
+// Error (u = 2^-53): S(x) has a relative error below 65u (infoNats); the
 // float quotient M/Πc below 15u, so its logarithm adds 15u + u·|ln|
 // (<= 200u); the σ values are accurate to about 20u. So the absolute
-// error of ln P(x) is below 59u·S(x) + 256u, and lnPErr bounds it with a
-// factor of two to spare.
+// error of ln P(x) is below 65u·S(x) + 256u, and lnPErr bounds it with
+// almost a factor of two to spare.
 func (t *hyperTable) lnP(x tract.Supp) (lp, s float64) {
 	b, h, r := t.ft.body, t.ft.head, t.ft.rest
 	s = infoNats(x, b, h, t.ft.base)
@@ -249,7 +249,7 @@ func (t *hyperTable) probAtMost(x tract.Supp, ls, ss float64) bool {
 
 // infoAtLeast reports whether I(x) >= I(supp), given S(supp) = ss: from
 // the computed values of S when they differ by more than their error
-// bounds (59u each), else exactly (cmpXLogX, which is bounded and
+// bounds (65u each), else exactly (cmpXLogX, which is bounded and
 // counts undecidable differences below 2^-65000 relative as ties).
 func (t *hyperTable) infoAtLeast(x tract.Supp, ss float64) bool {
 	sx := infoNats(x, t.ft.body, t.ft.head, t.ft.base)
@@ -349,7 +349,7 @@ func fetProbLarge(supp, body, head, base tract.Supp, abort func() error) (float6
 // infoUnderflows reports whether the FisherInfo p-value certainly rounds
 // to 0 in float64, given the computed S(supp) = ss (issue #40, review of
 // #16, P-9), for n = base. It is true when S(supp) > 6·ln(n+1) + 800:
-// the computed ss has a relative error below 59u (infoNats), and the
+// the computed ss has a relative error below 65u (infoNats), and the
 // factor 1 + 2^-40 covers it and the rounding of the cutoff.
 //
 // Every table x that infoSum sums has S(x) >= S(supp) - 2^-65000 (its

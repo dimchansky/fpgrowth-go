@@ -38,15 +38,28 @@ its minimum 0 at E. It decreases on [0, E] and increases on [E, b].
 
 ## Assumptions (established in #16 and reviewed there)
 
-- A1: `infoNats` has a relative error below 59u.
+- A1: `infoNats` has a relative error below 65u. (#16 stated 59u; the
+  proof review of #40 corrected two constants of that derivation, see
+  "Correction of A1" below. The measured maximum is 12.85u.)
 - A2: `lnP` has an absolute error below lnPErr(S) = 2^-46·(S+4).
 - A3: `cmpXLogX` returns the exact sign, except that it returns 0 (tie)
   when the self-power products differ by a relative amount below 2^-65000.
   Then |F(x) − F(s)| < 2^-64999.
-- A4: Go's `math.Exp(x)` is +0 for x < −750. The pure-Go and arm64 code
-  return 0 below −745.1332. The amd64 code scales a value fr·2^k with
-  k = −1075 or less, which is below 2^-1075 and rounds to 0. `math.Log`
-  and `math.Exp` are accurate to 1 ulp.
+- A4: Go's `math.Exp(x)` is +0 for x < −750, in every implementation of
+  Go 1.27 (`src/math`):
+  - pure Go (`exp.go`, used where `haveArchExp` is false), arm64
+    (`exp_arm64.s`), loong64 (`exp_loong64.s`) and riscv64
+    (`exp_riscv64.s`) test x < −745.1332 (`Underflow`) explicitly and
+    return 0;
+  - amd64 (`exp_amd64.s`, both the SSE and the FMA path) scales
+    fr·2^k: for k <= −1076 the denormal path returns 0. At x < −750,
+    k <= −1082, and CVTSD2SL saturates for huge |x|, which also lands
+    there;
+  - s390x (`exp_s390x.s`) returns 0 for |x| >= 800 (negative x), and its
+    scaled path for 704 <= |x| < 800 rounds to 0 below −750.
+
+  The loong64, riscv64 and s390x cases were checked by the proof review
+  of #40. `math.Log` and `math.Exp` are accurate to 1 ulp.
 
 A1 is used with a wide margin: the cutoff tolerates any relative error of
 ss up to 2^-42.
@@ -86,8 +99,8 @@ On the other side (case s < E; the case s > E is symmetric):
   end c = lo = hi + 1.
 - (ii) pred(x) true implies S(x) >= S(s) − δ:
   - The float branch fires when sx > fl(ss + fl(2^-45·fl(sx + ss))). With
-    A1, S(x)·(1+59u) >= sx and ss >= S(s)·(1−59u). The tolerance is at
-    least 2^-45·(1−3u)·(sx+ss), and 2^-45 = 256u > 2·59u + 3u. So
+    A1, S(x)·(1+65u) >= sx and ss >= S(s)·(1−65u). The tolerance is at
+    least 2^-45·(1−3u)·(sx+ss), and 2^-45 = 256u > 2·65u + 3u. So
     S(x) > S(s).
   - Otherwise `cmpXLogX` >= 0, which means F(x) >= F(s), or a tie with
     |F(x) − F(s)| < δ (A3).
@@ -107,7 +120,7 @@ The computed right-hand side
 fl(fl(6·fl(log(fl(fl(n)+1)))) + 800)·(1+2^-40) has an absolute error
 below 3e-13 before the last factor and a relative error of u in it. So it
 is at least (6λ + 800)·(1+2^-41). By A1,
-S(s) >= ss/(1+59u) > (6λ+800)·(1+2^-41)/(1+59u) > 6λ + 800.
+S(s) >= ss/(1+65u) > (6λ+800)·(1+2^-41)/(1+65u) > 6λ + 800.
 
 By Lemmas 1 and 2,
 
@@ -178,6 +191,33 @@ The cutoff is about 6λ + 800 (979 nats at n = 10^13, 1062 at 2^63). The
 p-value underflows already from about S(s) ≈ 745 + O(λ). Tables in
 between take the unchanged region sum. They are cheap, because their
 tolerance 2^-45·2S is below 10^-10 and almost never needs cmpXLogX.
+
+## Correction of A1 (proof review of #40, P2; pre-existing from #16)
+
+The 59u derivation in the `infoNats` comment used two constants that are
+slightly off:
+- the amplification |δ·g'(δ)/g(δ)| reaches 2.26 at δ = −1/2, not 2.1;
+- for n > 2^53, converting the margins to float64 adds one rounding, so δ
+  carries 6u, not 5u, and r·k carries 2u more.
+
+The first-order bound becomes 13.6u + 40u + 6u + 3u + 1.5u ≈ 64u. The
+comment now states "below 65u". The measured maximum is 12.85u.
+
+Every place that relies on A1 still holds with 65u:
+- `lnP`: the error 65u·S + 256u stays below lnPErr = 128u·(S+4).
+- `infoAtLeast`: the tolerance 2^-45 = 256u covers 2·65u + 3u (Lemma 2).
+- `infoUnderflows`: the factor 1 + 2^-40 (and 2^-41 after rounding)
+  covers 65u by a factor of 60 (Theorem 1). Theorem 2 uses A1 only
+  through Lemma 2 and Theorem 1.
+- The FisherProb shortcut and the walk use lnPErr, which still holds.
+
+One place outside #40 is affected: the numeric contract bounds the
+information `i` by a relative 2^-47 = 64u. With the corrected
+derivation, the first-order bound for Info is about 65.5u (S plus 1.5u
+for the division). That is 2 % above the contract, which the derivation
+therefore no longer proves. The measured maximum (12.85u for S, oracle
+tolerance tests passing) is far inside it. I did not change the
+contract; this is reported for a decision.
 
 ## Cancellation
 
