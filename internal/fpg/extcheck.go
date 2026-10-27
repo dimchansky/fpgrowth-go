@@ -1033,25 +1033,28 @@ func (c *extChecker) precheck(t int32, touched []tract.Item, work int) (hit, che
 	if c.lookup == lookupNever {
 		lim = bl // tests: never search
 	}
-	n := 0
+	// one pass over the touched items collects the candidates (in the
+	// scratch of scanDeferred, which is not in use yet); the search then
+	// visits only these, each with its probes (PR #43 reviews H1/R3-F1:
+	// a second pass over all touched items was not counted)
+	cl := c.alive[:0]
 	for k, it := range touched {
 		if c.cnt[it] >= thr {
-			if n++; n*bl >= lim {
+			if cl = append(cl, it); len(cl)*bl >= lim {
 				c.scanStat.prepass += k + 1
+				c.alive = cl[:0]
 				return false, false, work
 			}
 		}
 	}
 	c.scanStat.prepass += len(touched)
-	if n == 0 {
+	c.alive = cl[:0]
+	if len(cl) == 0 {
 		return false, true, work // no item can reach smin in t
 	}
 	c.scanStat.prechecks++
 	steps := 0
-	for _, it := range touched {
-		if c.cnt[it] < thr {
-			continue
-		}
+	for _, it := range cl {
 		steps += bl
 		if _, in := slices.BinarySearch(items, it); in {
 			c.scanStat.presteps += steps
