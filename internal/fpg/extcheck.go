@@ -718,6 +718,7 @@ type scanStats struct {
 	// scanMaximal = its work − skipped (tests).
 	prechecks, presteps, searches, exitsteps, skipped int
 	prepass                                           int // touched items scanned by prechecks
+	filtered                                          int // touched and candidate items scanned to build and filter candidates
 }
 
 // scanProbes is the number of spread cover transactions that scanClosed
@@ -881,11 +882,17 @@ func (c *extChecker) keepSeek(t int32) {
 // least the plain scan's at the same transaction and the scan stops no
 // later than the plain scan does; a search of a deferred transaction
 // before that one costs less than the plain scan's visit of it. So the
-// visits are at most V + |t1| + S, and with P <= pre the work is at
-// most V + pre + |t1| + S <= 2·V + S. The candidates' filters are passes
-// over touched items, which were visited before (not counted). (A cap
-// on the total length of all deferred transactions would not bound
-// this: deferrals after the plain scan's exit would raise it.)
+// visits are at most V + |t1| + S, and with P <= pre, visits and P are
+// at most V + pre + |t1| + S <= 2·V + S. The candidates (scanDeferred)
+// cost one pass B over the touched items, at most the visits before it,
+// and filters F, each run only once the visits and probes since the
+// previous one reach its length, so F is at most the visits after B.
+// All work (visits, probes, P, B, F) is therefore at most
+// 2·(2·V + S) = 4·V + 2·S. S is a log factor, not a constant: the
+// precheck's probes are at most bitlen(|t1|) per item visited before t1,
+// and those of the stopping search at most bitlen(|t|) per candidate.
+// (A cap on the total length of all deferred transactions would not
+// bound this: deferrals after the plain scan's exit would raise it.)
 //
 // The scan's work counter (c.work, the sibling rows' cost signal) counts
 // whole transactions; scanStat.skipped counts the items of a transaction
@@ -1118,6 +1125,7 @@ func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.
 	alive := c.alive[:0]
 	cands := false // alive holds the only possible frequent extensions
 	ok := true
+	since := 0 // visits and probes since alive was last filtered
 	for _, t := range def {
 		wt := c.txW[t]
 		items := c.txItems[c.txOff[t]:c.txOff[t+1]]
@@ -1127,6 +1135,7 @@ func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.
 					alive = append(alive, it)
 				}
 			}
+			c.scanStat.filtered += len(touched)
 			cands = true
 		}
 		if cands && len(alive) == 0 {
@@ -1136,6 +1145,7 @@ func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.
 		if cands && (c.lookup == lookupAlways || c.lookup == lookupAuto && cost < len(items)) {
 			c.scanStat.lookups++
 			work += cost
+			since += cost
 			bl := bits.Len(uint(len(items)))
 			for k, it := range alive {
 				if _, in := slices.BinarySearch(items, it); in {
@@ -1153,6 +1163,7 @@ func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.
 			}
 		} else {
 			work += len(items)
+			since += len(items)
 			var found bool
 			if touched, found = c.countTx(t, touched); found {
 				ok = false
@@ -1162,7 +1173,16 @@ func (c *extChecker) scanDeferred(def []int32, rest tract.Supp, touched []tract.
 			break
 		}
 		rest -= wt
-		if cands {
+		// Filter the candidates only once the visits and probes since the
+		// last filter pay for it (|alive|): one filter after every
+		// deferred transaction cost D·|alive| (PR #43 reviews, G1 and
+		// R2-F1). An unfiltered alive is a superset of the candidates,
+		// so the bound still holds for every item left out; the extra
+		// ones are dead (cnt + rest < smin) and keep partial counts below
+		// their support, so they never stop the scan.
+		if cands && since >= len(alive) {
+			c.scanStat.filtered += len(alive)
+			since = 0
 			k := 0
 			for _, it := range alive {
 				if c.cnt[it] >= c.smin-rest {

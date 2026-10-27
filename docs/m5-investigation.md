@@ -510,7 +510,16 @@ reached, accepted by the repository (3.4) and passes the check.
     2·V + S, V being the plain scan's actual visits and S the probes
     of two searches (t1's precheck and the lookup of the transaction
     where the plain scan stops), each below that transaction's length.
-    `TestExtCheckMaximalDeferProperty` checks this bound on every call.
+    Counting all work (also the precheck's pass over the touched items,
+    the candidate build and the candidate filters), the scan does at
+    most 4·V + 2·S; the filters run only once the visits and probes
+    since the previous one reach the number of candidates (one filter
+    after every deferred transaction had cost D·|candidates|, quadratic
+    in the cover: PR #43 reviews G1 and R2-F1, shape advC). S is a log
+    factor, not a constant times V: the precheck's probes are at most
+    bitlen(|t1|) per item visited before t1, the stopping search's at
+    most bitlen(|t|) per candidate.
+    `TestExtCheckMaximalDeferProperty` checks both bounds on every call.
     A cap on the total length of all deferred transactions would not
     bound this (deferrals after the plain exit would raise it).
     Not covered: covers whose deferred transactions together weigh smin
