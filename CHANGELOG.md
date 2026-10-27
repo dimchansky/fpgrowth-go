@@ -155,6 +155,13 @@ The release workflow publishes the section whose heading matches the tag
   returns 0 at once when an upper bound of its p-value is below the
   smallest float64 (strong associations at large totals), without
   resolving near-ties.
+- FisherInfo also returns 0 at once when its p-value certainly
+  underflows: when n·I (the information in nats times the total weight
+  n) exceeds 6·ln(n+1) + 800. Strongly associated rules at total weights
+  of 10^15 and more previously resolved near-ties with big floats. They
+  took 31 µs to 0.61 ms and 542 to 11,369 allocations per evaluation.
+  They now take about 0.14 µs and do not allocate. The result is the same
+  0. The proof is in `docs/reviews/post-v0.1.0/issue-40-design.md` (#40).
 - Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
   `-s`, `-S`, `-F`, `-c`) follow a threshold contract
   (`docs/differences.md` N2 and "Threshold contract", #17). Behavior
