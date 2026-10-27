@@ -18,7 +18,8 @@
 //	recs, _ := Records(ib, scan)      // Shuffle: the unprepared records
 //	d := TableData(recs, n, zmin)     //   (FPG_NORECODE|FPG_NOSORT)
 //	parts := Partition(seed, cnt, z)  // the threads of fpg_genpsp
-//	spec, err := RunChain(ctx, d, method, parts[i], c, smin, smax, done)
+//	var ws Workspace                  // per worker goroutine
+//	spec, err := ws.RunChain(ctx, d, method, parts[i], c, smin, smax, done)
 //	spec.Merge(...)                   // psp_addpsp, in part order
 //	Estimate(d, spec, zmin, ec)       // psp_tbgest (P1, P5)
 //	b := Border(spec, zmin)           // -D (P3)
@@ -32,9 +33,9 @@
 //	tbg_istab                         IsTable
 //	tasur, dst->buf, the RNG          Chain
 //	tbg_ident ... tbg_shuffle, iswap  Chain.Next (Identity ... Shuffle)
-//	fpg_data(FPG_SURR) + fpg_mine     Mine (P2, P2b, P6: each data set
-//	                                  is mined on its own)
-//	worker, the loop of fpg_genpsp    RunChain
+//	fpg_data(FPG_SURR) + fpg_mine     Mine, Workspace.Mine (P2, P2b, P6:
+//	                                  each data set is mined on its own)
+//	worker, the loop of fpg_genpsp    RunChain, Workspace.RunChain
 //	thread partition of fpg_genpsp    Partition
 //	taslots, choose, dchoose          taslots, choose, dchoose
 //	simpest, cplxest, samplelp        simpest, cplxest, samplelp
@@ -42,5 +43,7 @@
 //	decision border of main           Border, FormatBorder
 //
 // Nothing in this package starts goroutines; a chain is sequential and
-// the command runs the chains of a partition concurrently.
+// the command runs the chains of a partition concurrently, each worker
+// with its own Workspace (the reused storage of the item base, the bag
+// and the miner; the spectra do not depend on it).
 package psp

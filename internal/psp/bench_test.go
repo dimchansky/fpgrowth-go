@@ -48,6 +48,26 @@ func benchChain(b *testing.B, m Method) {
 func BenchmarkRunChain_Swap(b *testing.B)   { benchChain(b, Swap) }
 func BenchmarkRunChain_Random(b *testing.B) { benchChain(b, Random) }
 
+// benchWorkspace runs a chain of 10 surrogates per operation with one
+// Workspace for all operations, as a worker of cmd/fpgpsp does: the
+// allocations per operation are those of the steady state.
+func benchWorkspace(b *testing.B, m Method) {
+	d := benchData()
+	cfg := fpg.DefaultConfig()
+	cfg.SMin = -60
+	smin, smax := fpg.Thresholds(cfg, tract.Supp(d.Len()))
+	var ws Workspace
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := ws.RunChain(context.Background(), d, m, Part{Seed: 1, Count: 10}, cfg, smin, smax, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWorkspace_Swap(b *testing.B)   { benchWorkspace(b, Swap) }
+func BenchmarkWorkspace_Random(b *testing.B) { benchWorkspace(b, Random) }
+
 // BenchmarkChain_Swap measures the generation alone (10 surrogates).
 func BenchmarkChain_Swap(b *testing.B) {
 	d := benchData()
