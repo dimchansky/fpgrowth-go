@@ -138,7 +138,7 @@ bounds, so the reference comparisons check them):
 | Measure | Bound |
 | --- | --- |
 | `n` Chi2, `y` Yates | relative 8 ulps (2^-49) |
-| `i` Information | relative 32 ulps (2^-47) |
+| `i` Information | relative 64 ulps (2^-46) |
 | `p t g` p-values | relative 2^-36·(1 + x) for the statistic x (plus 2^-1000) |
 | `z` Certainty | absolute 2^-40 |
 | `f h m s` Fisher | relative 2^-36 (plus 2^-1000); for base <= 170, `h` and `s` absolute 2^-36 (upstream's complement sums) |
@@ -152,6 +152,14 @@ tables. A FisherProb near-tie (two tables whose computed probabilities
 agree within their error bound) more than 1024 tables apart
 is decided with 320-bit logarithms (bounded cost); only probabilities equal
 within a relative 2^-200 count as ties, and ties count as in the region (R6).
+FisherProb and FisherInfo return 0 without summing when a proven upper
+bound of the exact p-value is below 2^-1075, so that 0 is its correctly
+rounded value. For FisherProb the bound is (min(body, head)+1)·P(supp).
+For FisherInfo it applies when n·I > 6·ln(n+1) + 800, with n the total
+and I the information in nats (issue #40). The result is the value of
+the full region sum. For FisherInfo this is proven for n·I up to
+1.88·10^16 and checked by scans beyond that
+(`docs/reviews/post-v0.1.0/issue-40-design.md`).
 
 ### Threshold contract
 

@@ -323,9 +323,12 @@ const ratTau = 0x1p-44
 // and the quotient adds about ten roundings.
 const chiTau = 0x1p-49
 
-// infoTau, 2^-47 (32 ulps), bounds the relative error of the information
-// (a sum of non-negative terms; differences.md, numeric contract).
-const infoTau = 0x1p-47
+// infoTau, 2^-46 (64 ulps), bounds the relative error of the information
+// (a sum of non-negative terms; differences.md, numeric contract). The
+// first-order derivation in ruleval.infoNats gives about 65.5u for Info
+// (u = 2^-53), above the former 2^-47 = 64u (issue #40); the measured
+// maximum is 12.85u.
+const infoTau = 0x1p-46
 
 // certTau, 2^-40, bounds the absolute error of the certainty factor (a
 // value in [-1, 1]): upstream's formula amplifies its rounding errors by

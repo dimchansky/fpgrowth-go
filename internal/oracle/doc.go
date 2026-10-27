@@ -119,7 +119,7 @@
 // implementation documents for the measure (see ratTau and the constants
 // after it): 2^-44 relative for products and quotients, 2^-44·max(1, |v|)
 // for the differences and Importance, 2^-49 relative for chi² and Yates,
-// 2^-47 relative for the information, 2^-40 absolute for the certainty
+// 2^-46 relative for the information, 2^-40 absolute for the certainty
 // factor, 2^-36 scaled by the conditioning of the chi² tail for p-values
 // and 2^-36 relative for the Fisher tests, for every valid table up to a
 // total weight of 2^63 - 1. With Measure.Ref, rules and item sets whose

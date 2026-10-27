@@ -185,7 +185,7 @@ func TestUpstreamFormulaIdentity(t *testing.T) {
 // TestInfoBranches compares the information with the reference on tables
 // whose cell deviations δ lie at the branch points of infoCell (±1/4,
 // -1/2) and near 0, -1 and large values, at all sizes: relative error
-// within the documented 32 ulps (the reference tolerance).
+// within the documented 64 ulps (the reference tolerance).
 func TestInfoBranches(t *testing.T) {
 	t.Parallel()
 	ref, _ := oracle.RefByLetter('i')

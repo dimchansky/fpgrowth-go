@@ -52,7 +52,7 @@
 // form near p = 1, and the Fisher tests for base > maxFact use Stirling's
 // formula with an exact deviation and visit only the contributing tables
 // (fisherlarge.go). The bounds hold for every valid table with supports
-// below 2^63: Chi2 and Yates relative 8 ulps; Info relative 32 ulps;
+// below 2^63: Chi2 and Yates relative 8 ulps; Info relative 64 ulps;
 // Certainty absolute 2^-40; the p-values of chi², Yates and G relative
 // 2^-36·(1+x) for the statistic x; the Fisher tests relative 2^-36 (for
 // base <= maxFact, FisherChi2 and FisherSupport keep upstream's
@@ -286,7 +286,8 @@ func (m Measure) AbortFunc() AbortFunc {
 // FisherProb tables more than 1024 apart). That happens only for tables
 // whose computed probabilities (information) agree within their rounding
 // error bound, costs at most a few milliseconds per evaluation, and is
-// skipped for FisherProb when its p-value certainly underflows to 0.
+// skipped for FisherProb and FisherInfo when their p-value certainly
+// underflows to 0.
 func Eval(m Measure, supp, body, head, base tract.Supp) float64 {
 	return m.info().fn(supp, body, head, base)
 }

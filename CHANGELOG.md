@@ -155,6 +155,24 @@ The release workflow publishes the section whose heading matches the tag
   returns 0 at once when an upper bound of its p-value is below the
   smallest float64 (strong associations at large totals), without
   resolving near-ties.
+- FisherInfo also returns 0 at once when its p-value certainly
+  underflows: when n·I (the information in nats times the total weight
+  n) exceeds 6·ln(n+1) + 800, at any total above 170. Such a table now
+  takes about 0.14 µs instead of walking its region: a strong
+  association at n = 2000 takes 137 instead of 807 ns, one at 10^13
+  0.14 instead of 2.9 µs. From totals of about 10^15 on, most of these
+  tables also resolved near-ties with big floats, at up to 0.61 ms and
+  11,369 allocations per evaluation (6.6 µs to 0.61 ms and 0 to 11,369
+  allocations on the issue's scan at 10^15 to 9·10^18); they no longer
+  allocate. The result is the same 0. The proof is in
+  `docs/reviews/post-v0.1.0/issue-40-design.md` (#40).
+- The documented error bound of the information (`i`, `Info`) is now
+  relative 64 ulps (2^-46) instead of 32 ulps (2^-47), and the
+  reference tolerance changes with it. The earlier derivation used two
+  constants that were slightly too small. Corrected, it gives about
+  65.5u (u = 2^-53), which 2^-47 = 64u does not cover and 2^-46 = 128u
+  does. The values are unchanged; the largest error measured is 12.85u
+  (#40).
 - Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
   `-s`, `-S`, `-F`, `-c`) follow a threshold contract
   (`docs/differences.md` N2 and "Threshold contract", #17). Behavior
