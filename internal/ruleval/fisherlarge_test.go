@@ -572,6 +572,44 @@ func slowFisherInfo(supp, body, head, base tract.Supp) float64 {
 	return v
 }
 
+// TestFisherInfoUnderflowSmallTotals checks the shortcut where it starts
+// to fire: n = 1216 is the smallest total with a table above the cutoff
+// (exhaustive scan of the proof review of #40), whose S(supp) is at most
+// n·ln 2. Every support of a few margin pairs at n = 1216…2000 is
+// evaluated (about 7,500 tables) and must equal the region sum bit for
+// bit, for tables above the cutoff and just below it alike.
+func TestFisherInfoUnderflowSmallTotals(t *testing.T) {
+	t.Parallel()
+	fired, below, fired1216 := 0, 0, 0
+	for _, n := range []tract.Supp{1216, 1250, 1500, 2000} {
+		for _, m := range [][2]tract.Supp{{n / 2, n / 2}, {n / 2, n/2 + 1}, {n / 4, n / 3}} {
+			b, h := m[0], m[1]
+			c := infoCutoff(n)
+			for s := max(0, b+h-n); s <= min(b, h); s++ {
+				ht := newHyperTable(s, b, h, n)
+				ss := infoNats(ht.ft.supp, ht.ft.body, ht.ft.head, ht.ft.base)
+				switch {
+				case ht.infoUnderflows(ss):
+					fired++
+					if n == 1216 {
+						fired1216++
+					}
+				case ss > 0.9*c:
+					below++
+				}
+				got, slow := Eval(FisherInfo, s, b, h, n), slowFisherInfo(s, b, h, n)
+				if math.Float64bits(got) != math.Float64bits(slow) {
+					t.Errorf("FisherInfo(%d, %d, %d, %d) = %v, region sum %v (S = %v, cutoff %v)", s, b, h, n, got, slow, ss, c)
+				}
+			}
+		}
+	}
+	t.Logf("shortcut fired %d times, %d tables within 10 %% below the cutoff", fired, below)
+	if fired1216 == 0 || below == 0 {
+		t.Error("the sweep does not reach both sides of the cutoff at n = 1216")
+	}
+}
+
 // TestFisherInfoUnderflow checks the underflow shortcut of FisherInfo
 // (issue #40, review of #16, P-9) on the issue's table scan: strongly
 // associated tables at large totals, whose p-value underflows to 0.
