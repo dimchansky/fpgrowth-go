@@ -1298,6 +1298,23 @@ The advB rows are the shape of the PR #43 performance review (F1,
 `genadv.py`): without the precheck the branch took 7.71 G and 34.12 G
 on the two `-q0` rows (4.3× `main`, growing quadratically).
 
+Candidate filters (reviews G1 and R2-F1, shape advC of `genadvc.py`: k
+short lines of weight smin−2 with 4n items, then D long light lines;
+`-w -As -tm -s-1000 -n1`), after the filters were limited to the visits
+that pay for them (instructions, minimum of 2 interleaved runs, output
+identical):
+
+| advC k/D | `main` | branch before | branch |
+| --- | ---: | ---: | ---: |
+| 100/250 `-q0` | 2.27 G | 3.03 G | 2.27 G (+0.3 %) |
+| 200/500 `-q0` | 9.27 G | 14.68 G | 9.25 G (−0.3 %) |
+| 300/750 `-q0` | 20.25 G | 39.17 G | 20.25 G (0.0 %) |
+| 300/750 `-q2` | 762.9 G | — | 392.0 G (−48.6 %) |
+
+(“branch before”: the perf review's numbers at `bc00619`.) The rows
+re-checked with this version: lp50000 0.90 G, lpc20000 +0.7 %,
+advB-151 `-q0` −0.5 %, tier `-As` +0.27 % against `main`.
+
 Instrumented in-process runs (every deferring or prechecking check
 re-run with the plain scan, actual item visits): lp12500 to lp50000
 defer every check and visit 1 item per check instead of n + 1;

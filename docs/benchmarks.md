@@ -798,7 +798,10 @@ Per doubling `main` grows 3.9–4.0×, the branch 2.0× (linear; lp50000
 several long chains that together reach the minimum support, so the
 first of them in cover order is still counted in full (+0.6 %). The advB shape of
 the PR review, where the plain scan stops early inside the long line,
-is at `main`'s cost (−0.2 % to +0.5 %; 4.3× before the precheck). On
+is at `main`'s cost (−0.5 % to +0.5 %; 4.3× before the precheck), and
+so is the advC shape of the second review, where many candidates meet
+many deferred transactions (−0.3 % to +0.3 %; up to +94 % before the
+candidate filters were limited). On
 the ordinary `-tm -n` rows of `configs.txt` no check defers anything
 (instrumented runs), and the instructions differ from `main` by
 −0.45 % to +0.44 %.
