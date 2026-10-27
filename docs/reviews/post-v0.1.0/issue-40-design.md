@@ -239,7 +239,13 @@ rounds of main, PR and v0.1.0:
   358 → 362). Instructions retired over 3·10^6 evaluations of each of
   the three FisherInfo cases: 192.15 G → 192.36 G (+0.11 %). That is
   about +0.8 % wall time for the large path, from the extra comparison
-  and the split into `infoSum`.
+  and the split into `infoSum`. Note (2026-10-27, performance review):
+  that instruction figure is diluted by the n = 150 and n = 10^4 cases.
+  Measured per case at c56eca9, FisherInfo n=1000 is +0.9 % wall
+  (359 → 362 ns) and +0.5 % instructions (6511 → 6544 per evaluation);
+  the CLI (`-tr -s5 -c30 -em -d100`, d5000x60d40) is +0.13 %
+  instructions (51.57e9 → 51.64e9). The follow-up commit moves the
+  `ss > 800` test to the call site, which saves part of that.
 - FisherInfo n=10^4: 465 → 468 ns (~, p = 0.07).
 - Every other case: ~. Every case: 0 allocations.
 - Against v0.1.0: FisherInfo n=1000 is 3.80 µs → 0.37 µs. That speedup

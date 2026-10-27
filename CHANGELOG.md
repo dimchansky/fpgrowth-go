@@ -157,11 +157,15 @@ The release workflow publishes the section whose heading matches the tag
   resolving near-ties.
 - FisherInfo also returns 0 at once when its p-value certainly
   underflows: when n·I (the information in nats times the total weight
-  n) exceeds 6·ln(n+1) + 800. Strongly associated rules at total weights
-  of 10^15 and more previously resolved near-ties with big floats. They
-  took 31 µs to 0.61 ms and 542 to 11,369 allocations per evaluation.
-  They now take about 0.14 µs and do not allocate. The result is the same
-  0. The proof is in `docs/reviews/post-v0.1.0/issue-40-design.md` (#40).
+  n) exceeds 6·ln(n+1) + 800, at any total above 170. Such a table now
+  takes about 0.14 µs instead of walking its region: a strong
+  association at n = 2000 takes 137 instead of 807 ns, one at 10^13
+  0.14 instead of 2.9 µs. From totals of about 10^15 on, most of these
+  tables also resolved near-ties with big floats, at up to 0.61 ms and
+  11,369 allocations per evaluation (6.6 µs to 0.61 ms and 0 to 11,369
+  allocations on the issue's scan at 10^15 to 9·10^18); they no longer
+  allocate. The result is the same 0. The proof is in
+  `docs/reviews/post-v0.1.0/issue-40-design.md` (#40).
 - Relative support and confidence thresholds (`Fraction`, `MinConfidence`,
   `-s`, `-S`, `-F`, `-c`) follow a threshold contract
   (`docs/differences.md` N2 and "Threshold contract", #17). Behavior
