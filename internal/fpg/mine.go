@@ -39,24 +39,9 @@ type miner struct {
 	limited bool
 	zmax    int
 
-	// Scratch buffers (upstream fpg->set, fpg->map, fpg->cis).
-	set   []int32      // reorder map and flags (2k)
-	imap  []int32      // old -> new item map of a projection (k)
-	cis   []tract.Supp // conditional item supports (k)
-	path  []int32      // projected transaction, filled backwards (k)
-	bit16 []uint16     // 16-items machine bit of each item of a projection (k)
-	tail  []tract.Item // head union tail items, filled backwards (k+16)
-
-	fim   *machine  // 16-items machine (complex variant)
-	paths projPaths // paths of the current projection
-
-	fp fpArena // nodes of the simple and single variants
-	cs csArena // nodes of the complex variant
-	td tdArena // nodes of the top-down variant
-
-	fpHeads [][]fpHead     // per recursion depth (projection headers)
-	csHeads [][]csHead     // per recursion depth
-	tdItems [][]tract.Item // per recursion depth
+	buffers            // scratch buffers, arenas (Workspace)
+	fim     *machine   // 16-items machine (complex variant)
+	ws      *Workspace // where the buffers come from, nil if none
 }
 
 // testHooks are settings of a Miner for tests only.
@@ -76,7 +61,7 @@ type testHooks struct {
 
 // mineItemSets runs the item set variant selected by c (fpgvars[algo]).
 func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
-	rep *report.Reporter, supp tract.Supp, h testHooks,
+	rep *report.Reporter, supp tract.Supp, h testHooks, ws *Workspace,
 ) error {
 	m := &miner{
 		ctx:    ctx,
@@ -90,6 +75,10 @@ func mineItemSets(ctx context.Context, c *Config, bag *tract.Bag,
 		dir:    1,
 		clomax: c.Target == report.TargetClosed || c.Target == report.TargetMaximal,
 		left:   -1,
+	}
+	if ws != nil {
+		ws.lend(m)
+		defer ws.takeBack(m)
 	}
 	if m.clomax && c.ZMax < bag.MaxSize() {
 		// A maximum size below the longest transaction: limited search
@@ -173,12 +162,12 @@ func (m *miner) aborted() error {
 
 // alloc allocates the scratch buffers for k items.
 func (m *miner) alloc(k int) {
-	m.set = make([]int32, 2*k)
-	m.imap = make([]int32, k)
-	m.cis = make([]tract.Supp, k)
-	m.path = make([]int32, k)
-	m.bit16 = make([]uint16, k)
-	m.tail = make([]tract.Item, k+16)
+	m.set = zeroed(m.set, 2*k)
+	m.imap = zeroed(m.imap, k)
+	m.cis = zeroed(m.cis, k)
+	m.path = zeroed(m.path, k)
+	m.bit16 = zeroed(m.bit16, k)
+	m.tail = zeroed(m.tail, k+16)
 }
 
 // xable2 is the projection condition isr_xable(rep, 2) of the rec_*
