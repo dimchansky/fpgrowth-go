@@ -488,14 +488,27 @@ reached, accepted by the repository (3.4) and passes the check.
     over the whole cover; order and choice of the deferred
     transactions change only the cost.
 
-    Cap: the plain scan may stop inside or soon after the first
-    deferred transaction t1. The transactions counted after t1 while it
-    is deferred may hold at most |t1| items; the next one that would
-    exceed this counts the deferred ones in full and the scan goes on in
-    cover order. With the deferred ones taken in cover order, the scan
-    visits at most V + |t1| ≤ 2·V items, V being the plain scan's
-    visits up to its exit with t1 counted in full (randomized test:
-    `TestExtCheckMaximalDeferProperty` checks the bound on every call).
+    Precheck: the plain scan stops inside a light t at an item j iff
+    j ∈ t and cnt[j] ≥ smin − w(t) before t. Before the first
+    transaction t1 is deferred, these touched items are searched in t1
+    (binary search, if cheaper than |t1|; otherwise t1 is counted in
+    cover order and not deferred). A hit decides the set (not maximal);
+    without one the plain scan visits all of t1. (The first version
+    lacked this: on the review's AG(2,q) shape the plain scan stopped
+    in the long line after a few items and the deferral made every
+    check count the lines through the point, quadratic; PR #43
+    performance review F1.)
+
+    Cap: the transactions counted after t1 while it is deferred may
+    hold at most |t1| items; the next one that would exceed this counts
+    the deferred ones in full and the scan goes on in cover order. The
+    deferred ones are always taken in cover order. In actual item
+    visits (items counted plus binary-search probes, not the work
+    counter, which counts whole transactions), the scan makes at most
+    2·V + S, V being the plain scan's actual visits and S the probes
+    of two searches (t1's precheck and the lookup of the transaction
+    where the plain scan stops), each below that transaction's length.
+    `TestExtCheckMaximalDeferProperty` checks this bound on every call.
     A cap on the total length of all deferred transactions would not
     bound this (deferrals after the plain exit would raise it).
     Not covered: covers whose deferred transactions together weigh smin
@@ -1249,44 +1262,55 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
 ### 7.6 Maximal checks on long and short transactions (issue #34)
 
 CLI, output to `/dev/null`, `/usr/bin/time -l`, instructions retired,
-minimum of 2 interleaved runs (C: 1 run); Apple M1 Max, Go 1.27.3,
-load average 2.1–4.4. `main` is `e6d02b0`. Outputs of the branch and
-`main` are byte-identical (md5) on every row below and on the ordinary
-rows checked (sparse-large `-n2`/`-n3`, d2000, d1000, d5000, d20000
-`-n2`, tier, split, dense `-n3`/`-n4`).
+minimum of 2 interleaved runs (C, and v0.1.0 on the lp rows: the first
+round); Apple M1 Max, Go 1.27.3. `main` is `e6d02b0`, the branch the
+version with the precheck (§4). Outputs of the branch and `main` are
+byte-identical (md5) on every lp and advB row and on sparse-large
+`-n3`, d5000, d20000 `-n2`, tier, split and dense `-n4`; set counts
+are equal on every row.
 
 | row (`-As -tm -s-2 -n1`) | `main` | v0.1.0 | C 6.21 | branch |
 | --- | ---: | ---: | ---: | ---: |
-| `lp12500` | 8.04 G | 7.72 G | 2.04 G | **0.22 G** |
-| `lp25000` | 31.68 G | 30.45 G | 8.01 G | **0.44 G** |
-| `lp50000` | 125.9 G (5.46 s) | 120.9 G | 31.78 G (3.28 s) | **0.90 G (0.05 s)** |
-| `lp50000s2` (2 lookups per check) | 126.0 G | — | — | **0.99 G** |
-| `lp50000w` (`-w`) | 126.0 G | — | — | **0.96 G** |
-| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 15.99 G |
+| `lp12500` | 8.03 G | 7.72 G | 2.04 G | **0.23 G** |
+| `lp25000` | 31.67 G | 30.45 G | 8.01 G | **0.45 G** |
+| `lp50000` | 125.9 G (5.46 s) | 120.9 G | 31.78 G (3.28 s) | **0.91 G (0.05 s)** |
+| `lp50000s2` (2 lookups per check) | 126.0 G | — | — | **1.04 G** |
+| `lp50000w` (`-w`) | 126.0 G | — | — | **0.98 G** |
+| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 16.41 G (+0.6 %) |
+| review shape `advB-101-102 -q0` | 2.44 G | — | — | 2.44 G (−0.1 %) |
+| `advB-151-152 -q0` | 7.89 G | — | — | 7.92 G (+0.3 %) |
+| `advB-151-152 -q2` | 8.18 G | — | — | 8.16 G (−0.2 %) |
+| `advB-151-152 -q0`, default algorithm | 7.90 G | — | — | 7.94 G (+0.5 %) |
 
-Instrumented in-process runs (deferrals, caps, searches, item visits,
-and every deferring check re-run with the plain scan): on lp12500,
-lp25000 and lp50000 every check defers and visits 1 item instead of
-n + 1 (12,500 vs 156,262,500 visits at 12.5k); lp50000s2 1.8 M vs
-2.5 G visits with 50,000 searches; no check loses an early exit (new
-visits above the plain scan's: 0 checks). On all 17 ordinary `-tm -n`
-rows (sparse-large, d1000/d2000/d5000/d20000 with their variants,
-tier, split, dense `-n3`/`-n4`) no check defers: the verdicts, the
-check work and the sibling-row builds are identical with and without
-the deferral, so the #19 cost signal is unchanged there.
-Instructions against `main`: −0.24 % to +0.19 % with the first version
-on all 17 rows except tier (+1.0 to +1.5 %: the cap's bookkeeping per
-cover transaction);
-with the plain loop separated from the deferral (`scanDefer`) tier
-+0.09 to +0.15 %, sparse-large +0.09/+0.10 %, split +0.09 %, dense
-`-n4` −0.01 %.
+The advB rows are the shape of the PR #43 performance review (F1,
+`genadv.py`): without the precheck the branch took 7.71 G and 34.12 G
+on the two `-q0` rows (4.3× `main`, growing quadratically).
+
+Instrumented in-process runs (every deferring or prechecking check
+re-run with the plain scan, actual item visits): lp12500 to lp50000
+defer every check and visit 1 item per check instead of n + 1;
+lp50000s2 1.0 M vs 2.5 G actual visits (50,000 lookups, each stopping
+at the first probe); advB-101-102 prechecks every check: 17 actual
+visits per check (3 items and 14 probes) against the plain scan's 4,
+within 2·V + S, never deferred. On the ordinary `-tm -n` rows
+(sparse-large, d5000, d20000 `-n3`, tier, split, dense `-n4`, and in
+the first round all 17) no check defers or prechecks: the verdicts,
+the check work and the sibling-row builds are identical with and
+without the deferral, so the #19 cost signal is unchanged there.
+
+Instructions against `main` on the 17 ordinary `-tm -n` rows of
+`configs.txt` (without `m5-d20000-m-n4`, 67–131 s) and dense
+`-tm -s5 -n3`/`-n4`: −0.45 % to +0.44 % (the largest: tier `-As`
++0.44 %, repeatable; tier +0.13 %, tier `-At` +0.13 %, d20000 `-n3`
++0.02 to +0.04 %). The first version, with the deferral's bookkeeping
+in the plain loop, had cost tier +1.0 to +1.5 %.
 
 Tests: `FPG_M5_CASES=20000` oracle (440,000 comparisons) and the
-deferral property test with 30,000 bags (6.2 M checks against a brute
-force; 2.6 M deferred, 136 k with searches, 165 k capped; the 2× visit
-bound held on every call) pass in the default and the `fpgforce`
-build; 10 mutants of the deferral are killed (`TestExtCheckMaximal*`,
-oracle, brute force).
+deferral property test with 30,000 bags (6.9 M checks against a brute
+force; 2.3 M deferred, 133 k with lookups, 248 k capped; the bound
+R ≤ 2·V + S in actual visits held on every call) pass in the default
+and the `fpgforce` build; 13 mutants of the deferral and the precheck
+are killed (`TestExtCheckMaximal*`, oracle, brute force).
 
 ## 8. Decision
 

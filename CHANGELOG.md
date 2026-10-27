@@ -118,12 +118,14 @@ The release workflow publishes the section whose heading matches the tag
   items. The complete extension check visits such a long transaction
   last, and once the transactions left weigh less than the minimum
   support it only searches them for the items that can still reach it.
-  A cap keeps the reordering within twice the item visits of the plain
-  scan. One line of 50,000 items plus 50,000 one-item lines
+  Before deferring, it checks whether the plain scan would have stopped
+  inside that transaction, and a cap limits the reordering: the check
+  visits at most twice the items the plain scan visits, plus two binary
+  searches. One line of 50,000 items plus 50,000 one-item lines
   (`-As -tm -s-2 -n1`) now takes 0.05 s and 0.90 G instructions instead
   of 5.5 s and 126 G (C: 3.3 s, 31.8 G), and the time grows linearly
   with the size. The output is unchanged; ordinary maximal data is
-  within 0.2 % of the previous instruction counts. Covers with two or more such long transactions that
+  within 0.5 % of the previous instruction counts. Covers with two or more such long transactions that
   together reach the minimum support (for example `lpc20000 -tm`) stay
   quadratic (#34).
 - The values of the information (`i`) and the G-test p-value (`g`), and

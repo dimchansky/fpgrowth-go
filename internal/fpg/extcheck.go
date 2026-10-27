@@ -842,7 +842,7 @@ func (c *extChecker) keepSeek(t int32) {
 // loop here is the plain scan plus one length test per transaction, and
 // the scan continues in scanDefer at the first deferred transaction
 // (with the cap's bookkeeping in this loop, ordinary maximal rows took
-// up to 1.5 % more instructions; split, at most 0.15 %).
+// up to 1.5 % more instructions; split, at most 0.5 %).
 //
 // Early exits. The plain scan may stop inside a long light transaction
 // t, which a deferral skips: an item j stops it in t iff j is in t and
