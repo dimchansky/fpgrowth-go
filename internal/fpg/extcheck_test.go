@@ -316,7 +316,7 @@ func bruteCheck(c *extChecker, rep *report.Reporter, src *m5Source) report.CloMa
 			n := c.bitCover(set)
 			h, v := c.scanClosed(n), c.vertClosed(supp)
 			if c.maximal {
-				h, v = c.scanMaximal(), c.vertMaximal()
+				h, v = c.scanMaximal(n), c.vertMaximal()
 			}
 			if h != got || v != got {
 				panic(fmt.Sprintf("check(%v, %d): %v, scan %v, vertical %v", set, supp, got, h, v))
@@ -800,7 +800,7 @@ func TestExtCheckSingleCover(t *testing.T) {
 					n := c.bitCover(set)
 					h, v := c.scanClosed(n), c.vertClosed(s)
 					if tg == report.TargetMaximal {
-						h, v = c.scanMaximal(), c.vertMaximal()
+						h, v = c.scanMaximal(n), c.vertMaximal()
 					}
 					if got != want || h != want || v != want {
 						t.Fatalf("data %d rows %d target %v set %v (supp %d): check %v, scan %v, vertical %v, want %v",

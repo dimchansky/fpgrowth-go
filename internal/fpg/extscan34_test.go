@@ -1,0 +1,587 @@
+package fpg
+
+import (
+	"math"
+	"math/bits"
+	"math/rand/v2"
+	"os"
+	"slices"
+	"strconv"
+	"testing"
+
+	"github.com/dimchansky/fpgrowth-go/internal/oracle"
+	"github.com/dimchansky/fpgrowth-go/internal/report"
+	"github.com/dimchansky/fpgrowth-go/internal/tract"
+)
+
+// Tests of the deferred long transactions of scanMaximal (issue #34).
+
+// plainGuard makes scanMaximal defer nothing: the plain scan.
+const plainGuard = math.MaxInt
+
+// TestExtCheckMaximalMixedScaling guards the work of maximal checks on
+// covers of one long and short transactions (the lp shapes of
+// reference/bench) by item visits, not by time: one line of all n items
+// (weight 1), then one short line per item; every one-item set is
+// checked with smin 2.
+//   - lp: one-item short lines, all maximal; the long line is deferred and
+//     never visited (rest 1 < smin, no candidate);
+//   - lp2: two-item short lines {i, i+1}: {i, i+1} has support 2, so no
+//     one-item set is maximal; two candidates are searched in the long
+//     line;
+//   - lpw: one-item short lines of weights 1..20, the long line weight 1:
+//     the bound is the same (rest 1 < smin).
+//
+// With the plain scan (deferral off) lp costs n·(n+1) visits.
+func TestExtCheckMaximalMixedScaling(t *testing.T) {
+	item := func(i int) string { return "i" + strconv.Itoa(i) }
+	const n = 20000
+	r := rand.New(rand.NewPCG(34, 2))
+	for _, tc := range []struct {
+		name     string
+		short    int
+		weighted bool
+		maximal  bool
+	}{
+		{"lp", 1, false, true},
+		{"lp2", 2, false, false},
+		{"lpw", 1, true, true},
+	} {
+		all := make([]string, n)
+		for i := range n {
+			all[i] = item(i)
+		}
+		txs := []oracle.Transaction{{Items: all, Weight: 1}}
+		for i := range n {
+			var s []string
+			for k := range tc.short {
+				s = append(s, item((i+k)%n))
+			}
+			w := tract.Supp(1)
+			if tc.weighted {
+				w = 1 + tract.Supp(r.IntN(20))
+			}
+			txs = append(txs, oracle.Transaction{Items: s, Weight: w})
+		}
+		c, _ := newTestChecker(t, txs, report.TargetMaximal, 2, rowsAuto)
+		c.mguard = 4 // the production guard, also with fpgforce
+		for i := range tract.Item(len(c.freq)) {
+			if got := c.checkPath([]tract.Item{i}, []tract.Item{i}, c.freq[i]); got != tc.maximal {
+				t.Fatalf("%s: {%d}: maximal %v, want %v", tc.name, i, got, tc.maximal)
+			}
+		}
+		t.Logf("%s: work %d (whole transactions), %+v", tc.name, c.work, c.scanStat)
+		if c.work > 64*n {
+			t.Fatalf("%s: %d item visits for %d checks", tc.name, c.work, n)
+		}
+		if st := c.scanStat; st.deferred+st.prechecks < n {
+			t.Fatalf("%s: %d checks with deferral or precheck, want %d", tc.name, st.deferred+st.prechecks, n)
+		}
+	}
+}
+
+// TestExtCheckMaximalHeavyFirst checks that a long transaction of weight
+// at least smin is not deferred: it decides the check within |X| + 1
+// items, and deferring it would visit the short ones first.
+func TestExtCheckMaximalHeavyFirst(t *testing.T) {
+	const m = 2000
+	var txs []oracle.Transaction
+	var all []string
+	for i := range m {
+		all = append(all, "i"+strconv.Itoa(i))
+	}
+	txs = append(txs, oracle.Transaction{Items: all, Weight: 3})
+	for i := range m {
+		for k := range 3 { // three short lines per item, 10 other items each
+			s := []string{"i" + strconv.Itoa(i)}
+			for j := range 10 {
+				s = append(s, "s"+strconv.Itoa((i*30+k*10+j)%997))
+			}
+			txs = append(txs, oracle.Transaction{Items: s, Weight: 1})
+		}
+	}
+	c, _ := newTestChecker(t, txs, report.TargetMaximal, 3, rowsAuto)
+	c.mguard = 4
+	for i := range tract.Item(len(c.freq)) {
+		c.checkPath([]tract.Item{i}, []tract.Item{i}, c.freq[i])
+	}
+	if c.scanStat.deferred != 0 {
+		t.Fatalf("%d checks deferred a transaction of weight >= smin", c.scanStat.deferred)
+	}
+}
+
+// TestExtCheckMaximalCap checks the deferral cap: a light long line L
+// that the plain scan visits first, then short lines whose total length
+// exceeds |L|; the item y of L and of the first two short lines reaches
+// smin 3 with L. The plain scan stops at the second short line; the
+// deferral counts short lines up to |L| items, then counts L (cap) and
+// stops. Its actual item visits (not the work counter, which counts
+// whole transactions) stay within twice the plain scan's.
+func TestExtCheckMaximalCap(t *testing.T) {
+	const ln = 200
+	l := []string{"a", "y"}
+	for i := range ln - 2 {
+		l = append(l, "l"+strconv.Itoa(i))
+	}
+	txs := []oracle.Transaction{{Items: l, Weight: 1}}
+	for k := range 10 {
+		s := []string{"a"}
+		if k < 2 {
+			s = append(s, "y")
+		}
+		for len(s) < 40 {
+			s = append(s, "s"+strconv.Itoa(k)+"_"+strconv.Itoa(len(s)))
+		}
+		txs = append(txs, oracle.Transaction{Items: s, Weight: 1})
+	}
+	work := func(guard int) (bool, visits, scanStats) {
+		c, ib := newTestChecker(t, txs, report.TargetMaximal, 3, rowsAuto)
+		c.mguard = guard
+		a := tract.Item(-1)
+		for i := range tract.Item(len(c.freq)) {
+			if ib.ID(i) == "a" {
+				a = i
+			}
+		}
+		c.markSet([]tract.Item{a})
+		n := c.bitCover([]tract.Item{a})
+		if n != 11 {
+			t.Fatalf("cover of {a}: %d transactions, want 11", n)
+		}
+		if t0 := c.nz[0]*64 + int32(bits.TrailingZeros64(c.cover[0])); c.txLen(t0) != ln {
+			t.Fatalf("first cover transaction has %d items, want the long line", c.txLen(t0))
+		}
+		var ok bool
+		v := measureScan(c, func() { ok = c.scanMaximal(n) })
+		return ok, v, c.scanStat
+	}
+	okP, wP, _ := work(plainGuard)
+	ok, w, st := work(4)
+	if ok || okP {
+		t.Fatalf("{a} maximal: plain %v, deferred %v, want false", okP, ok)
+	}
+	if st.capped != 1 || st.deferred != 0 {
+		t.Fatalf("stats %+v, want one cap and no end phase", st)
+	}
+	if !w.within(wP) {
+		t.Fatalf("%+v actual item visits, plain scan %+v", w, wP)
+	}
+	t.Logf("actual item visits: plain %d, deferred %d", wP.real, w.real)
+}
+
+// TestExtCheckMaximalDeferProperty compares scanMaximal with a brute
+// force on random bags (half of them lp-like: sparse short lines and
+// every 7th line nearly full), random weights (0 and up to 2^20) and
+// smin, for every deferral guard and lookup mode, so that the deferral,
+// the cap, the precheck, the candidates, the searches and the full counts
+// all run. Except when every deferred transaction is searched
+// (lookupAlways, which ignores the cost rule), its actual item visits
+// must stay within twice the plain scan's plus the probes of the
+// precheck and of the search that stopped the check (the bound of
+// scanMaximal). FPG_DEFER_ROUNDS sets the number of random bags. (Adapted from the design challenge of issue #34.)
+func TestExtCheckMaximalDeferProperty(t *testing.T) {
+	rounds := 3000
+	if testing.Short() {
+		rounds = 150
+	}
+	if s := os.Getenv("FPG_DEFER_ROUNDS"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			t.Fatalf("FPG_DEFER_ROUNDS: %v", err)
+		}
+		rounds = n
+	}
+	r := rand.New(rand.NewPCG(34, 1))
+	var checks, defs, looks, caps int
+	for round := range rounds {
+		k := 3 + r.IntN(60)
+		nt := 1 + r.IntN(25)
+		if round%4 == 0 {
+			nt = 65 + r.IntN(200) // covers of several bit-set words
+		}
+		lpLike := round%2 == 1
+		var txs []oracle.Transaction
+		var sets []map[string]bool
+		for ti := range nt {
+			p := r.Float64()
+			if lpLike {
+				p = 0.03
+				if ti%7 == 0 {
+					p = 0.95
+				}
+			}
+			var items []string
+			for i := range k {
+				if r.Float64() < p {
+					items = append(items, strconv.Itoa(i))
+				}
+			}
+			if len(items) == 0 {
+				items = []string{"0"}
+			}
+			w := tract.Supp(r.IntN(4))
+			if r.IntN(10) == 0 {
+				w = tract.Supp(r.IntN(1 << 20))
+			}
+			txs = append(txs, oracle.Transaction{Items: items, Weight: w})
+			in := map[string]bool{}
+			for _, it := range items {
+				in[it] = true
+			}
+			sets = append(sets, in)
+		}
+		smin := tract.Supp(1 + r.IntN(6))
+		if r.IntN(10) == 0 {
+			smin = tract.Supp(1 + r.IntN(1<<20))
+		}
+		c, ib := newTestChecker(t, txs, report.TargetMaximal, smin, rowsAuto)
+		ni := tract.Item(len(c.freq))
+		if ni == 0 {
+			continue
+		}
+		for range 20 {
+			var set []tract.Item
+			for i := range ni {
+				if r.IntN(3) == 0 || (lpLike && r.IntN(int(ni)) == 0) {
+					set = append(set, i)
+				}
+			}
+			if lpLike && len(set) > 2 {
+				set = set[:1+r.IntN(2)]
+			}
+			if len(set) == 0 {
+				continue
+			}
+			want := true
+			for j := range ni {
+				if j2 := ib.ID(j); !slices.Contains(set, j) {
+					var s tract.Supp
+					for ti, in := range sets {
+						if !in[j2] {
+							continue
+						}
+						all := true
+						for _, x := range set {
+							all = all && in[ib.ID(x)]
+						}
+						if all {
+							s += txs[ti].Weight
+						}
+					}
+					if s >= smin {
+						want = false
+						break
+					}
+				}
+			}
+			run := func(guard int, mode lookupMode) visits {
+				c.mguard, c.lookup = guard, mode
+				c.markSet(set)
+				n := c.bitCover(set)
+				if n == 0 {
+					return visits{}
+				}
+				d0, l0, k0 := c.scanStat.deferred, c.scanStat.lookups, c.scanStat.capped
+				var got bool
+				v := measureScan(c, func() { got = c.scanMaximal(n) })
+				checks++
+				if c.scanStat.deferred > d0 {
+					defs++
+				}
+				if c.scanStat.lookups > l0 {
+					looks++
+				}
+				if c.scanStat.capped > k0 {
+					caps++
+				}
+				if got != want {
+					t.Fatalf("round %d set %v guard %d mode %d smin %d: maximal %v, want %v; txs %v",
+						round, set, guard, mode, smin, got, want, txs)
+				}
+				for i, x := range c.cnt {
+					if x != 0 {
+						t.Fatalf("round %d: cnt[%d] = %d after the check", round, i, x)
+					}
+				}
+				return v
+			}
+			plain := run(plainGuard, lookupAuto)
+			for _, guard := range []int{-1 << 30, 0, 1, 4} {
+				for _, mode := range []lookupMode{lookupAuto, lookupAlways, lookupNever} {
+					if v := run(guard, mode); mode != lookupAlways && !v.within(plain) {
+						t.Fatalf("round %d set %v guard %d mode %d: %d actual item visits (%d in the precheck and exit searches), plain scan %d",
+							round, set, guard, mode, v.real, v.exitSearch, plain.real)
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d checks: %d deferred, %d with searches, %d capped", checks, defs, looks, caps)
+	if defs == 0 || looks == 0 || caps == 0 {
+		t.Fatal("a path of the deferral never ran")
+	}
+}
+
+// visits are the actual work of a scanMaximal call. visits: its item
+// visits (whole transactions minus the items not visited after a stop,
+// plus the binary-search probes) and the touched items scanned by the
+// precheck; real: these plus the items scanned to build and filter the
+// candidates (every pass over touched or candidate items); exitSearch:
+// the probes of the precheck and of the search that stopped the call.
+// The bounds of scanMaximal: visits <= 2·V + S and real <= 4·V + 2·S,
+// V the plain scan's real work, S exitSearch.
+type visits struct{ visits, real, exitSearch int }
+
+// within reports whether v is within the bounds of scanMaximal against
+// the plain scan's work plain.
+func (v visits) within(plain visits) bool {
+	return v.visits <= 2*plain.real+v.exitSearch && v.real <= 4*plain.real+2*v.exitSearch
+}
+
+// measureScan returns the visits of the scanMaximal call(s) in f.
+func measureScan(c *extChecker, f func()) visits {
+	w0, st0 := c.work, c.scanStat
+	f()
+	st := c.scanStat
+	v := int(c.work-w0) - (st.skipped - st0.skipped) + st.prepass - st0.prepass
+	return visits{
+		visits:     v,
+		real:       v + st.filtered - st0.filtered,
+		exitSearch: st.presteps - st0.presteps + st.exitsteps - st0.exitsteps,
+	}
+}
+
+// TestExtCheckMaximalEarlyExit is the shape of the performance review of
+// PR #43 (F1, genadv.py advB): for every point x of the affine plane
+// AG(2,q) a line {b, z, x}, then one long light line T of all points and
+// b, then the q+1 lines of the plane (q points each). Every one-item set
+// {x} has the frequent extension b (in {b, z, x} and T, smin 2), which
+// the plain scan finds at b in T when it visits the short line first.
+// Deferring T lost that stop: every check counted the q+1 lines through
+// x and searched their items, about q² visits instead of a few. The
+// precheck searches the touched items that can reach smin in T (b and z)
+// before T is deferred. Bounded by actual item visits, not the work
+// counter: per check at most twice the plain scan's plus the probes of
+// the two searches, and in all at most a constant per check.
+func TestExtCheckMaximalEarlyExit(t *testing.T) {
+	const q = 31
+	pt := func(x, y int) string { return "p" + strconv.Itoa(x) + "_" + strconv.Itoa(y) }
+	var txs []oracle.Transaction
+	one := func(items ...string) { txs = append(txs, oracle.Transaction{Items: items, Weight: 1}) }
+	for x := range q {
+		for y := range q {
+			one("b", "z", pt(x, y))
+		}
+	}
+	all := []string{"b"}
+	for x := range q {
+		for y := range q {
+			all = append(all, pt(x, y))
+		}
+	}
+	one(all...)
+	for m := range q + 1 {
+		for c := range q {
+			var l []string
+			for x := range q {
+				if m == q {
+					l = append(l, pt(c, x)) // vertical
+				} else {
+					l = append(l, pt(x, (m*x+c)%q))
+				}
+			}
+			one(l...)
+		}
+	}
+	c, ib := newTestChecker(t, txs, report.TargetMaximal, 2, rowsAuto)
+	c.mguard = 4
+	var plain, def visits
+	checks := 0
+	for i := range tract.Item(len(c.freq)) {
+		if id := ib.ID(i); id == "b" || id == "z" {
+			continue
+		}
+		set := []tract.Item{i}
+		c.markSet(set)
+		n := c.bitCover(set)
+		g := c.mguard
+		c.mguard = plainGuard
+		var okP, ok bool
+		p := measureScan(c, func() { okP = c.scanMaximal(n) })
+		c.mguard = g
+		c.markSet(set)
+		d := measureScan(c, func() { ok = c.scanMaximal(n) })
+		if ok || okP {
+			t.Fatalf("{%s}: maximal %v (plain %v), want false", ib.ID(i), ok, okP)
+		}
+		if !d.within(p) {
+			t.Fatalf("{%s}: %+v actual item visits, plain scan %+v", ib.ID(i), d, p)
+		}
+		plain.real += p.real
+		def.real += d.real
+		checks++
+	}
+	t.Logf("%d checks: actual item visits plain %d, deferral %d; %+v", checks, plain.real, def.real, c.scanStat)
+	if checks != q*q || def.real > 64*checks {
+		t.Fatalf("%d checks, %d actual item visits", checks, def.real)
+	}
+}
+
+// TestExtCheckMaximalOnePrecheck guards the cost of the precheck's pass
+// over the touched items (correctness review of PR #43, round 2: when
+// every long light transaction that was not deferred ran its own pass,
+// a check took one pass per long transaction). Set {a}, smin 3: 100
+// short transactions of 40 own items (4,000 touched items of count 1),
+// then 2 short ones sharing 300 items E (count 2, touched last), then 50
+// long light transactions of own items. In a long one the items of E
+// can reach smin, too many to search, so the precheck declines after a
+// pass over almost all touched items, and the scan goes on in cover
+// order: one pass per check, at most the items visited before it.
+func TestExtCheckMaximalOnePrecheck(t *testing.T) {
+	id := 0
+	own := func(x []string, ln int) []string {
+		for len(x) < ln {
+			id++
+			x = append(x, "x"+strconv.Itoa(id))
+		}
+		return x
+	}
+	var txs []oracle.Transaction
+	for range 100 {
+		txs = append(txs, oracle.Transaction{Items: own([]string{"a"}, 41), Weight: 1})
+	}
+	e := []string{"a"}
+	for k := range 300 {
+		e = append(e, "e"+strconv.Itoa(k))
+	}
+	txs = append(txs, oracle.Transaction{Items: e, Weight: 1}, oracle.Transaction{Items: e, Weight: 1})
+	for range 50 {
+		txs = append(txs, oracle.Transaction{Items: own([]string{"a"}, 700), Weight: 1})
+	}
+	c, ib := newTestChecker(t, txs, report.TargetMaximal, 3, rowsAuto)
+	c.mguard = 4
+	var a tract.Item
+	for i := range tract.Item(len(c.freq)) {
+		if ib.ID(i) == "a" {
+			a = i
+		}
+	}
+	c.markSet([]tract.Item{a})
+	nn := c.bitCover([]tract.Item{a})
+	c.mguard = plainGuard
+	var okP, ok bool
+	p := measureScan(c, func() { okP = c.scanMaximal(nn) })
+	c.mguard = 4
+	c.markSet([]tract.Item{a})
+	v := measureScan(c, func() { ok = c.scanMaximal(nn) })
+	if !ok || !okP {
+		t.Fatalf("{a}: maximal %v (plain %v), want maximal", ok, okP)
+	}
+	if st := c.scanStat; st.prepass == 0 || st.prepass > v.visits-st.prepass || !v.within(p) {
+		t.Fatalf("precheck passes scanned %d touched items, actual work %d, plain scan %d", st.prepass, v.real, p.real)
+	}
+	t.Logf("actual work %d (plain scan %d), %+v", v.real, p.real, c.scanStat)
+}
+
+// TestExtCheckMaximalCapSecondLong guards the cap's budget against later
+// deferrals (correctness review of PR #43, F3: a budget reset at every
+// deferral passed all other tests). Set {a}, smin 2: a long light line
+// t1 holding y, a short line holding y (the plain scan stops there),
+// then a second, much longer light line t2 and more short lines. The
+// budget stays |t1|: the short lines counted out of order hold at most
+// |t1| items, so the actual work stays within twice the plain scan's.
+// (Adapted from TestCritic34CapSecondLong.)
+func TestExtCheckMaximalCapSecondLong(t *testing.T) {
+	line := func(p string, n int, extra ...string) []string {
+		s := append([]string{"a"}, extra...)
+		for len(s) < n {
+			s = append(s, p+strconv.Itoa(len(s)))
+		}
+		return s
+	}
+	txs := []oracle.Transaction{
+		{Items: line("t1_", 50, "y"), Weight: 1},
+		{Items: line("s1_", 40, "y"), Weight: 1},
+		{Items: line("t2_", 500), Weight: 1},
+	}
+	for k := 2; k <= 8; k++ {
+		txs = append(txs, oracle.Transaction{Items: line("s"+strconv.Itoa(k)+"_", 40), Weight: 1})
+	}
+	work := func(guard int) (bool, visits) {
+		c, ib := newTestChecker(t, txs, report.TargetMaximal, 2, rowsAuto)
+		c.mguard = guard
+		var a tract.Item
+		for i := range tract.Item(len(c.freq)) {
+			if ib.ID(i) == "a" {
+				a = i
+			}
+		}
+		c.markSet([]tract.Item{a})
+		n := c.bitCover([]tract.Item{a})
+		var ok bool
+		v := measureScan(c, func() { ok = c.scanMaximal(n) })
+		return ok, v
+	}
+	okP, wP := work(plainGuard)
+	ok, w := work(4)
+	if ok || okP {
+		t.Fatalf("{a} maximal: plain %v, deferred %v, want false", okP, ok)
+	}
+	if !w.within(wP) {
+		t.Fatalf("actual work %+v, plain scan %+v", w, wP)
+	}
+	t.Logf("actual work: plain %d, deferred %d", wP.real, w.real)
+}
+
+// TestExtCheckMaximalFilterPasses is the shape of review G1 / R2-F1 of
+// PR #43 (genadvc.py advC): set {x}, smin 1000, k short transactions of
+// weight smin−2 with 4n own items each, then D long light transactions
+// (weight 1) of a shared filler and an own item. Every touched item is a
+// candidate (rest = D < smin) and too many to search, so each long one
+// is counted in full; filtering the candidates after every one of them
+// cost D·k·4n, against about k·4n + D·4n visits. The filters now run
+// only once the visits since the last one pay for them. Real work,
+// counting every pass over touched and candidate items.
+func TestExtCheckMaximalFilterPasses(t *testing.T) {
+	const k, d, smin = 40, 100, 1000
+	n := k + d
+	var txs []oracle.Transaction
+	for i := range k {
+		s := []string{"x"}
+		for j := range 4 * n {
+			s = append(s, "s"+strconv.Itoa(i)+"_"+strconv.Itoa(j))
+		}
+		txs = append(txs, oracle.Transaction{Items: s, Weight: smin - 2})
+	}
+	for i := range d {
+		s := []string{"x", "u" + strconv.Itoa(i)}
+		for j := range 4*n + 2 {
+			s = append(s, "f"+strconv.Itoa(j))
+		}
+		txs = append(txs, oracle.Transaction{Items: s, Weight: 1})
+	}
+	c, ib := newTestChecker(t, txs, report.TargetMaximal, smin, rowsAuto)
+	var x tract.Item
+	for i := range tract.Item(len(c.freq)) {
+		if ib.ID(i) == "x" {
+			x = i
+		}
+	}
+	set := []tract.Item{x}
+	c.markSet(set)
+	nn := c.bitCover(set)
+	c.mguard = plainGuard
+	var okP, ok bool
+	p := measureScan(c, func() { okP = c.scanMaximal(nn) })
+	c.mguard = 4
+	c.markSet(set)
+	f0 := c.scanStat.filtered
+	v := measureScan(c, func() { ok = c.scanMaximal(nn) })
+	if !ok || !okP {
+		t.Fatalf("{x}: maximal %v (plain %v), want maximal", ok, okP)
+	}
+	if c.scanStat.deferred == 0 || !v.within(p) || c.scanStat.filtered-f0 > v.visits {
+		t.Fatalf("real work %+v (filter passes %d), plain scan %+v; %+v", v, c.scanStat.filtered-f0, p, c.scanStat)
+	}
+	t.Logf("real work %d (filter passes %d), plain scan %d", v.real, c.scanStat.filtered-f0, p.real)
+}

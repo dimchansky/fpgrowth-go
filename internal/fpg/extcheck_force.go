@@ -11,4 +11,5 @@ const (
 	scanGallopMin   = 2
 	scanGallopRatio = 1
 	scanGuard       = 0
+	scanMaxGuard    = 0
 )

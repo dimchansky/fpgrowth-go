@@ -459,6 +459,73 @@ reached, accepted by the repository (3.4) and passes the check.
     Results in §7.5: every `lp-*` `-n1` row from seconds to ≤ 0.1 s
     and linear; rows that stay quadratic for other reasons are listed
     there.
+  - Deferred long transactions (maximal scan, issue #34). The maximal
+    scan counted every item of every cover transaction and stopped only
+    at a count of smin, so a long first cover transaction of weight
+    below smin was counted in full by every check (the `-tm` rows of
+    the lp shapes, quadratic). With P the visited cover transactions
+    and rest the weight of the others, every item has
+    cnt_P(j) ≤ supp(X ∪ {j}) ≤ cnt_P(j) + rest (weights are positive),
+    so:
+    - a cover transaction of more than |X| + 4·n items (`scanMaxGuard`;
+      0 with `fpgforce`) and weight below smin is deferred;
+    - once rest < smin, only the touched items with cnt ≥ smin − rest
+      can be frequent extensions (no untouched one); each deferred
+      transaction t is then searched for them by binary search if
+      |candidates|·bitlen(|t|) < |t|, else counted in full, and the
+      candidates are filtered by the same bound after each one; none
+      left proves X maximal;
+    - while rest ≥ smin the deferred transactions are counted in full,
+      in cover order.
+
+    The issue's rule (a cover transaction t with w(t) > supp(X) − smin
+    holds every frequent extension) is the case P = {t}; the bound
+    above needs neither supp(X) (the sibling rows' verify mode passes
+    0) nor a pass over the cover. Exactness: counts are sums over
+    distinct cover transactions (≤ the support, so reaching smin
+    proves non-maximality), candidates' counts are exact, and an item
+    is dropped only when cnt + rest < smin, which bounds its support
+    over the whole cover; order and choice of the deferred
+    transactions change only the cost.
+
+    Precheck: the plain scan stops inside a light t at an item j iff
+    j ∈ t and cnt[j] ≥ smin − w(t) before t. Before the first
+    transaction t1 is deferred, these touched items are searched in t1
+    (binary search, if cheaper than |t1|; otherwise nothing is
+    deferred in this check and the scan goes on in cover order, so
+    there is one precheck per check and its pass over the touched items
+    costs at most the items visited before). A hit decides the set (not
+    maximal); without one the plain scan visits all of t1. (The first version
+    lacked this: on the review's AG(2,q) shape the plain scan stopped
+    in the long line after a few items and the deferral made every
+    check count the lines through the point, quadratic; PR #43
+    performance review F1.)
+
+    Cap: the transactions counted after t1 while it is deferred may
+    hold at most |t1| items; the next one that would exceed this counts
+    the deferred ones in full and the scan goes on in cover order. The
+    deferred ones are always taken in cover order. In actual item
+    visits (items counted plus binary-search probes, not the work
+    counter, which counts whole transactions), the scan makes at most
+    2·V + S, V being the plain scan's actual visits and S the probes
+    of two searches (t1's precheck and the lookup of the transaction
+    where the plain scan stops), each below that transaction's length.
+    Counting all work (also the precheck's pass over the touched items,
+    the candidate build and the candidate filters), the scan does at
+    most 4·V + 2·S; the filters run only once the visits and probes
+    since the previous one reach the number of candidates (one filter
+    after every deferred transaction had cost D·|candidates|, quadratic
+    in the cover: PR #43 reviews G1 and R2-F1, shape advC). S is a log
+    factor, not a constant times V: the precheck's probes are at most
+    bitlen(|t1|) per item visited before t1, the stopping search's at
+    most bitlen(|t|) per candidate.
+    `TestExtCheckMaximalDeferProperty` checks both bounds on every call.
+    A cap on the total length of all deferred transactions would not
+    bound this (deferrals after the plain exit would raise it).
+    Not covered: covers whose deferred transactions together weigh smin
+    or more (`lpc20000 -tm`: several long chains) stay quadratic: the
+    deferred chains are counted in full in cover order, about one chain
+    per check.
 - `internal/fpg/mine.go`: the checker is installed when the target is
   closed/maximal and zmax < `Bag.MaxSize()` (otherwise the search is
   unlimited as before); `xable2`/`deeper` are the size gates. The miner
@@ -482,7 +549,8 @@ differ):
 | `671474e` | incremental per prefix depth (`checkPath`, bit sets only) | as above |
 | Stage 3 fix S3-1 | incremental for every form; closed scan with spread probes | compact rows (sparse items: non-zero words only), no absolute floor; transaction lists removed |
 | issue #19 | as S3-1 | as S3-1, plus sibling rows for maximal checks (§4.1) |
-| issue #20 (this version) | as S3-1; the closed scan starts from a short cover transaction and searches long ones exponentially (§4) | as #19 |
+| issue #20 | as S3-1; the closed scan starts from a short cover transaction and searches long ones exponentially (§4) | as #19 |
+| issue #34 (this version) | as #20; the maximal scan defers long transactions of weight below smin (§4) | as #19 |
 
 The 64 MiB floor of the first two versions was a memory-for-speed
 trade-off: on `sparse-large` (2,592 frequent items at `-s0.05`, 3,115
@@ -1129,6 +1197,7 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
     exact pruning exists (if a cover transaction t has
     w(t) > supp(X) − smin, every frequent extension is in t), left to a
     separate issue;
+    *Note (issue #34):* done, see §4 (deferred long transactions);
   - `adv1f` (challenge L2: three equal chains, one chain with four rare
     items, fillers; `-At -q-2`): the first and shortest cover
     transaction's 4 probes are the rare items, so every check copies n
@@ -1201,6 +1270,82 @@ branch and `main` are byte-identical (md5) on every `lp-*`, `adv5-*`,
   caught (the full scan skipping the first transaction of every cover
   word once the start moved, K10); `TestExtCheckFirstOfWord` (18 cover
   words, every transaction lacking one item of all others) catches it.
+
+### 7.6 Maximal checks on long and short transactions (issue #34)
+
+CLI, output to `/dev/null`, `/usr/bin/time -l`, instructions retired,
+minimum of 2 interleaved runs (C, and v0.1.0 on the lp rows: the first
+round); Apple M1 Max, Go 1.27.3. `main` is `e6d02b0`, the branch the
+version with the precheck (§4). Outputs of the branch and `main` are
+byte-identical (md5) on every lp and advB row and on sparse-large
+`-n3`, d5000, d20000 `-n2`, tier, split and dense `-n4`; set counts
+are equal on every row.
+
+| row (`-As -tm -s-2 -n1`) | `main` | v0.1.0 | C 6.21 | branch |
+| --- | ---: | ---: | ---: | ---: |
+| `lp12500` | 8.03 G | 7.72 G | 2.04 G | **0.23 G** |
+| `lp25000` | 31.67 G | 30.45 G | 8.01 G | **0.45 G** |
+| `lp50000` | 125.9 G (5.46 s) | 120.9 G | 31.78 G (3.28 s) | **0.91 G (0.05 s)** |
+| `lp50000s2` (2 lookups per check) | 126.0 G | — | — | **1.04 G** |
+| `lp50000w` (`-w`) | 126.0 G | — | — | **0.98 G** |
+| `lpc20000` (still quadratic) | 16.31 G | — | 39.37 G | 16.41 G (+0.6 to +0.7 %) |
+| review shape `advB-101-102 -q0` | 2.44 G | — | — | 2.44 G (−0.1 %) |
+| `advB-151-152 -q0` | 7.89 G | — | — | 7.92 G (+0.3 %) |
+| `advB-151-152 -q2` | 8.18 G | — | — | 8.16 G (−0.2 %) |
+| `advB-151-152 -q0`, default algorithm | 7.90 G | — | — | 7.94 G (+0.5 %) |
+
+The advB rows are the shape of the PR #43 performance review (F1,
+`genadv.py`): without the precheck the branch took 7.71 G and 34.12 G
+on the two `-q0` rows (4.3× `main`, growing quadratically).
+
+Candidate filters (reviews G1 and R2-F1, shape advC of `genadvc.py`: k
+short lines of weight smin−2 with 4n items, then D long light lines;
+`-w -As -tm -s-1000 -n1`), after the filters were limited to the visits
+that pay for them (instructions, minimum of 2 interleaved runs, output
+identical):
+
+| advC k/D | `main` | branch before | branch |
+| --- | ---: | ---: | ---: |
+| 100/250 `-q0` | 2.27 G | 3.03 G | 2.27 G (+0.3 %) |
+| 200/500 `-q0` | 9.27 G | 14.68 G | 9.25 G (−0.3 %) |
+| 300/750 `-q0` | 20.25 G | 39.17 G | 20.25 G (0.0 %) |
+| 300/750 `-q2` | 762.9 G | — | 392.0 G (−48.6 %) |
+
+(“branch before”: the perf review's numbers at `bc00619`.) The rows
+re-checked with this version: lp50000 0.90 G, lpc20000 +0.7 %,
+advB-151 `-q0` −0.5 %, tier `-As` +0.27 % against `main`.
+
+Instrumented in-process runs (every deferring or prechecking check
+re-run with the plain scan, actual item visits): lp12500 to lp50000
+defer every check and visit 1 item per check instead of n + 1;
+lp50000s2 1.0 M vs 2.5 G actual visits (50,000 lookups, each stopping
+at the first probe); advB-101-102 prechecks every check: 17 actual
+visits per check (3 items and 14 probes) against the plain scan's 4,
+within 2·V + S, never deferred. On the ordinary `-tm -n` rows
+(sparse-large, d5000, d20000 `-n3`, tier, split, dense `-n4`, and in
+the first round all 17) no check defers or prechecks: the verdicts,
+the check work and the sibling-row builds are identical with and
+without the deferral, so the #19 cost signal is unchanged there.
+
+Instructions against `main` on the 17 ordinary `-tm -n` rows of
+`configs.txt` (without `m5-d20000-m-n4`, 67–131 s) and dense
+`-tm -s5 -n3`/`-n4`: −0.45 % to +0.44 % (the largest: tier `-As`
++0.44 %, repeatable; tier +0.13 %, tier `-At` +0.13 %, d20000 `-n3`
++0.02 to +0.04 %). The first version, with the deferral's bookkeeping
+in the plain loop, had cost tier +1.0 to +1.5 %.
+
+Tests: `FPG_M5_CASES=20000` oracle (440,000 comparisons) and the
+deferral property test with 30,000 bags (6.9 M checks against a brute
+force; 2.3 M deferred, 133 k with lookups, 248 k capped; the bound
+R ≤ 2·V + S in actual visits held on every call) pass in the default
+and the `fpgforce` build; 13 mutants of the deferral and the precheck
+are killed (`TestExtCheckMaximal*`, oracle, brute force). A later
+change (one precheck per check, from the correctness review: a
+declined precheck had been repeated at every long transaction, each
+time with a pass over the touched items) was re-measured on the lp,
+lpc, advB and tier `-As` rows: within 0.7 % of the numbers above, same
+output; a 14th mutant (repeated prechecks) is killed by
+`TestExtCheckMaximalOnePrecheck`.
 
 ## 8. Decision
 

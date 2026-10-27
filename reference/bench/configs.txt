@@ -116,8 +116,16 @@ lp-50000s2-c-n1*   lp50000s2.tab     -As -tc -s-2 -n1
 lp-50000s2-c-n2*   lp50000s2.tab     -As -tc -s-2 -n2
 lp-50000w-c*       lp50000w.tab      -w -As -tc -s-2 -n1
 lp-c20000-c*       lpc20000.tab      -As -tc -s-2 -n1
-# (lp-50000-m-As is the maximal control: its maximal checks count the
-# long line, quadratic as well.)
+# (lp-50000-m-As was the maximal control of #20: its maximal checks
+# counted the long line, quadratic as well, until issue #34.)
+# Maximal checks on the same shapes (issue #34): the long line has weight
+# 1 < smin, so it is deferred and searched for candidates only.
+# lp-c20000-m: several long chains together reach smin, still quadratic.
+lp-12500-m-As*     lp12500.tab       -As -tm -s-2 -n1
+lp-25000-m-As*     lp25000.tab       -As -tm -s-2 -n1
+lp-50000s2-m-n1*   lp50000s2.tab     -As -tm -s-2 -n1
+lp-50000w-m*       lp50000w.tab      -w -As -tm -s-2 -n1
+lp-c20000-m*       lpc20000.tab      -As -tm -s-2 -n1
 # The probe trap (issue #20, challenge H1): the first cover transaction
 # of {a_i} holds a covering item among its 4 probes, the shortest one
 # does not, so the first one must still be probed.
