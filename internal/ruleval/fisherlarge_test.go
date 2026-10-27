@@ -563,11 +563,6 @@ func TestFisherNearTieCost(t *testing.T) {
 	}
 }
 
-// infoCutoff is the threshold of infoUnderflows for total weight n.
-func infoCutoff(n tract.Supp) float64 {
-	return float64(float64(6*math.Log(float64(n)+1))+800) * (1 + 0x1p-40)
-}
-
 // slowFisherInfo is FisherInfo for base > maxFact without the underflow
 // shortcut: the region sum that fetInfoLarge computes otherwise.
 func slowFisherInfo(supp, body, head, base tract.Supp) float64 {

@@ -367,8 +367,13 @@ func fetProbLarge(supp, body, head, base tract.Supp, abort func() error) (float6
 // infoSum rests on the actual error of lnP (scans in the design record).
 // Proof: docs/reviews/post-v0.1.0/issue-40-design.md.
 func (t *hyperTable) infoUnderflows(ss float64) bool {
-	// The cutoff is at least 800, so ordinary tables skip the logarithm.
-	return ss > 800 && ss > float64(float64(6*math.Log(float64(t.ft.base)+1))+800)*(1+0x1p-40)
+	return ss > infoCutoff(t.ft.base)
+}
+
+// infoCutoff is the threshold of infoUnderflows for total weight n:
+// (6·ln(n+1) + 800)·(1 + 2^-40), at least 800.
+func infoCutoff(n tract.Supp) float64 {
+	return float64(float64(6*math.Log(float64(n)+1))+800) * (1 + 0x1p-40)
 }
 
 // fetInfoLarge is FisherInfo for base > maxFact: the tables with
@@ -378,7 +383,8 @@ func fetInfoLarge(supp, body, head, base tract.Supp, abort func() error) (float6
 	t := newHyperTable(supp, body, head, base)
 	st := stepper{abort: abort}
 	ss := infoNats(t.ft.supp, t.ft.body, t.ft.head, t.ft.base)
-	if t.infoUnderflows(ss) {
+	// The cutoff is at least 800: ordinary tables skip its logarithm.
+	if ss > 800 && t.infoUnderflows(ss) {
 		return 0, nil
 	}
 	return t.infoSum(ss, &st)
