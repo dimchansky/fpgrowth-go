@@ -185,7 +185,65 @@ The shortcut returns before any abort check, like `probUnderflows`. An
 evaluation that the region sum would have aborted (after 4096 steps) now
 completes with 0. This is the same documented behavior as FisherProb.
 
-## Evidence
+## Evidence (2026-10-27, Apple M1 Max, go1.27.3, load 1.6 to 4.4)
 
-Command outputs are in the PR description. Raw files are in
-`~/.cache/fpgrowth-cycle/40/`.
+**Issue scan.** FisherInfo with b = n/2, h = n/2+1, s = f·n, for
+f in {0.05, 0.1, 0.2, 0.24}. Measured with `testing.Benchmark`, per
+evaluation:
+
+| n | origin/main | this change |
+| --- | --- | --- |
+| 10^13, 10^14 | 2.5–6.4 µs, 0 allocs | 0.13 µs, 0 allocs |
+| 10^15 | 6.6–90 µs, 0–1,639 allocs | 0.14 µs, 0 allocs |
+| 10^16 | 70–230 µs, 1,195–4,341 allocs | 0.14 µs, 0 allocs |
+| 10^17 | 213–310 µs, 3,923–5,863 allocs | 0.14 µs, 0 allocs |
+| 10^18 | 337–469 µs, 6,206–8,773 allocs | 0.14 µs, 0 allocs |
+| 9·10^18 | 458–608 µs, 8,661–11,369 allocs | 0.13 µs, 0 allocs |
+
+All values are 0 on both.
+
+**Boundary scan** (scratch test, not committed). Four margin families:
+b = n/2 with h = n/2+1; b = n/10 with h = n/3; b = 10^6 with h = n/2; and
+b = n/2 with h = n − n/1000. Eight totals from 10^13 to 9·10^18. Both
+sides of E. S(supp) at 0.5, 0.9, 0.999, 0.999999, 1.000001, 1.001, 1.1,
+2 and 100 times the cutoff. That gives 576 tables in all:
+
+- 336 tables fired the shortcut. Each one equals `infoSum` bit for bit,
+  and none was skipped by the step budget.
+- 240 did not fire. Of these, 64 have positive values.
+
+**Random scan.** 20,000 random tables with log-uniform n in
+[10^13, 9·10^18], random margins and random, near-cutoff or moderately
+deviating supports:
+
+- 11,368 fired tables equal `infoSum` bit for bit. 1,152 of them lie
+  beyond S = 1.88·10^16, outside the range of Theorem 2.
+- 6,304 fired tables exceeded the 2^20-step budget of the comparison
+  and were not compared.
+- There were 0 mismatches.
+
+**Committed tests:**
+
+- `TestFisherInfoUnderflow`: the issue scan plus a positive association.
+  It checks for 0 allocations and the value of the region sum. With the
+  shortcut disabled it fails with 542 to 11,369 allocations.
+- `TestFisherInfoUnderflowCutoff`: 40 tables compared against the exact
+  oracle in three bands of S(supp)/cutoff. 17 fired and 14 have positive
+  values.
+
+**Ordinary path.** `BenchmarkEval`-style cases at n = 1000 (FisherInfo,
+FisherProb, FisherChi2, FisherSupport), 150 and 10^4. 8 interleaved
+rounds of main, PR and v0.1.0:
+
+- FisherInfo n=1000: 358 → 370 ns (+3.3 %, ±7 % spread; median
+  358 → 362). Instructions retired over 3·10^6 evaluations of each of
+  the three FisherInfo cases: 192.15 G → 192.36 G (+0.11 %). That is
+  about +0.8 % wall time for the large path, from the extra comparison
+  and the split into `infoSum`.
+- FisherInfo n=10^4: 465 → 468 ns (~, p = 0.07).
+- Every other case: ~. Every case: 0 allocations.
+- Against v0.1.0: FisherInfo n=1000 is 3.80 µs → 0.37 µs. That speedup
+  comes from #16.
+
+Raw files are in `~/.cache/fpgrowth-cycle/40/` on the implementer's
+machine.
