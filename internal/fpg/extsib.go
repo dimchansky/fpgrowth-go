@@ -39,7 +39,14 @@ import (
 //     more than twice the work already spent at the level), and
 //   - the children that can still follow, including the current one,
 //     would save at least B: their number times (the average actual work
-//     of a child so far − the rows' cost per child) ≥ B.
+//     of a child so far − the rows' cost per child) ≥ B, the saving
+//     counted in build visits: a word test (of a vertical check,
+//     vertMaximal, or of the rows) costs sibWordCost of a build visit,
+//     so on a level whose children are checked vertically the saving
+//     is scaled by sibWordCost (by the vertical share of the work in
+//     general). Issue #42: with word tests counted like build visits,
+//     rows were built on dense data with few children per parent
+//     (dense -tm -s5 -n3/-n4) that saved less than they cost.
 //
 // The number of children after h is bounded by the miner (c.left: the
 // entries left in its loop over the parent's conditional items, or the
@@ -80,11 +87,21 @@ type sibHook struct {
 // (16 bytes per occurrence, 4 times the horizontal items).
 const sibBudget = 2
 
+// sibWordCost is the cost of a word test (a vertical maximal check's or a
+// sibling row's AND and population count of one word) in build visits
+// (issue #42, measured in process on dense, d5000x60d40, s50000x414 and
+// t100000x204c4: a word test 0.58-0.63 ns, a build visit 1.4-1.9 ns,
+// about 15 and 39 instructions; a scan visit 1.4-1.6 ns). It scales only
+// the saving of the build rule, never more than the rule without it
+// would allow (sibWorth).
+const sibWordCost = 0.4
+
 // sibLevel holds the sibling rows of one path level.
 type sibLevel struct {
 	built   bool
 	refused bool  // over the memory budget until the level is dropped
 	work    int64 // actual work of the ordinary checks of children so far
+	vwork   int64 // of work: vertical word tests
 	need    int64 // build cost (-1: not yet computed)
 	kids    int   // children checked so far
 	bound   int64 // Σ over those checks of the bound of the later children
@@ -121,7 +138,7 @@ func (c *extChecker) sibReset(from int) {
 		k := int64(s.kids) // check i of k had k-1-i checked siblings after it
 		s.histLater += k * (k - 1) / 2
 		s.histBound += s.bound
-		s.built, s.refused, s.work, s.need, s.kids, s.bound = false, false, 0, -1, 0, 0
+		s.built, s.refused, s.work, s.need, s.kids, s.bound, s.vwork = false, false, 0, -1, 0, 0, 0
 		s.ents = s.ents[:0]
 	}
 }
@@ -235,6 +252,14 @@ func (c *extChecker) sibWorth(L int, s *sibLevel, est, pl int64, r int) bool {
 		}
 	}
 	gain := (rem + 1) * (avg - row) // what the children left, h included, save
+	if s.vwork > 0 {
+		// In build visits: the vertical share of the work (and so of avg)
+		// is word tests, which cost sibWordCost of a visit, and so do the
+		// rows' word tests (row). The factor is at most 1, so the rule
+		// never builds where it did not before issue #42.
+		f := 1 - (1-sibWordCost)*float64(s.vwork)/float64(s.work)
+		gain = int64(float64(gain) * f)
+	}
 	// Every cover transaction contains the L+1 items of P, so B is at
 	// least (L+1)·n. The exact B needs one pass over the lengths of the
 	// cover transactions (n steps); it is computed only once the work
@@ -291,10 +316,14 @@ func (c *extChecker) sibBuild(L int, prefix []tract.Item) {
 	if c.planes != nil {
 		np = len(c.planes) / c.words
 	}
+	// All rows are cleared here, not when an item is first touched: the
+	// item loop below then has no call and keeps its state in registers
+	// (issue #42). The cost rule counts these words (sibWorth).
 	if need := c.nFreq * words; cap(s.rows) < need {
 		s.rows = make([]uint64, need)
 	} else {
 		s.rows = s.rows[:need]
+		clear(s.rows)
 	}
 	if cap(s.planes) < np*words {
 		s.planes = make([]uint64, np*words)
@@ -303,7 +332,12 @@ func (c *extChecker) sibBuild(L int, prefix []tract.Item) {
 		clear(s.planes)
 	}
 	slot, supp := c.sibSlot, c.sibSupp
-	touched := c.sibTouch[:0]
+	// touched has room for every item: no append (as in scanMaximal)
+	if cap(c.sibTouch) < len(slot) {
+		c.sibTouch = make([]tract.Item, 0, len(slot))
+	}
+	touched, nt := c.sibTouch[:cap(c.sibTouch)], 0
+	freq, smin, rows := c.freq, c.smin, s.rows
 	r := 0
 	for i, w := range lv.nz {
 		for x := lv.cover[i]; x != 0; x &= x - 1 {
@@ -311,17 +345,17 @@ func (c *extChecker) sibBuild(L int, prefix []tract.Item) {
 			wt := c.txW[t]
 			wi, bit := r>>6, uint64(1)<<(r&63)
 			for _, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-				if c.freq[it] < c.smin {
+				if freq[it] < smin {
 					continue // supp(P ∪ {it}) ≤ freq(it) < smin: never a row
 				}
 				k := slot[it]
 				if k == 0 {
-					touched = append(touched, it)
-					k = int32(len(touched))
+					touched[nt] = it
+					nt++
+					k = int32(nt)
 					slot[it] = k
-					clear(s.rows[int(k-1)*words : int(k)*words])
 				}
-				s.rows[int(k-1)*words+wi] |= bit
+				rows[int(k-1)*words+wi] |= bit
 				supp[it] += wt
 			}
 			for b := range np {
@@ -332,6 +366,7 @@ func (c *extChecker) sibBuild(L int, prefix []tract.Item) {
 			r++
 		}
 	}
+	touched = touched[:nt]
 	s.ents = s.ents[:0]
 	for k, it := range touched {
 		if supp[it] >= c.smin && !slices.Contains(prefix[:L+1], it) {

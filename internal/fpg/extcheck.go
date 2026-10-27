@@ -105,6 +105,7 @@ type extChecker struct {
 	sibSupp   []tract.Supp // build scratch: supp(P ∪ {i})
 	sibTouch  []tract.Item // build scratch: items with a row, in touch order
 	work      int64        // actual work of the last ordinary maximal check
+	vwork     int64        // of work: the word tests of vertMaximal
 	left      int          // miner's bound of the siblings after the set (-1: unknown)
 	zmax      int          // maximum size of the search (sibling-row cost rule)
 }
@@ -477,10 +478,11 @@ func (c *extChecker) checkPath(prefix, set []tract.Item, supp tract.Supp) bool {
 		if done {
 			return ok
 		}
-		c.work = 0
+		c.work, c.vwork = 0, 0
 		ok = c.decide(lv.n, supp)
 		if s := &c.sibs[len(prefix)-2]; !s.built {
 			s.work += c.work
+			s.vwork += c.vwork
 		}
 		return ok
 	}
@@ -898,31 +900,45 @@ func (c *extChecker) keepSeek(t int32) {
 // whole transactions; scanStat.skipped counts the items of a transaction
 // that the scan stopped in and did not visit (tests).
 func (c *extChecker) scanMaximal(n int) bool {
-	touched := c.cand[:0]
+	// touched has room for every item, so the item loop has no call
+	// (append) and keeps its state and the fields below in registers
+	// (issue #42: with append, the spills and reloads cost about half of
+	// the scan's instructions).
+	if cap(c.cand) < len(c.cnt) {
+		c.cand = make([]tract.Item, 0, len(c.cnt))
+	}
+	touched, nt := c.cand[:cap(c.cand)], 0
 	long := c.deferLen(n)
 	ok := true
 	work := 0 // item visits (whole transactions), for the sibling rows
+	inSet, stamp, cnt, smin := c.inSet, c.setStamp, c.cnt, c.smin
 scan:
 	for i, w := range c.nz {
 		for x := c.cover[i]; x != 0; x &= x - 1 {
 			t := w*64 + int32(bits.TrailingZeros64(x))
 			wt := c.txW[t]
-			l := c.txOff[t+1] - c.txOff[t]
-			if l > long && wt < c.smin {
+			a, b := c.txOff[t], c.txOff[t+1]
+			l := b - a
+			if l > long && wt < smin {
 				// the first deferred transaction: the rest of the scan
 				// (kept out of this loop, which stays the plain scan)
-				ok, touched, work = c.scanDefer(i, x, long, touched, work)
+				ok, touched, work = c.scanDefer(i, x, long, touched[:nt], work)
+				nt = len(touched)
 				break scan
 			}
 			work += l
-			for k, it := range c.txItems[c.txOff[t]:c.txOff[t+1]] {
-				if c.inSet[it] == c.setStamp {
+			for k, it := range c.txItems[a:b] {
+				if inSet[it] == stamp {
 					continue
 				}
-				if c.cnt[it] == 0 {
-					touched = append(touched, it)
+				s := cnt[it]
+				if s == 0 {
+					touched[nt] = it
+					nt++
 				}
-				if c.cnt[it] += wt; c.cnt[it] >= c.smin {
+				s += wt
+				cnt[it] = s
+				if s >= smin {
 					ok = false // a frequent superset with one more item
 					c.scanStat.skipped += l - k - 1
 					break scan
@@ -930,6 +946,7 @@ scan:
 			}
 		}
 	}
+	touched = touched[:nt]
 	for _, it := range touched {
 		c.cnt[it] = 0
 	}
@@ -1255,33 +1272,41 @@ func (c *extChecker) covers(j tract.Item) bool {
 // vertMaximal computes supp(X ∪ {j}) for every frequent item j (most
 // frequent first) by weighted population counts over the cover.
 func (c *extChecker) vertMaximal() bool {
-	pl := int64(1) // word tests per item and cover word
-	if c.planes != nil {
-		pl = int64(len(c.planes) / c.words)
-	}
+	nz := c.nz
+	cover := c.cover[:len(nz)]
+	ok := true
+	tested := 0 // items tested against the cover
 	for _, j := range c.order {
 		if c.freq[j] < c.smin {
-			return true // the remaining items are infrequent
+			break // the remaining items are infrequent
 		}
 		if c.inSet[j] == c.setStamp {
 			continue
 		}
-		c.work += int64(len(c.nz)) * pl
+		tested++
 		var s tract.Supp
 		if b := c.row(j); b != nil && c.planes == nil { // suppWith(j), inlined
 			n := 0
-			for i, w := range c.nz {
-				n += bits.OnesCount64(c.cover[i] & b[w])
+			for i, w := range nz {
+				n += bits.OnesCount64(cover[i] & b[w])
 			}
 			s = tract.Supp(n)
 		} else {
 			s = c.suppWith(j)
 		}
 		if s >= c.smin {
-			return false // a frequent superset with one more item
+			ok = false // a frequent superset with one more item
+			break
 		}
 	}
-	return true
+	pl := 1 // word tests per item and cover word
+	if c.planes != nil {
+		pl = len(c.planes) / c.words
+	}
+	wt := int64(tested) * int64(len(nz)) * int64(pl)
+	c.work += wt
+	c.vwork += wt
+	return ok
 }
 
 // suppWith returns the weight of the cover transactions that contain j.
