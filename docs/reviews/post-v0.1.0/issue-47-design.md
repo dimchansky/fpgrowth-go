@@ -195,9 +195,17 @@ shapes: XL 300 transactions of 400-600 items, `-ge -s-60 -S1 -z100`;
 XXL 100 transactions of 1,200-1,500 items, `-ge -s-40 -S1 -z10`; 2 runs
 each, md5-equal): XL 6.78G -> 5.94G (-12 %), XXL 3.91G -> 3.12G (-20 %).
 
-## Deferred to the night window
+## Night differential sweep (head 08eacc6)
 
-- The full `TestFpgpsp` sweep (seeds 1 and 2 x 3,000, seed 3 x 20,000,
-  as the review ran on the prototype) and the default
-  `(cd reference && go test ./...)`.
-- A profile of B `-ge -z20000` to see what remains of the 1.38x.
+`reference/difftest` `TestFpgpsp`, GOMAXPROCS=2, `-parallel 1`, under
+the RSS watchdog (no kills), one run at a time:
+
+| Seed | Cases | Estimations | Byte-equal | Tolerated | Failed |
+|---|---|---|---|---|---|
+| 1 | 3,000 | 893 | 3,000 | 0 | 0 |
+| 2 | 3,000 | 952 | 3,000 | 0 | 0 |
+| 3 | 20,000 | 6,069 | 20,000 | 0 | 0 |
+
+The default `(cd reference && go test ./...)` passes (`-p 1 -parallel
+1`). The B `-ge -z20000` profile is in the performance review
+(`issue-47-review-performance.md`, section 3).
