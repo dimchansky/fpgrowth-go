@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"math/bits"
-	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
@@ -221,6 +220,7 @@ func cplxest(ctx context.Context, psp *report.Spectrum, cnts []uint64, probs []f
 	dist := make([]float64, smax+1)
 	s := smax + 1 // clear fully on the first size
 	minSupp := psp.MinSupp()
+	var logc logTable // log(c) of the support loop
 	for z := zmin; z < n; z++ {
 		if cnts[z] == 0 {
 			continue
@@ -230,18 +230,19 @@ func cplxest(ctx context.Context, psp *report.Spectrum, cnts []uint64, probs []f
 		const q = 0.0 // seq = 0
 		y := lg(n+1) - q - lg(n-z+1)
 		t := -math.Log(float64(equiv)) - y - 9 // threshold for the distribution
+		lcnt := math.Log(float64(cnts[z]))     // the same for every sample
 		for i := range smpls {
 			if i%64 == 0 {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
 			}
-			l := math.Log(float64(cnts[z])) + samplelp(probs, n, z, rng) - q
+			l := lcnt + samplelp(probs, n, z, rng) - q
 			x := -math.Exp(l)
 			dist[0] += math.Exp(x)
 			c := tract.Supp(1)
 			for ; c <= smax; c++ {
-				y = l - math.Log(float64(c))
+				y = l - logc.at(c)
 				x += y
 				if x >= t {
 					dist[c] += math.Exp(x)
@@ -286,6 +287,15 @@ func samplelp(probs []float64, n, k int, rng *RNG) float64 {
 	}
 	k = min(k, n)
 	dblSelect(probs[:n], k, rng)
+	if k <= 4 {
+		return smallSampleLP(probs, k)
+	}
+	return largeSampleLP(probs, n, k, rng)
+}
+
+// smallSampleLP is samplelp's closed form for the selected items
+// probs[:k], 1 <= k <= 4.
+func smallSampleLP(probs []float64, k int) float64 {
 	switch k {
 	case 1:
 		return math.Log(probs[0])
@@ -318,18 +328,39 @@ func samplelp(probs []float64, n, k int, rng *RNG) float64 {
 				(p/(1.0-p1)+p/(1.0-p2))/(1.0-p1-p2))/(1.0-p1-p2-p3)
 		return math.Log(p)
 	}
+	panic("psp: smallSampleLP needs 1 <= k <= 4")
+}
+
+// largeSampleLP is samplelp's average over 8 random permutations of the
+// selected items probs[:k] and their reversals, k >= 5.
+func largeSampleLP(probs []float64, n, k int, rng *RNG) float64 {
+	// Upstream reverses the array after the first probability of every
+	// permutation (dbl_reverse) and shuffles the reversed array next.
+	// Here the array is not reversed: after an odd number of reversals
+	// (odd i) it holds upstream's array back to front, so the shuffle
+	// works from the back (dblSelectBack) and the two probabilities are
+	// added in the opposite order. After the 8th reversal both arrays are
+	// the same again (TestSamplelp_matchesReference).
 	p := 0.0
 	nf := float64(n)
 	s := probs[:k]
 	for i := range 8 { // 8 permutations and their reversals
-		if i == 0 {
-			slices.Sort(s) // dbl_qsort(probs, k, +1)
-		} else {
+		switch {
+		case i == 0:
+			sortAsc(s) // dbl_qsort(probs, k, +1)
+		case i%2 == 0:
 			dblSelect(s, k-1, rng) // dbl_shuffle
+		default:
+			dblSelectBack(s, k-1, rng) // dbl_shuffle of the reversed array
 		}
-		p += permProb(s, nf)
-		slices.Reverse(s)
-		p += permProb(s, nf)
+		fwd, bwd := permProbs(s, nf)
+		if i%2 == 0 {
+			p += fwd
+			p += bwd
+		} else {
+			p += bwd
+			p += fwd
+		}
 	}
 	// The factor n of every step, removed again by -k·log(n), prevents
 	// underflow.
@@ -337,20 +368,30 @@ func samplelp(probs []float64, n, k int, rng *RNG) float64 {
 	return mulAdd(-float64(k), math.Log(nf), math.Log(p/16)) + lg(k+1)
 }
 
-// permProb is the probability (times n^k) of drawing the items of s in
-// this order without replacement.
-func permProb(s []float64, n float64) float64 {
-	t, r := 1.0, 1.0
-	for _, v := range s {
-		t *= n * v / r
-		r -= v
+// permProbs returns the probabilities (times n^k) of drawing the items of
+// s in this order and in the reverse order without replacement. The two
+// products are independent; each is computed in upstream's order.
+func permProbs(s []float64, n float64) (fwd, bwd float64) {
+	tf, rf := 1.0, 1.0
+	tb, rb := 1.0, 1.0
+	last := len(s) - 1
+	for l, v := range s {
+		w := s[last-l]
+		tf *= n * v / rf
+		rf -= v
+		tb *= n * w / rb
+		rb -= w
 	}
-	return t
+	return tf, tb
 }
 
 // dblSelect is a port of dbl_select(a, len(a), k, drand): it moves k
 // randomly selected elements to the front of a (a partial Fisher-Yates
 // shuffle from the front). dbl_shuffle(a, n) is dblSelect(a[:n], n-1).
+//
+// The generator state is kept in local variables for the loop and
+// written back at the end; the recurrence is RNG.Uint32's and the index
+// is drand()·n, (u·2^-32)·n, clamped to n-1 (TestDblSelect_matchesReference).
 func dblSelect(a []float64, k int, rng *RNG) {
 	n := len(a)
 	if k < n {
@@ -358,16 +399,83 @@ func dblSelect(a []float64, k int, rng *RNG) {
 	} else {
 		k = n
 	}
-	for off := 0; ; off++ {
-		k--
-		if k <= 0 {
-			return
+	s0, s1, s2, s3, s4 := rng.s[0], rng.s[1], rng.s[2], rng.s[3], rng.s[4]
+	for k--; k > 0; k-- {
+		t := s0 ^ (s0 >> 7)
+		s0, s1, s2, s3 = s1, s2, s3, s4
+		s4 = (s4 ^ (s4 << 6)) ^ (t ^ (t << 13))
+		u := (s1 + s1 + 1) * s4
+		i := uint(float64(u) * rnorm * float64(len(a)))
+		if i >= uint(len(a)) {
+			i = uint(len(a)) - 1
 		}
-		i := int(rng.Float64() * float64(n))
-		n--
-		if i > n {
-			i = n
-		}
-		a[off+i], a[off] = a[off], a[off+i]
+		a[i], a[0] = a[0], a[i]
+		a = a[1:]
 	}
+	rng.s = [5]uint32{s0, s1, s2, s3, s4}
+}
+
+// dblSelectBack is dblSelect on the reversed array: it moves k randomly
+// selected elements to the back of a, the first to a[len(a)-1], with the
+// same random numbers and the mirrored indices.
+func dblSelectBack(a []float64, k int, rng *RNG) {
+	n := len(a)
+	if k < n {
+		k++
+	} else {
+		k = n
+	}
+	s0, s1, s2, s3, s4 := rng.s[0], rng.s[1], rng.s[2], rng.s[3], rng.s[4]
+	for k--; k > 0; k-- {
+		t := s0 ^ (s0 >> 7)
+		s0, s1, s2, s3 = s1, s2, s3, s4
+		s4 = (s4 ^ (s4 << 6)) ^ (t ^ (t << 13))
+		u := (s1 + s1 + 1) * s4
+		last := uint(len(a)) - 1
+		i := uint(float64(u) * rnorm * float64(len(a)))
+		if i > last {
+			i = last
+		}
+		a[last-i], a[last] = a[last], a[last-i]
+		a = a[:last]
+	}
+	rng.s = [5]uint32{s0, s1, s2, s3, s4}
+}
+
+// sortAsc sorts s ascending like slices.Sort (NaNs first), by insertion:
+// s holds the probabilities of one sample, at most a transaction size
+// of them, mostly few. Equal elements are indistinguishable, so the
+// result equals slices.Sort's (TestSortAsc_matchesSlicesSort).
+func sortAsc(s []float64) {
+	for i := 1; i < len(s); i++ {
+		v := s[i]
+		j := i
+		for ; j > 0 && less(v, s[j-1]); j-- {
+			s[j] = s[j-1]
+		}
+		s[j] = v
+	}
+}
+
+// less is cmp.Less for float64: NaN before every other value.
+func less(x, y float64) bool { return x < y || (x != x && y == y) }
+
+// logTable holds log(c) for the supports c = 0, 1, 2, ..., grown on
+// demand; at(c) is math.Log(float64(c)) bit for bit.
+type logTable struct{ v []float64 }
+
+// at returns math.Log(float64(c)).
+func (t *logTable) at(c tract.Supp) float64 {
+	if uint64(c) < uint64(len(t.v)) {
+		return t.v[c]
+	}
+	return t.grow(c)
+}
+
+// grow extends the table to cover c and returns log(c).
+func (t *logTable) grow(c tract.Supp) float64 {
+	for x := tract.Supp(len(t.v)); x <= c; x++ {
+		t.v = append(t.v, math.Log(float64(x)))
+	}
+	return t.v[c]
 }
