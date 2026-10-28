@@ -54,9 +54,10 @@ closed/maximal (`-n`) configurations: there Go was faster than C on dense
 data with a small size limit, but 2.2–3.2× slower than C on the large
 sparse dataset (1.7–3.0× in the independent audit's re-run), where Go
 performs an exact check that C omits (deviation M5). Validate on your own
-workloads. There is no tagged release yet; the API may still change
-before v1. An independent audit before v0.1.0 checked correctness, the
-deviations, the API, the tests, the benchmarks and the release setup:
+workloads. Releases are tagged on GitHub (the first was v0.1.0); while
+the major version is 0 the API may still change
+([docs/releasing.md](docs/releasing.md)). An independent audit before
+v0.1.0 checked correctness, the deviations, the API, the tests, the benchmarks and the release setup:
 [docs/audit/independent-audit.md](docs/audit/independent-audit.md).
 
 ## Installation
@@ -1082,8 +1083,9 @@ b <- a (60, 83.3333)
 ## Memory and performance
 
 FP-growth needs two passes over the data: pass 1 counts the items, pass 2
-builds the transaction bag. Sources are read twice and never retained;
-what mining keeps in memory is:
+builds the transaction bag. The library reads its sources twice and
+never retains them (the command-line programs differ, see below); what
+mining keeps in memory is:
 
 - the item dictionary (one entry per distinct item, with its frequency);
 - the transaction bag: a prefix tree of the recoded, sorted and filtered
@@ -1104,8 +1106,8 @@ minimum support (`Fraction(0.3)`) only two items are frequent, so the
 bag holds at most four distinct transactions and mining reports 3 sets.
 It says nothing about the bag and the trees of realistic data, and it
 measures heap, not process memory. On a file of the same shape the
-independent audit measured the CLI's maximum RSS (`/usr/bin/time -l
-fpgrowth -f, -s…`): 6.0 MB at `-s30` (3 sets), but 254 MB, 4.9 × the
+independent audit measured the v0.1.0 CLI's maximum RSS (`/usr/bin/time
+-l fpgrowth -f, -s…`): 6.0 MB at `-s30` (3 sets), but 254 MB, 4.9 × the
 file, at `-s0.5` (503 sets). Nothing in this library is constant-memory.
 
 The command-line programs `fpgrowth` and `fpgpsp` trade memory for
@@ -1256,9 +1258,9 @@ plus two upstream crashes that it avoids and five latent defects
   ([docs/benchmarks.md](docs/benchmarks.md)): Go takes about 1.1–2.1× C's
   wall time on the main configurations. Closed and maximal mining with a
   maximum size runs an exact check that C omits (M5); it is faster than C
-  on dense data with a small size limit, but 2.2–3.2× slower on large
-  sparse data and up to 2.6× slower for dense maximal sets of exactly the
-  maximum size.
+  on dense data with a small size limit (also on the independent audit's
+  case of dense maximal sets of exactly the maximum size: 19.8 s against
+  C's 39.1 s since issue #19), but 2.2–3.2× slower on large sparse data.
 - Numeric limits for very large weights (`docs/differences.md`; the
   former limits N1 of the statistical measures, audit ALG-1, N2 of the
   relative thresholds, audit ALG-2, and N3 of the CLI absolute
