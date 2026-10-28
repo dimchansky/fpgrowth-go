@@ -848,6 +848,11 @@ sparse rules with lift).
   Keeping raw transactions in memory instead of a second pass would
   contradict the documented streaming design (`docs/architecture.md`,
   `TestLargeFileStreaming`).
+  *Note of 2026-10-28 (#48):* the CLIs now read the input once if its
+  records fit into 128 MiB (decision D8; the library still streams),
+  pass 1 hashes every name once (`tract.CountBytes`), and the table
+  reader has a fast path. See "Reading and preparation (issue #48)"
+  below.
 - **Small inputs** (sparse, weighted: Go/C 1.7–2.0) are dominated by the
   same two passes plus fixed start-up (Go 21 M vs C 13 M instructions on
   a two-line file).
@@ -866,6 +871,58 @@ sparse rules with lift).
   bytes), so the per-node memory traffic is not the difference.
   Structure-of-arrays nodes would make the ancestor walk denser but the
   list walk sparser and were not attempted.
+
+### Reading and preparation (issue #48)
+
+Measured on 2026-10-28 (Apple M1 Max, macOS 26.6, Go 1.27, load average
+3.5-6.5 from other sessions; instructions retired from `/usr/bin/time
+-l`, which are stable to 0.3 % between runs). Input B is the sparse
+table of the #39 performance review (20,000 records, 1,000 items, 6.9
+items per record, 542 kB; not committed); B×N is B concatenated N
+times. `fpgrowth -s50` keeps no item, so the run is reading and
+preparation only; so is `fpgpsp -ge -s-20 -S1 -z1`.
+
+| Run | C | v0.1.0 | main | #48 | #48 / C | user s (C / main / #48) |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| fpgrowth B×30 (16 MB) | 1.43G | 6.31G | 6.31G | 2.20G | 1.53 | 0.14 / 0.45 / 0.18 |
+| fpgpsp B×30 | 1.71G | — | 7.10G | 2.89G | 1.69 | 0.22 / 0.57 / 0.27 |
+| fpgrowth B×90 (49 MB) | 4.25G | — | 18.88G | 6.51G | 1.53 | 0.45 / 1.36 / 0.50 |
+| fpgpsp B×90 | 5.03G | — | 21.16G | 8.69G | 1.73 | 0.70 / 1.74 / 0.79 |
+| fpgrowth B×300 (160 MB, over the budget) | 14.26G | — | 62.88G | 44.64G | 3.13 | 1.47 / 4.54 / 3.52 |
+| fpgpsp B×300 | 16.63G | — | 70.29G | 51.69G | 3.11 | 2.45 / 5.78 / 4.70 |
+
+Maximum resident memory, B×30 / B×90 / B×300: C 44 / 124 / 406 MB, main
+6 / 7 / 7 MB, #48 32 / 83 / 173 MB (`fpgrowth`).
+
+Where the time goes (macOS `sample`, 1 ms stack samples of `fpgrowth
+-s50` on B×90, self time by function, grouped by stage; C's are the
+upstream functions):
+
+| Stage | C ms | main ms | #48 ms |
+| --- | ---: | ---: | ---: |
+| reading fields (`trd_read`; tokenizer, `Reader.next`) | 118 | 527 (2 passes) | 162 |
+| hashing item names (`st_lookup`, `st_strcmp`; Go map) | 39 | 438 (4 lookups per field) | 92 (1) |
+| counting (`ib_read`; `countRecord`, intern loop) | 35 | 108 | 49 |
+| storing records (`tbg_add`, malloc, memmove; `retained.add`) | 28 | — | 6 |
+| recoding, sorting, building the bag (`tbg_recode`, `sort`, memset, free; `BuildBag`) | 53 | 50 | 35 |
+| total (with functions of fewer than 5 samples) | 280 | 1,130 | 345 |
+
+The darwin CPU profile of main put 75-88 % of these runs in
+`syscall.read`. That is an artefact of the profiler's signal delivery:
+system time is 0.01 s of 0.46 s, the in-memory benchmark of the reader
+takes the same time as the one on the file, and `sample` sees less than
+1 % of the worker thread in read(2) (the 64 KiB buffer reads 16 MB in
+about 250 calls per pass).
+
+Mining rows (instructions, main to #48, output equal to C): dense `-s5`,
+`-tc`, `-tm` -9 to -11 %, sparse `-s0.1`, `-tm -s0.1` -37 %,
+sparse-large `-s0.05` -49 %, d2000x40d60 `-tm -s2 -n3` -10 %; fpgpsp B
+`-gr` -5 %, `-gp` -3 %, C `-gs` -1 %, A `-gp -c64` -1 %, B `-ge` -10 %.
+v0.1.0 equals main on these rows.
+
+What remains: hashing is 2.4 times C's (Go's map against upstream's
+string hash table), reading fields 1.4 times, and an input over the
+budget is read twice with the old double lookup in pass 2.
 
 ## Reproducing
 

@@ -129,6 +129,9 @@ are never stored: memory grows with the number of distinct transaction
 prefixes, not with the number of records. Mining fails with
 `ErrNotReplayable` if the second pass does not match the first (number of
 records, total weight, or an item the first pass did not see).
+*Note of 2026-10-28 (#48, decision D8):* the command-line programs keep
+the counted records if they fit into 128 MiB and build the bag from
+them without a second pass (`ItemBase.Retain`); the library does not.
 
 For item set targets other than generators, transactions with fewer items
 than the minimum size are emptied before insertion, because they cannot

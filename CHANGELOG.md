@@ -97,6 +97,27 @@ The release workflow publishes the section whose heading matches the tag
   for every method, target, variant and number of chains or workers
   (#39).
 
+- `fpgrowth` and `fpgpsp` read and prepare the transaction database with
+  about a third of the instructions. They read the input once if its
+  records fit into 128 MiB (4 bytes per item occurrence and per record,
+  about 32 MB for a 16 MB table): the item base keeps the counted records
+  and builds the transaction bag from them, as upstream builds its bag
+  from the records it read; a larger input is read a second time as
+  before. Pass 1 looks every item name up once instead of twice
+  (`tract.CountBytes` over `tabread.ScanBytes`), and the table reader
+  returns fields that lie inside its 64 KiB block as views of it and
+  reads the common field (plain bytes and a separator) on a fast path.
+  Against main (instructions retired, Apple M1 Max) on 20,000 sparse
+  transactions replicated 30 times (16 MB), where reading and preparing
+  is almost the whole run: `fpgrowth -s50` 6.31G to 2.20G (C 1.43G),
+  `fpgpsp -ge -z1` 7.10G to 2.89G (C 1.71G); user time 0.45 s to 0.18 s
+  (C 0.14 s). Above the budget (the same data 300 times, 160 MB):
+  62.9G to 44.6G (C 14.3G). Mining rows gain 1 % to 49 %. Maximum
+  resident memory grows by the retained records (B×30: 6 MB to 32 MB, C
+  44 MB). Within the budget the programs no longer report an input file
+  that changes between the passes ("input changed while reading"): like
+  upstream, they use what they read. The output is byte-identical (#48).
+
 - Frequent item sets and generators with a small maximum size (`-n`,
   `MaxSize`) no longer take quadratic time on long single paths. Perfect
   extensions that cannot change any result are skipped: a chain item of

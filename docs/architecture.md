@@ -52,6 +52,11 @@ Dependency direction: `tract` ← `report` ← `istree` ← `fpg` ← root/CLI;
    yields the same transactions in the same order, so every variant's
    tree construction sees exactly what upstream sees. Raw transactions are
    never retained.
+   *Note of 2026-10-28 (#48, decision D8):* the command-line programs
+   let the item base keep the counted records up to 128 MiB
+   (`ItemBase.Retain`), and pass 2 then builds the bag from them instead
+   of reading the input again; a larger input is read twice. The library
+   does not retain records.
 4. **Mine.** The selected variant builds its FP-tree from the bag and
    recurses, driving the reporter (`internal/report`) which applies all
    gates and emits item sets to a `Sink`. Rules and rule-based evaluation

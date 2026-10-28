@@ -160,6 +160,13 @@ func normalize(stderr string) string { return timeRE.ReplaceAllString(stderr, "[
 // runCase runs a case in the current directory (testdata/data).
 func runCase(t *testing.T, c cliCase) result {
 	t.Helper()
+	return runCaseRetain(t, c, 0)
+}
+
+// runCaseRetain is runCase with the given budget of retained records
+// (env.retain).
+func runCaseRetain(t *testing.T, c cliCase, retain int) result {
+	t.Helper()
 	var stdin io.Reader = strings.NewReader("")
 	if c.stdin != "" {
 		b, err := os.ReadFile(c.stdin)
@@ -179,6 +186,7 @@ func runCase(t *testing.T, c cliCase) result {
 		stdout:  out,
 		stderr:  &stderr,
 		tempDir: t.TempDir(),
+		retain:  retain,
 	})
 	return result{stdout: stdout.String(), stderr: normalize(stderr.String()), exit: code}
 }
@@ -273,4 +281,24 @@ func TestGolden(t *testing.T) {
 		}
 	}
 	t.Logf("%d cases: %d identical to C, %d documented deviations", len(cases), same, differ)
+}
+
+// TestGoldenRetention runs every case of cases.txt with the records
+// retained (the default), not retained, and with a budget of one byte,
+// which Count exceeds with the first record: building the bag from the
+// retained records and from a second pass must give the same output
+// (issue #48). TestGolden compares the default with the C reference.
+func TestGoldenRetention(t *testing.T) {
+	cases := readCases(t)
+	t.Chdir(filepath.Join("testdata", "data"))
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			want := runCaseRetain(t, c, 0)
+			for _, retain := range []int{-1, 1} {
+				if d := diffResult(want, runCaseRetain(t, c, retain)); d != "" {
+					t.Errorf("fpgrowth %q with retain %d differs from the default:\n%s", c.args, retain, d)
+				}
+			}
+		})
+	}
 }

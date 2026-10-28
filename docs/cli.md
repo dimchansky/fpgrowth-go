@@ -172,7 +172,7 @@ with `USE_ZLIB` and lists `-z` in its usage text (deviation O12).
 | 0 | success, usage text, `-!` |
 | 1 | `database too large` (a tree or the item set tree exceeds 2^31-1 nodes) |
 | 2 | `cannot open file <name>`; `cannot create temporary file for <stdin>` |
-| 3 | `read error on file <name>`; `read error on file <name> (input changed while reading)` |
+| 3 | `read error on file <name>`; `read error on file <name> (input changed while reading)` (only when the input is read a second time: if its records exceed 128 MiB, decision D8) |
 | 4 | `write error on file <name>`; `write error on temporary file for <stdin>` |
 | 5 | `double assignment of standard input` (input and `-R` both standard input) |
 | 6 | `unknown option -<c>` |
