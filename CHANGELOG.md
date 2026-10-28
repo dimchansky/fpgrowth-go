@@ -131,8 +131,10 @@ The release workflow publishes the section whose heading matches the tag
   `fpgpsp -ge -z1` 7.10G to 2.89G (C 1.71G); user time 0.45 s to 0.18 s
   (C 0.14 s). Above the budget (the same data 300 times, 160 MB):
   62.9G to 44.6G (C 14.3G). Mining rows gain 1 % to 49 %. Maximum
-  resident memory grows by the retained records (B×30: 6 MB to 32 MB, C
-  44 MB). Within the budget the programs no longer report an input file
+  resident memory of `fpgrowth` grows by the retained records (B×30:
+  6 MB to 24 MB, C 44 MB; at most about the budget, 135 MB on B×300);
+  the records are collected as soon as they are released, so `fpgpsp`,
+  whose later structures are larger, peaks as before. Within the budget the programs no longer report an input file
   that changes between the passes ("input changed while reading"): like
   upstream, they use what they read. The output is byte-identical (#48).
 

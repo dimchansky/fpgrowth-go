@@ -222,7 +222,7 @@ func TestItemBase_Retain_budget(t *testing.T) {
 		if b.ret.on != tt.want {
 			t.Errorf("limit %d, %v: retained = %v, want %v (used %d)", tt.limit, tt.recs, b.ret.on, tt.want, b.ret.used)
 		}
-		if !b.ret.on && (b.ret.blocks != nil || b.ret.lens != nil || b.ret.wgts != nil) {
+		if !b.ret.on && (b.ret.blocks != nil || b.ret.n != 0 || b.ret.wgts != nil) {
 			t.Errorf("limit %d: records not released", tt.limit)
 		}
 	}

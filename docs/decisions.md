@@ -133,7 +133,8 @@ Proposed on 2026-10-28 for issue #48; approved by the maintainer on 2026-10-28.
 - **Decision.** `tract.ItemBase.Retain(limit)` makes `Count` keep the
   distinct identifiers of every counted record (4 bytes per item
   occurrence and per record, 8 more per record once a weight other than
-  1 occurs, in 128 KiB blocks that are never copied). The next
+  1 occurs; the sizes are stored inline with the identifiers, in
+  128 KiB blocks that are never copied). The next
   `BuildBag` builds the bag from them through the recoding table instead
   of calling its scan function, and releases them. If the records exceed
   the budget, `Count` releases them at once and `BuildBag` scans as
@@ -143,8 +144,14 @@ Proposed on 2026-10-28 for issue #48; approved by the maintainer on 2026-10-28.
   does not call `Retain`.
 - **Consequences.** Within the budget, the CLIs read the input once,
   like upstream, and maximum resident memory grows by the retained
-  records (B×30: 32 MB against 6 MB before and 44 MB for C); above it,
-  memory is bounded by the budget and the input is read twice. The
+  records (`fpgrowth` B×30: 24 MB against 6 MB before and 44 MB for C;
+  15 million one-item records, 120 MB retained: 121 MB); above it,
+  memory is bounded by the budget (B×300: 135 MB) and the input is read
+  twice. Released records are collected at once (`runtime.GC`), on
+  both paths: the heap goal set while they were live would otherwise
+  let the next allocations take fresh pages, and `fpgpsp -ge` peaked
+  45 % above main (B×90: 135 MB against 92 MB; now 92 MB, B×300
+  290 MB as main). The
   output is the same on both paths (`TestGoldenRetention` runs every
   golden case of both programs with retention, without it, and over
   budget; `TestItemBase_Retain_matchesScan` compares the bags). Within

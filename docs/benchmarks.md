@@ -892,7 +892,11 @@ preparation only; so is `fpgpsp -ge -s-20 -S1 -z1`.
 | fpgpsp B×300 | 16.63G | — | 70.29G | 51.69G | 3.11 | 2.45 / 5.78 / 4.70 |
 
 Maximum resident memory, B×30 / B×90 / B×300: C 44 / 124 / 406 MB, main
-6 / 7 / 7 MB, #48 32 / 83 / 173 MB (`fpgrowth`).
+6 / 7 / 7 MB, #48 24 / 61 / 135 MB (`fpgrowth`); `fpgpsp -ge -z1`:
+main 34 / 92 / 290 MB, #48 35 / 92 / 290 MB. (Before the performance
+review's fixes, record sizes grown by `append` and released records not
+collected at once: `fpgrowth` 31 / 83 / 165 MB, `fpgpsp` up to 135 MB on
+B×90.)
 
 Where the time goes (macOS `sample`, 1 ms stack samples of `fpgrowth
 -s50` on B×90, self time by function, grouped by stage; C's are the

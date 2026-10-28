@@ -1113,7 +1113,7 @@ speed: they keep the counted records (4 bytes per item occurrence and
 per record) if they fit into 128 MiB and build the bag from them, so a
 typical input is read once, like upstream reads it; a larger input is
 read twice. On a 16 MB sparse table this takes their maximum RSS from
-6 MB to 32 MB (C: 44 MB) and their instructions from 4.4 to 1.5 times
+6 MB to 24 MB (C: 44 MB) and their instructions from 4.4 to 1.5 times
 C's (`docs/benchmarks.md`, "Reading and preparation").
 
 High-cardinality data is the opposite case: when almost every transaction

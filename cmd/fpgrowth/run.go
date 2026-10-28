@@ -72,8 +72,7 @@ func run(ctx context.Context, e env) int {
 // the counted records for building the transaction bag, so that the
 // database is read once instead of twice (tract.ItemBase.Retain). A
 // larger database is read a second time. The records take 4 bytes per
-// item occurrence and per record (plus the growth of the array of record
-// sizes), so 128 MiB hold about 25 million item occurrences in records
+// item occurrence and per record, so 128 MiB hold about 25 million item occurrences in records
 // of a few items (a table of roughly 100 MB).
 const retainLimit = 128 << 20
 

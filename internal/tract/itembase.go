@@ -140,11 +140,14 @@ func (b *ItemBase[T]) SetCheck(fn func(T) error) { b.check = fn }
 func (b *ItemBase[T]) SetAbort(fn func() error) { b.abort = fn }
 
 // Retain makes Count keep the records it counts in memory, up to limit
-// bytes (4 bytes per distinct item of a record and per record, 8 more
-// per record once a weight other than 1 occurs), so that the next BuildBag
-// builds the bag from them instead of calling its scan function: the
-// database is read once, like upstream's tbg_read. If the records
-// exceed the budget, Count releases them and BuildBag scans as usual.
+// bytes (4 bytes per distinct item of a record and per record; once a
+// weight other than 1 occurs, 8 more per record, and the arrays the
+// weights outgrew count too), so that the next BuildBag builds the bag
+// from them instead of calling its scan function: the database is read
+// once, like upstream's tbg_read. If the records exceed the budget,
+// Count releases them and BuildBag scans as usual. Released records are
+// collected at once (runtime.GC), so that they do not raise the peak
+// memory of what follows.
 // The first BuildBag releases the retained records; a later one scans.
 //
 // With retained records BuildBag does not read the database again, so it
