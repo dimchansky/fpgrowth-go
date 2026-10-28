@@ -180,18 +180,22 @@ func TestDblSelect_maxDraw(t *testing.T) {
 	}
 }
 
-// TestSortAsc_matchesSlicesSort compares the insertion sort with
-// slices.Sort on random slices with duplicates, +0, infinities and NaNs
-// of one payload (math.NaN()). This is the domain where the two must
-// agree bit for bit: itemProbs never yields -0, and its NaNs share one
-// payload. A mix of ±0, or NaNs with different payloads, is left out on
-// purpose. Those are equivalent under the order, and the two sorts may
-// place them differently.
+// TestSortAsc_matchesSlicesSort compares sortAsc with slices.Sort on
+// random slices (every 50th longer than sortAscMax, to cover the
+// slices.Sort branch) with duplicates, +0, infinities and NaNs of one
+// payload (math.NaN()). This is the domain where the two must agree bit
+// for bit: itemProbs never yields -0, and its NaNs share one payload. A
+// mix of ±0, or NaNs with different payloads, is left out on purpose.
+// Those are equivalent under the order, and the two sorts may place
+// them differently.
 func TestSortAsc_matchesSlicesSort(t *testing.T) {
 	r := rand.New(rand.NewPCG(47, 2))
 	special := []float64{0, 1, math.Inf(1), math.Inf(-1), math.NaN(), math.SmallestNonzeroFloat64, -1}
 	for round := range 20000 {
 		n := r.IntN(40)
+		if round%50 == 0 {
+			n = sortAscMax + 1 + r.IntN(300)
+		}
 		a := make([]float64, n)
 		for i := range a {
 			switch x := r.IntN(10); {

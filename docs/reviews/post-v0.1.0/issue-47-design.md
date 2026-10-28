@@ -48,7 +48,10 @@
    never -0. A NaN there only comes from one operation,
    mulAdd(0, ±Inf, x) with an infinite `-e`, so all NaNs of a run carry
    the platform's one default payload. So `sortAsc` and `slices.Sort`
-   give the same bits for every input `itemProbs` can produce. The
+   give the same bits for every input `itemProbs` can produce.
+   Insertion sort is quadratic, so above 256 elements (`sortAscMax`)
+   `sortAsc` calls `slices.Sort` itself (see "Long transactions"
+   below). The
    prototype's plain `v < s[j-1]` would also have differed on NaNs in
    any position; the NaN-aware comparison removes that case.
    For comparison, main's `slices.Sort` and upstream's `dbl_qsort`
@@ -107,7 +110,8 @@ draw, `slices.Sort`, `slices.Reverse`).
   output is 2^32-1, for n up to 2^20: the index truncates to n-1 in all
   three functions. The test pins the largest draw only. It cannot detect
   a broken clamp, because no draw reaches the clamp (point 1).
-- `TestSortAsc_matchesSlicesSort`: 20,000 random slices with
+- `TestSortAsc_matchesSlicesSort`: 20,000 random slices (every 50th
+  longer than `sortAscMax`, so both branches run) with
   duplicates, +0, ±Inf, NaN (one payload), -1 and the smallest
   subnormal, compared bit for bit. This is the input domain of the claim
   in point 2, so the test passes by the argument and not by chance.
@@ -161,6 +165,35 @@ are within noise (the C `-gr` runs hit the 60 s CPU limit of the script
 and are not a comparison). Load: `uptime` 5.2 / 8.3 / 22.0 at the
 start of the round (spindump and mds_stores the top consumers);
 instruction counts do not depend on it.
+
+### Long transactions (performance review, P49-1)
+
+The data sets above have transactions of at most 18 / 55 / 10 items,
+and the sorted k is bounded by that. The performance critic generated
+synthetic sets with longer transactions (L: k <= 200, `-z1000`; XL:
+k <= 600, `-z100`; XXL: k <= 1,500, `-z10`) and measured the plain
+insertion sort ("PR", head 8f441be) against main and against the
+cutoff at 256 that the branch now uses ("cutoff"). Instructions
+retired, median of 3; all Go outputs md5-equal to main:
+
+| Row | C | main | PR | cutoff | cutoff vs main |
+|---|---|---|---|---|---|
+| L, k <= 200 | 9.72G | 15.40G | 14.59G | 14.60G | -5 % |
+| XL, k <= 600 | 8.76G | 14.14G | 22.69G | 11.57G | -18 % |
+| XXL, k <= 1,500 | 5.52G | 8.83G | 27.37G | 6.87G | -22 % |
+| B `-ge -z5000` | 3.69G | 5.85G | 4.28G | 4.28G | -27 % |
+| A `-ge -z5000` | 0.95G | 1.58G | 0.88G | 0.88G | -44 % |
+
+Without the cutoff, `-ge` regressed against main on XL (+60 %) and
+XXL (+210 %). C differs from Go on XXL only; that is the documented
+U11 deviation (slot counts saturate in Go, wrap in C), not this
+change.
+
+The "cutoff" column is the critic's probe build. Check of the committed
+code (main fde9e41 vs this branch, freshly generated sets of the same
+shapes: XL 300 transactions of 400-600 items, `-ge -s-60 -S1 -z100`;
+XXL 100 transactions of 1,200-1,500 items, `-ge -s-40 -S1 -z10`; 2 runs
+each, md5-equal): XL 6.78G -> 5.94G (-12 %), XXL 3.91G -> 3.12G (-20 %).
 
 ## Deferred to the night window
 

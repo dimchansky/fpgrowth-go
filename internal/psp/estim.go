@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"math/bits"
+	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/report"
 	"github.com/dimchansky/fpgrowth-go/internal/ruleval"
@@ -445,16 +446,23 @@ func dblSelectBack(a []float64, k int, rng *RNG) {
 	rng.s = [5]uint32{s0, s1, s2, s3, s4}
 }
 
-// sortAsc sorts s ascending like slices.Sort (NaNs first), by insertion:
-// s holds the probabilities of one sample, at most a transaction size
-// of them, mostly few. The two sorts may order equivalent elements
-// differently. So the result equals slices.Sort's bit for bit whenever
-// equivalent elements are bit-identical. That holds for every input
-// itemProbs can produce: its zeros are +0, never -0, and its NaNs (from an
-// infinite -e only) all come from one operation and carry one payload.
-// For a mix of ±0, or NaNs with different payloads, the bits can differ
+// sortAsc sorts s ascending like slices.Sort (NaNs first). s holds the
+// probabilities of one sample, at most a transaction size of them, and
+// mostly few, so it sorts by insertion. Above sortAscMax elements the
+// quadratic insertion sort loses to slices.Sort (measured on
+// transactions of 600 items and more), so it calls slices.Sort.
+// The two sorts may order equivalent elements differently. So the
+// result equals slices.Sort's bit for bit whenever equivalent elements
+// are bit-identical. That holds for every input itemProbs can produce:
+// its zeros are +0, never -0, and its NaNs (from an infinite -e only)
+// all come from one operation and carry one payload. For a mix of ±0,
+// or NaNs with different payloads, the bits can differ
 // (TestSortAsc_matchesSlicesSort).
 func sortAsc(s []float64) {
+	if len(s) > sortAscMax {
+		slices.Sort(s)
+		return
+	}
 	for i := 1; i < len(s); i++ {
 		v := s[i]
 		j := i
@@ -464,6 +472,9 @@ func sortAsc(s []float64) {
 		s[j] = v
 	}
 }
+
+// sortAscMax is the longest slice sortAsc sorts by insertion.
+const sortAscMax = 256
 
 // less is cmp.Less for float64: NaN before every other value.
 func less(x, y float64) bool { return x < y || (x != x && y == y) }
