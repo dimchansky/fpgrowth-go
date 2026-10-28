@@ -104,8 +104,12 @@ against the old pipeline.
    including codes near 2^31 (it caught an int32 overflow of the first
    key version).
 
-Tried and dropped (no change in instructions on `-ge`): an inlinable
-`RNG.Uint32`, and an insertion sort of the probabilities in `samplelp`.
+Tried and dropped here (no change in instructions on `-ge` with the
+RNG state kept in memory): an inlinable `RNG.Uint32`, and an insertion
+sort of the probabilities in `samplelp`. The performance review showed
+that keeping the RNG state in locals inside `dblSelect`, together with
+an insertion sort and hoisted logarithms, does save 19-39 % on `-ge`;
+that work is #47.
 
 Not done:
 
