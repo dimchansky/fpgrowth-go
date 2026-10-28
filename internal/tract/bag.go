@@ -68,6 +68,7 @@ type bagBuilder struct {
 	zeroTerms int              // ... of which with summed weight 0
 	ext       int64            // sum of their depths (< 2^62: int32 nodes)
 	zeroExt   int64            // ... of which with summed weight 0
+	sortBuf   []int32          // scratch of finish: the children of a node
 }
 
 // BuildBag reads the database a second time (pass 2) and returns its
@@ -158,12 +159,29 @@ func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
 
 // newBagBuilder returns a builder for a bag over n items.
 func newBagBuilder(n int) *bagBuilder {
-	return &bagBuilder{bag: &Bag{
-		nodes:     []node{{wgt: -1}},
-		rootChild: make([]int32, n),
-		frq:       make([]Supp, n),
-		headFrq:   make([]Supp, n),
-	}}
+	bb := &bagBuilder{}
+	bb.reset(n)
+	return bb
+}
+
+// reset prepares the builder for a new bag over n items. The bag of the
+// previous build, if any, is reused: its storage (and that of the index
+// map) is kept, so the previous bag becomes invalid.
+func (bb *bagBuilder) reset(n int) {
+	bag := bb.bag
+	if bag == nil {
+		bag = &Bag{}
+	}
+	nodes := append(bag.nodes[:0], node{wgt: -1})
+	rootChild := resize(bag.rootChild, n)
+	frq := resize(bag.frq, n)
+	headFrq := resize(bag.headFrq, n)
+	clear(rootChild)
+	clear(frq)
+	clear(headFrq)
+	*bag = Bag{nodes: nodes, rootChild: rootChild, frq: frq, headFrq: headFrq}
+	clear(bb.index)
+	*bb = bagBuilder{bag: bag, index: bb.index, sortBuf: bb.sortBuf[:0]}
 }
 
 // add inserts one recoded, sorted and filtered record into the prefix
@@ -284,7 +302,6 @@ const finishCheckEvery = 1 << 15
 // called every finishCheckEvery nodes; its error stops finish.
 func (bb *bagBuilder) finish(records int, total Supp, abort func() error) (*Bag, error) {
 	bag := bb.bag
-	bb.index = nil
 	bag.records = records
 	bag.wgt = total
 	// tbg_reduce(bag, 0) deletes merged transactions of weight 0, but
@@ -298,7 +315,8 @@ func (bb *bagBuilder) finish(records int, total Supp, abort func() error) (*Bag,
 		bag.cnt -= bb.zeroTerms
 		bag.extent -= bb.zeroExt
 	}
-	var buf []int32
+	buf := bb.sortBuf
+	defer func() { bb.sortBuf = buf[:0] }()
 	for v := range bag.nodes {
 		if abort != nil && v%finishCheckEvery == finishCheckEvery-1 {
 			if err := abort(); err != nil {

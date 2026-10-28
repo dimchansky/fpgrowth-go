@@ -430,14 +430,14 @@ func (m *miner) mineSimple() error {
 	}
 	k := len(s)
 	t := &fpTree{cnt: k, dir: m.dir, heads: make([]fpHead, k)}
-	m.fp.nodes = make([]fpNode, 0, treePresize(m.bag, true))
+	m.fp.nodes = arena(m.fp.nodes, treePresize(m.bag, true))
 	t.root = m.fp.alloc(fpNode{id: tract.End, parent: nilIdx, succ: nilIdx})
 	for i := range t.heads {
 		t.heads[i] = fpHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}
 	}
 	buf := m.path
 	if usePack {
-		t.fim = newMachine(m.dir, m.supp, m.rep)
+		t.fim = m.newMachine(m.dir, m.supp, m.rep)
 		t.fim.limited, t.fim.zmax = m.limited, m.zmax
 		t.heads[0].item = tract.End
 		nt := 0

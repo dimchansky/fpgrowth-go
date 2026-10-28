@@ -276,8 +276,9 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 	var wg sync.WaitGroup
 	for range min(len(parts), runtime.GOMAXPROCS(0)) {
 		wg.Go(func() {
+			var ws psp.Workspace // the buffers of this worker's chains
 			for i := range work {
-				specs[i], errs[i] = psp.RunChain(ctx, d, method, parts[i], cfg, smin, smax, progress)
+				specs[i], errs[i] = ws.RunChain(ctx, d, method, parts[i], cfg, smin, smax, progress)
 				if errs[i] != nil {
 					cancel() // stop the other chains
 				}

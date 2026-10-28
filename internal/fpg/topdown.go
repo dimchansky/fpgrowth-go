@@ -280,7 +280,7 @@ func (m *miner) mineTopDown() error {
 		items[i] = tract.Item(x)
 	}
 	t := &tdTree{cnt: k, root: nilIdx, items: items}
-	m.td.nodes = make([]tdNode, 0, presize(2*m.bag.Extent()+16))
+	m.td.nodes = arena(m.td.nodes, presize(2*m.bag.Extent()+16))
 	buf := m.path
 	nt := 0
 	for tx, w := range m.bag.Backward() {

@@ -83,6 +83,8 @@ type runOpts struct {
 	sel []string
 	// hooks are the miner's test hooks.
 	hooks testHooks
+	// ws, if not nil, is the miner's workspace (SetWorkspace).
+	ws *Workspace
 }
 
 // run mines scan with cfg through the step API.
@@ -106,6 +108,7 @@ func run(scan tract.ScanFunc[string], cfg Config, o runOpts) (runResult, error) 
 	}
 	sink.ib = ib
 	m.hooks = o.hooks
+	m.SetWorkspace(o.ws)
 	res := runResult{sink: sink, miner: m}
 	if err := m.Data(ib, scan); err != nil {
 		return res, err

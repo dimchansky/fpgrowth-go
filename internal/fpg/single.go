@@ -134,10 +134,10 @@ func (m *miner) mineSingle() error {
 	m.dir = 1 // only upward item loops possible
 	k := len(s)
 	t := &fpTree{cnt: k, dir: m.dir, heads: make([]fpHead, k)}
-	m.fp.nodes = make([]fpNode, 0, treePresize(m.bag, false))
+	m.fp.nodes = arena(m.fp.nodes, treePresize(m.bag, false))
 	t.root = m.fp.alloc(fpNode{id: tract.End, parent: nilIdx, succ: nilIdx})
 	if usePack {
-		t.fim = newMachine(m.dir, m.supp, m.rep)
+		t.fim = m.newMachine(m.dir, m.supp, m.rep)
 	}
 	for i := range t.heads {
 		t.heads[i] = fpHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}

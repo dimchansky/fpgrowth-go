@@ -419,7 +419,7 @@ func (m *miner) mineComplex() error {
 	}
 	k := len(s)
 	t := &csTree{cnt: k, heads: make([]csHead, k)}
-	m.cs.nodes = make([]csNode, 0, treePresize(m.bag, true))
+	m.cs.nodes = arena(m.cs.nodes, treePresize(m.bag, true))
 	t.root = m.cs.alloc(csNode{
 		id: tract.End, parent: nilIdx, succ: nilIdx,
 		sibling: nilIdx, children: nilIdx,
@@ -428,7 +428,7 @@ func (m *miner) mineComplex() error {
 		t.heads[i] = csHead{item: tract.Item(s[i]), supp: f[s[i]], list: nilIdx}
 	}
 	if m.pack != 0 {
-		m.fim = newMachine(m.dir, m.supp, m.rep)
+		m.fim = m.newMachine(m.dir, m.supp, m.rep)
 		m.fim.limited, m.fim.zmax = m.limited, m.zmax
 	}
 	buf := m.path

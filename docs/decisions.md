@@ -100,6 +100,15 @@ before the chains were bounded by GOMAXPROCS; afterwards 62-83 MB at
 -Z128 in the review). Reusing the
   item base and the recoding across surrogates is the follow-up, issue
   #39.
+  *Note of 2026-10-27 (#39):* the storage of the item base, the bag and
+  the miner is reused per worker (`psp.Workspace`), every surrogate is
+  still counted and recoded on its own (the codes need not be the same
+  across surrogates, see `docs/upstream/fpgpsp.md` §7), and `-gr` draws
+  through a Fenwick tree. Measured against main: -16 % to -68 %
+  instructions on the shapes above (`-gr` now 0.61 times C's, the
+  others 1.8-2.4 times), `-ge` unchanged, 0.09 MB instead of 3.3 MB
+  allocated per surrogate
+  (`docs/reviews/post-v0.1.0/issue-39-design.md`).
 - **Floating point.** The estimation follows C compiled with
   `-ffp-contract=off` (explicit rounding of products, `mulAdd`). Because
   `log` and `exp` may differ in the last bit between Go and the

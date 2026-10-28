@@ -23,8 +23,9 @@ import (
 // A Miner is used for one run and is not safe for concurrent use.
 type Miner[T comparable] struct {
 	cfg   Config
-	ib    *tract.ItemBase[T]
+	ib    itemSource
 	bag   *tract.Bag
+	ws    *Workspace // reusable buffers of the mining run (SetWorkspace)
 	th    thresholds
 	rep   *report.Reporter
 	state int
@@ -65,6 +66,29 @@ func (m *Miner[T]) Config() Config { return m.cfg }
 // (ItemBase.Count) with the same scan. It returns ErrNoItems if no item is
 // frequent.
 func (m *Miner[T]) Data(ib *tract.ItemBase[T], scan tract.ScanFunc[T]) error {
+	return m.data(ib, func(zmin int) (*tract.Bag, error) { return ib.BuildBag(scan, zmin) })
+}
+
+// DataDense is Data for a database counted by db (tract.DenseBase.Count):
+// the same thresholds, recoding, transaction filter and packing, with the
+// bag built by db.BuildBag. The miner uses db and its bag until Mine
+// returns; db must not be used for another database before that.
+func (m *Miner[T]) DataDense(db *tract.DenseBase) error {
+	return m.data(db, db.BuildBag)
+}
+
+// itemSource is the item base of Data and DataDense.
+type itemSource interface {
+	TotalWeight() tract.Supp
+	Recode(smin tract.Supp, order int) int
+	Len() int
+	Frequency(i tract.Item) tract.Supp
+	Appearance(i tract.Item) tract.Appearance
+}
+
+// data is fpg_data for the item base ib; build builds the bag of the
+// recoded item base with the transaction filter zmin.
+func (m *Miner[T]) data(ib itemSource, build func(zmin int) (*tract.Bag, error)) error {
 	if m.state != stateNew {
 		return ErrState
 	}
@@ -92,7 +116,7 @@ func (m *Miner[T]) Data(ib *tract.ItemBase[T], scan tract.ScanFunc[T]) error {
 		// generators with -m >= 2. Generators are mined unfiltered.
 		zmin = 0
 	}
-	bag, err := ib.BuildBag(scan, zmin)
+	bag, err := build(zmin)
 	if err != nil {
 		return fmt.Errorf("fpg: %w", err)
 	}
@@ -195,7 +219,7 @@ func (m *Miner[T]) Mine(ctx context.Context) (err error) {
 	if c.Target == report.TargetRules || isRuleEval(c.Eval) {
 		err = m.mineTree(ctx)
 	} else {
-		err = mineItemSets(ctx, c, m.bag, m.rep, m.th.supp, m.hooks)
+		err = mineItemSets(ctx, c, m.bag, m.rep, m.th.supp, m.hooks, m.ws)
 	}
 	if err == nil {
 		// a repository overflow in Add or Tail that no later Report

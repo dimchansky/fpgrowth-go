@@ -273,13 +273,8 @@ func (b *ItemBase[T]) Recode(smin Supp, order int) int {
 			d.app = AppearNone
 		}
 		keys[i] = itemKey{frq: d.frq, xfq: d.xfq, isNone: d.app == AppearNone}
-		ids[i] = int32(i)
 	}
-	ptrQsort(ids, itemComparator(keys, order)) // idm_sort
-	k := n                                     // find the items to keep
-	for k > 0 && keys[ids[k-1]].isNone {
-		k--
-	}
+	k := sortItems(keys, ids, order)
 	items := make([]itemData[T], k)
 	for c, i := range ids {
 		d := &b.items[i]
@@ -292,6 +287,21 @@ func (b *ItemBase[T]) Recode(smin Supp, order int) int {
 	}
 	b.items = items
 	b.isRecoded = true
+	return k
+}
+
+// sortItems sorts the item identifiers 0..len(keys)-1 into ids (which
+// must have the length of keys) with the comparator of order (idm_sort)
+// and returns the number of items to keep, which come first.
+func sortItems(keys []itemKey, ids []int32, order int) int {
+	for i := range ids {
+		ids[i] = int32(i)
+	}
+	ptrQsort(ids, itemComparator(keys, order)) // idm_sort
+	k := len(ids)                              // find the items to keep
+	for k > 0 && keys[ids[k-1]].isNone {
+		k--
+	}
 	return k
 }
 

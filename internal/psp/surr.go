@@ -1,6 +1,7 @@
 package psp
 
 import (
+	mathbits "math/bits"
 	"slices"
 
 	"github.com/dimchansky/fpgrowth-go/internal/tract"
@@ -38,13 +39,17 @@ type Chain struct {
 	rng    RNG
 	dst    [][]tract.Item // the surrogate buffer (upstream tasur)
 	done   bool           // dst holds a surrogate (sort before the next)
+	sorter tractSorter
 
-	// Random: the persistent item frequency buffer (dst->buf), the sum of
-	// the frequencies, and the per-call work arrays (by item code)
+	// Random: the persistent item frequency buffer (dst->buf), its
+	// prefix-sum tree, the sum of the frequencies, and the per-call work
+	// arrays (by item code; under is the bit set of dif < 0)
 	ifrq  []itemFrq
+	fen   fenwick
 	total int64
 	dif   []int64
 	mark  []bool
+	under []uint64
 
 	// Swap: whether the first run (2·extent swaps) is done, the extent,
 	// and the item flag and offset arrays of iswap
@@ -67,7 +72,7 @@ func NewChain(src *Data, method Method, seed uint32) *Chain {
 // them (in any order) until then, but must not modify them.
 func (c *Chain) Next() [][]tract.Item {
 	if c.done && (c.method == Random || c.method == Swap) {
-		sortTracts(c.dst) // fpg_data(tasur, FPG_SURR, 0) of the last set
+		c.sorter.sort(c.dst) // fpg_data(tasur, FPG_SURR, 0) of the last set
 	}
 	c.done = true
 	switch c.method {
@@ -93,13 +98,69 @@ func (c *Chain) Next() [][]tract.Item {
 // comes first (ta_cmp). Equal transactions are indistinguishable, so any
 // correct sort gives upstream's order.
 func sortTracts(ts [][]tract.Item) {
-	for _, t := range ts {
-		slices.Sort(t)
+	var s tractSorter
+	s.sort(ts)
+}
+
+// tractSorter is sortTracts with a reusable buffer. It sorts the
+// transactions by a key of their first two items, which decides most
+// comparisons with one integer comparison (the keys order like ta_cmp
+// on the first two items, a missing item before every item), and
+// compares the remaining items only for equal keys.
+type tractSorter struct{ buf []keyedTract }
+
+// keyedTract is a transaction and its sort key: (t[0]+1)<<32 | (t[1]+1),
+// with 0 for a missing item (item codes are non-negative int32 values).
+type keyedTract struct {
+	key uint64
+	t   []tract.Item
+}
+
+func (s *tractSorter) sort(ts [][]tract.Item) {
+	buf := s.buf[:0]
+	if cap(buf) < len(ts) {
+		buf = make([]keyedTract, 0, len(ts))
 	}
-	slices.SortFunc(ts, slices.Compare[[]tract.Item])
+	for _, t := range ts {
+		tract.SortItems(t)
+		var key uint64
+		if len(t) > 0 {
+			key = (uint64(t[0]) + 1) << 32
+			if len(t) > 1 {
+				key |= uint64(t[1]) + 1
+			}
+		}
+		buf = append(buf, keyedTract{key: key, t: t})
+	}
+	slices.SortFunc(buf, func(a, b keyedTract) int {
+		switch {
+		case a.key < b.key:
+			return -1
+		case a.key > b.key:
+			return 1
+		case a.key&(1<<32-1) == 0: // at most one item, equal
+			return 0
+		}
+		return slices.Compare(a.t[2:], b.t[2:])
+	})
+	for k := range buf {
+		ts[k] = buf[k].t
+	}
+	s.buf = buf[:0]
 }
 
 // random is a port of tbg_random with oracle patch P4.
+//
+// Upstream finds a drawn item by a linear search of the item buffer and
+// a replacement item of the repair by a linear cyclic search; both are
+// linear in the number of items for every item instance, which made the
+// generation the larger part of fpgpsp -gr on sparse data. Here the
+// draw searches a Fenwick tree of the prefix sums of the buffer (exact
+// integer sums, so it finds the same entry), and the repair searches a
+// bit set of the under-represented items (it finds the same item: the
+// first one from the random start that is under-represented and not in
+// the transaction). The surrogates and the random numbers drawn are
+// upstream's (TestRandom_matchesLinear, TestChain_matchesC).
 func (c *Chain) random() {
 	n := c.src.NItems
 	if c.dst == nil { // clone(src): the slot sizes of the source
@@ -120,33 +181,35 @@ func (c *Chain) random() {
 		}
 		c.dif = make([]int64, n)
 		c.mark = make([]bool, n)
+		c.under = make([]uint64, (n+63)/64)
+		c.fen = newFenwick(c.ifrq)
 	}
-	ifrq := c.ifrq
+	ifrq, fen := c.ifrq, c.fen
 	for k := len(c.dst) - 1; k >= 0; k-- {
 		t := c.dst[k]
 		z := uint64(c.total) // number of item instances
 		m := n
 		for i := range t { // draw the items without replacement
 			x := uint64(c.rng.Float64() * float64(z))
-			j := 0
-			for ; j < m; j++ {
-				if x < uint64(ifrq[j].frq) {
-					break
-				}
-				x -= uint64(ifrq[j].frq)
-			}
-			if j >= m {
-				j = m - 1
-			}
+			// the first entry j < m whose prefix sum exceeds x; the
+			// entries from m on hold the items drawn for t, so a j >= m
+			// means x >= z (upstream: the loop ends with j = m)
+			j := min(fen.search(x), m-1)
 			t[i] = ifrq[j].item
 			z -= uint64(ifrq[j].frq)
 			m--
-			ifrq[j], ifrq[m] = ifrq[m], ifrq[j]
+			if j != m {
+				if d := ifrq[m].frq - ifrq[j].frq; d != 0 {
+					fen.add(j, d)
+					fen.add(m, -d)
+				}
+				ifrq[j], ifrq[m] = ifrq[m], ifrq[j]
+			}
 		}
 	}
 	// repair the item frequencies: replace over-represented items by
 	// under-represented ones, one per transaction
-	dif, mark := c.dif, c.mark
+	dif, mark, under := c.dif, c.mark, c.under
 	clear(dif)
 	for _, t := range c.dst {
 		for _, s := range t {
@@ -159,9 +222,12 @@ func (c *Chain) random() {
 		}
 	}
 	var z int64 // amount of over-representation
-	for _, d := range dif {
+	clear(under)
+	for i, d := range dif {
 		if d > 0 {
 			z += d
+		} else if d < 0 {
+			under[i>>6] |= 1 << (i & 63)
 		}
 	}
 	for k := len(c.dst) - 1; k >= 0 && z > 0; k-- {
@@ -174,19 +240,19 @@ func (c *Chain) random() {
 			}
 		}
 		if d >= 0 {
-			i := int(tract.Item(c.rng.Float64()*float64(n))) % n
-			j := (i + n - 1) % n // search cyclically from a random start
-			for i != j && (mark[i] || dif[i] >= 0) {
-				i = (i + 1) % n
-			}
-			// P4: the item the search stopped at is examined too
-			// (upstream: if (i != j)).
-			if !mark[i] && dif[i] < 0 {
+			// Upstream searches cyclically from a random start i up to
+			// i-1 for an item that is not marked and under-represented;
+			// with P4 the item where the search stops is examined too,
+			// so every item is examined (upstream: if (i != j)).
+			start := int(tract.Item(c.rng.Float64()*float64(n))) % n
+			if i := firstUnder(under, mark, start, n); i >= 0 {
 				old := t[d]
 				mark[old] = false
-				dif[old]--
+				dif[old]-- // was over-represented: stays >= 0
 				t[d] = tract.Item(i)
-				dif[i]++
+				if dif[i]++; dif[i] == 0 {
+					under[i>>6] &^= 1 << (i & 63)
+				}
 				z--
 			}
 		}
@@ -194,6 +260,79 @@ func (c *Chain) random() {
 			mark[s] = false
 		}
 	}
+}
+
+// firstUnder returns the first item in the cyclic order start, start+1,
+// ..., n-1, 0, ..., start-1 that is in the bit set under and not marked,
+// or -1 if there is none.
+func firstUnder(under []uint64, mark []bool, start, n int) int {
+	if i := nextUnder(under, mark, start, n); i >= 0 {
+		return i
+	}
+	return nextUnder(under, mark, 0, start)
+}
+
+// nextUnder returns the first item i in [from, to) that is in under and
+// not marked, or -1.
+func nextUnder(under []uint64, mark []bool, from, to int) int {
+	for w := from >> 6; w<<6 < to; w++ {
+		bits := under[w]
+		if w == from>>6 {
+			bits &^= 1<<(from&63) - 1 // the items below from
+		}
+		for bits != 0 {
+			i := w<<6 | mathbits.TrailingZeros64(bits)
+			if i >= to {
+				return -1
+			}
+			if !mark[i] {
+				return i
+			}
+			bits &= bits - 1
+		}
+	}
+	return -1
+}
+
+// fenwick is a Fenwick (binary indexed) tree over the frequencies of the
+// entries of tbg_random's item buffer, by position.
+type fenwick struct {
+	tree []int64 // 1-based: tree[i] sums the entries (i - lowbit(i), i]
+	high int     // the largest power of 2 not above len(tree)-1
+}
+
+// newFenwick returns the tree of the frequencies of buf.
+func newFenwick(buf []itemFrq) fenwick {
+	f := fenwick{tree: make([]int64, len(buf)+1)}
+	for i, e := range buf {
+		f.tree[i+1] += e.frq
+		if p := i + 1 + (i+1)&-(i+1); p < len(f.tree) {
+			f.tree[p] += f.tree[i+1]
+		}
+	}
+	for f.high = 1; f.high*2 < len(f.tree); f.high *= 2 {
+	}
+	return f
+}
+
+// add adds d to the frequency of the entry at position j.
+func (f fenwick) add(j int, d int64) {
+	for i := j + 1; i < len(f.tree); i += i & -i {
+		f.tree[i] += d
+	}
+}
+
+// search returns the smallest position j whose prefix sum (of the
+// entries 0..j) exceeds x, or the number of entries if there is none.
+func (f fenwick) search(x uint64) int {
+	pos := 0
+	for step := f.high; step > 0; step >>= 1 {
+		if p := pos + step; p < len(f.tree) && uint64(f.tree[p]) <= x {
+			pos = p
+			x -= uint64(f.tree[p])
+		}
+	}
+	return pos
 }
 
 // swap is a port of tbg_swap.

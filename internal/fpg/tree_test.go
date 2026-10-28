@@ -324,7 +324,7 @@ func TestTreeSetsOracle(t *testing.T) {
 			}
 			order := make([]string, m.ib.Len())
 			for i := range order {
-				order[i] = m.ib.ID(tract.Item(i))
+				order[i] = m.ib.(*tract.ItemBase[string]).ID(tract.Item(i))
 			}
 			pe := p
 			pe.Eval = &oracle.SetEval{Measure: *oracleMeasure(vc), Agg: oracle.Aggregation(vc.Agg), Order: order}
