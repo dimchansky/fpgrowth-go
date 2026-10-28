@@ -137,7 +137,9 @@ func TestDblSelect_matchesReference(t *testing.T) {
 }
 
 // TestDblSelect_maxDraw pins the largest draw, u = 2^32-1: the index
-// (u·2^-32)·n truncates to n-1, as in the reference.
+// (u·2^-32)·n truncates to n-1, as in the reference. It does not cover
+// the clamp to n-1: no draw reaches it ((1-2^-32)·n truncates below n),
+// so the clamp is defensive and a broken one would go unnoticed here.
 func TestDblSelect_maxDraw(t *testing.T) {
 	// With s0 = 0 and s2 = 0 the next output is the new s4, which is
 	// s4 ^ (s4 << 6); invert that map to make the output 2^32-1.
@@ -179,9 +181,12 @@ func TestDblSelect_maxDraw(t *testing.T) {
 }
 
 // TestSortAsc_matchesSlicesSort compares the insertion sort with
-// slices.Sort on random slices with duplicates, zeros, infinities and
-// NaNs (negative zero is left out: slices.Sort may order -0 and +0
-// either way, and probabilities are never -0).
+// slices.Sort on random slices with duplicates, +0, infinities and NaNs
+// of one payload (math.NaN()). This is the domain where the two must
+// agree bit for bit: itemProbs never yields -0, and its NaNs share one
+// payload. A mix of ±0, or NaNs with different payloads, is left out on
+// purpose. Those are equivalent under the order, and the two sorts may
+// place them differently.
 func TestSortAsc_matchesSlicesSort(t *testing.T) {
 	r := rand.New(rand.NewPCG(47, 2))
 	special := []float64{0, 1, math.Inf(1), math.Inf(-1), math.NaN(), math.SmallestNonzeroFloat64, -1}

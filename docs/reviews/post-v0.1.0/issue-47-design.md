@@ -27,19 +27,34 @@
    before, `float64(u) * rnorm * float64(len(a))` (drand()·n, left to
    right, the product (u·2^-32) exact), truncated and clamped to
    `len(a)-1`; the swap reslices the array instead of an offset. The
-   number of draws is unchanged.
+   number of draws is unchanged. The clamp never fires with this
+   generator: u <= 2^32-1, and (1-2^-32)·n rounds to a value below n,
+   so it truncates to at most n-1. It is kept as a defensive copy of
+   upstream's guard (`if (i > --n) i = n`) against a drand() that
+   returns 1.
 2. **`sortAsc`**, an insertion sort, replaces `slices.Sort` on the k
    selected probabilities (k is at most the largest transaction size,
    and the call happens only for k >= 5). It uses `cmp.Less`'s order
-   for floats (NaN first), so the sorted sequence equals
-   `slices.Sort`'s: a strict weak order has one sorted sequence up to
-   the order of equivalent elements, and equivalent elements here are
-   equal doubles (interchangeable bit for bit, except +0/-0, which
-   probabilities never are: `itemProbs` computes x·f >= 0 or
-   round(a·b) + x, whose zero is +0) or NaNs. The prototype's plain
-   `v < s[j-1]` would have differed from `slices.Sort` only for NaN
-   (an infinite `-e`); the NaN-aware comparison removes that case
-   instead of arguing it away.
+   for floats (NaN first). A strict weak order has one sorted sequence
+   up to the order of equivalent elements, and the two sorts may order
+   equivalent elements differently (pdqsort is not stable). So the
+   results are bit-identical exactly when equivalent elements are
+   bit-identical. That is not true for every input: +0 and -0 are
+   equivalent, and so are NaNs with different payloads. A probe by the
+   correctness critic found a difference at n = 46 for a mix of ±0, and
+   at n = 33 for NaNs 0x7ff8... and 0xfff8.... Neither can occur here.
+   The sorted values come from `itemProbs`. A zero there is x·f with
+   x > 0 and f >= 0, or round(a·b) + x with x > 0, and both give +0,
+   never -0. A NaN there only comes from one operation,
+   mulAdd(0, ±Inf, x) with an infinite `-e`, so all NaNs of a run carry
+   the platform's one default payload. So `sortAsc` and `slices.Sort`
+   give the same bits for every input `itemProbs` can produce. The
+   prototype's plain `v < s[j-1]` would also have differed on NaNs in
+   any position; the NaN-aware comparison removes that case.
+   For comparison, main's `slices.Sort` and upstream's `dbl_qsort`
+   already ordered equal keys differently (different unstable
+   algorithms). That never showed in the output, for the same reason:
+   equal keys from `itemProbs` are bit-identical.
 3. **`log(cnts[z])`** is computed once per size instead of once per
    sample, and `log(c)` of the support loop comes from `logTable`,
    grown on demand up to the largest support reached
@@ -90,9 +105,13 @@ draw, `slices.Sort`, `slices.Reverse`).
   `dblSelectBack(a) == reverse(dblSelectRef(reverse(a)))`.
 - `TestDblSelect_maxDraw`: a constructed generator state whose next
   output is 2^32-1, for n up to 2^20: the index truncates to n-1 in all
-  three functions (the clamp is upstream's guard against drand() == 1).
+  three functions. The test pins the largest draw only. It cannot detect
+  a broken clamp, because no draw reaches the clamp (point 1).
 - `TestSortAsc_matchesSlicesSort`: 20,000 random slices with
-  duplicates, 0, ±Inf, NaN, -1 and the smallest subnormal, bit for bit.
+  duplicates, +0, ±Inf, NaN (one payload), -1 and the smallest
+  subnormal, compared bit for bit. This is the input domain of the claim
+  in point 2, so the test passes by the argument and not by chance.
+  -0 and NaNs with different payloads are deliberately left out.
 - `TestLogTable`: increasing and random supports up to 3,000, bit for
   bit against `math.Log`, and no allocation for a covered support.
 - `TestSamplelp_matchesReference`: 400 chains of 30 samples each on a

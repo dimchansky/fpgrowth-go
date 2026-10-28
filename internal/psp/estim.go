@@ -406,6 +406,9 @@ func dblSelect(a []float64, k int, rng *RNG) {
 		s4 = (s4 ^ (s4 << 6)) ^ (t ^ (t << 13))
 		u := (s1 + s1 + 1) * s4
 		i := uint(float64(u) * rnorm * float64(len(a)))
+		// The clamp is defensive and mirrors C (if (i > --n) i = n):
+		// u <= 2^32-1 and (1-2^-32)·n truncates below n, so it never
+		// fires with this generator.
 		if i >= uint(len(a)) {
 			i = uint(len(a)) - 1
 		}
@@ -433,7 +436,7 @@ func dblSelectBack(a []float64, k int, rng *RNG) {
 		u := (s1 + s1 + 1) * s4
 		last := uint(len(a)) - 1
 		i := uint(float64(u) * rnorm * float64(len(a)))
-		if i > last {
+		if i > last { // defensive, never fires (see dblSelect)
 			i = last
 		}
 		a[last-i], a[last] = a[last], a[last-i]
@@ -444,8 +447,13 @@ func dblSelectBack(a []float64, k int, rng *RNG) {
 
 // sortAsc sorts s ascending like slices.Sort (NaNs first), by insertion:
 // s holds the probabilities of one sample, at most a transaction size
-// of them, mostly few. Equal elements are indistinguishable, so the
-// result equals slices.Sort's (TestSortAsc_matchesSlicesSort).
+// of them, mostly few. The two sorts may order equivalent elements
+// differently. So the result equals slices.Sort's bit for bit whenever
+// equivalent elements are bit-identical. That holds for every input
+// itemProbs can produce: its zeros are +0, never -0, and its NaNs (from an
+// infinite -e only) all come from one operation and carry one payload.
+// For a mix of ±0, or NaNs with different payloads, the bits can differ
+// (TestSortAsc_matchesSlicesSort).
 func sortAsc(s []float64) {
 	for i := 1; i < len(s); i++ {
 		v := s[i]
