@@ -97,5 +97,10 @@ func (b *ItemBase[T]) buildRetained(r *retained, zmin int) (*Bag, error) {
 			return nil, fmt.Errorf("record %d: %w", k+1, err)
 		}
 	}
+	// Release the records before finish allocates the bag's final arrays.
+	// The compiler already treats r as dead here (live heap measured in
+	// finish is the same with and without retention); this does not
+	// depend on that.
+	*r = retained{}
 	return bld.finish(b.records, b.wgt, b.abort)
 }
