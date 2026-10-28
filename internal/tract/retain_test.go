@@ -181,6 +181,11 @@ func TestItemBase_Retain_blocks(t *testing.T) {
 		if len(b.ret.blocks) < 4 {
 			t.Fatalf("%d blocks, want at least 4", len(b.ret.blocks))
 		}
+		for i, blk := range b.ret.blocks { // never grown by append
+			if c := cap(blk); c != retainBlock && c != 1+len(long) {
+				t.Fatalf("block %d: capacity %d, want %d (or %d for the long record)", i, c, retainBlock, 1+len(long))
+			}
+		}
 		b.Recode(2, 0) // as buildIntBag
 		passes := 0
 		bag, err := b.BuildBag(countingScan(recs, &passes), zmin)
