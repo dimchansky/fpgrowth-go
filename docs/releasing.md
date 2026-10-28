@@ -19,10 +19,10 @@ identifiers (`v1.2.3-rc.01` is refused), and no build metadata
 (cd reference && go run ./modcheck tag vX.Y.Z)
 ```
 
-One version covers both deliverables of the module
+One version covers all deliverables of the module
 `github.com/dimchansky/fpgrowth-go`: the library API (package `fpgrowth`)
-and the `fpgrowth` command. The nested module `reference/` is
-development-only and never tagged.
+and the `fpgrowth` and `fpgpsp` commands. The nested module
+`reference/` is development-only and never tagged.
 
 ### v0: no stability guarantee yet
 
@@ -52,9 +52,11 @@ the documented behavior (a new entry in `docs/differences.md`) is a bug
 fix, not a breaking change, but it is always called out in the
 changelog.
 
-The CLI's compatibility target is upstream `fpgrowth`: options, formats,
-messages and exit codes change only to follow upstream or to fix a
-documented deviation, and each such change is listed in the changelog.
+The commands' compatibility targets are upstream `fpgrowth` (6.21) and
+`fpgpsp` (1.3): options, formats, messages and exit codes change only to
+follow upstream or to fix a documented deviation (for `fpgpsp`, its
+upstream defects U1-U25 in `docs/differences.md` are fixed), and each
+such change is listed in the changelog.
 
 ### Major versions 2 and later: new import path
 
@@ -66,8 +68,8 @@ module github.com/dimchansky/fpgrowth-go/v2
 ```
 
 Every import in the repository (root package, `cmd/fpgrowth`,
-`internal/...`, and the `require`/`replace` lines of `reference/go.mod`)
-changes to the `/v2` path in the same commit, before the `v2.0.0` tag.
+`cmd/fpgpsp`, `internal/...`, and the `require`/`replace` lines of
+`reference/go.mod`) changes to the `/v2` path in the same commit, before the `v2.0.0` tag.
 The release workflow refuses a `vN` tag (N ≥ 2) whose `go.mod` lacks the
 `/vN` suffix.
 
@@ -254,10 +256,11 @@ OIDC token; there are no stored secrets. All actions are pinned to full
 commit SHAs.
 
 The binaries do not carry a release version string: `cmd/fpgrowth`
-prints upstream's banner (`version 6.21 (2022.11.22)`) for
-compatibility and has no version variable to inject. The module version
-and commit are embedded by the Go toolchain and can be read with
-`go version -m fpgrowth`.
+prints upstream's banner (`version 6.21 (2022.11.22)`) and `cmd/fpgpsp`
+upstream's (`version 1.3 (2024.12.12)`) for compatibility, and neither
+has a version variable to inject. The module version and commit are
+embedded by the Go toolchain and can be read with `go version -m
+fpgrowth` (or `fpgpsp`).
 
 ## Verifying a download
 
@@ -291,7 +294,7 @@ attestations cover the archives listed in `checksums.txt`, not
   `go.mod`), so the upstream C sources and the differential tests are
   not downloaded by users.
 - `go install github.com/dimchansky/fpgrowth-go/cmd/fpgrowth@vX.Y.Z`
-  builds the CLI from the proxy; the result reports the module version in
+  (and `.../cmd/fpgpsp@vX.Y.Z`) builds a command from the proxy; the result reports the module version in
   `go version -m`.
 - The proxy caches a version forever once fetched; pkg.go.dev picks it up
   from the proxy (step 6 above triggers it).

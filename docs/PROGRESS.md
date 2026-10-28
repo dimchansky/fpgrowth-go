@@ -4,7 +4,44 @@ Durable project state so work can resume after a context reset. Keep this
 short: current status, next steps, open problems. Details belong in the
 linked documents.
 
-## Current status (2026-10-17, v0.1.0 released)
+## Current status (2026-10-28, post-v0.1.0 cycle complete, not released)
+
+- **Roadmap #24: all 17 tasks merged** into `main` with green CI, each
+  with independent review (records in `docs/reviews/post-v0.1.0/`). No
+  Critical or High finding is open.
+- **Not released.** No tag and no version are chosen; the maintainer
+  decides (`docs/releasing.md`). The new commands and options (`fpgpsp`,
+  `-z`) make the next version a minor (v0.X.0).
+- **Before a release:** the final integration audit (first run on
+  `e6d02b0`, 2026-10-26) is repeated for what the later tasks changed;
+  the maintainer's sign-off on D7 (`docs/decisions.md`) is pending. D8
+  was approved on 2026-10-28.
+
+| Task | Issue | PR | Merge |
+| --- | --- | --- | --- |
+| RC-2: cancellation in `OnStart` with nothing to mine | #14 | #26 | `458abf0` |
+| TST-3: independent oracle for the rule measures | #15 | #27 | `0fd4a0a` |
+| ALG-1: statistical measures at large weights | #16 | #28 | `ee75321` |
+| ALG-2: threshold rounding at extreme weights | #17 | #30 | `d4a2022` |
+| ALG-3: exact large absolute CLI thresholds | #18 | #31 | `c398bb6` |
+| M5A-1: maximal mining, small size limit, dense data | #19 | #33 | `ba63d14` |
+| NEW-3: quadratic closed check on mixed-length covers | #20 | #35 | `e4cf7d0` |
+| NEW-1: perfect extensions that cannot affect results | #21 | #36 | `47a0f32` |
+| FEAT-2: zlib-compressed output `-z` | #22 | #37 | `d51eb19` |
+| FEAT-1: `fpgpsp` (pattern spectra), also closes #25 | #23 | #38 | `e6d02b0` |
+| difftest harness gaps | #29 | #41 | `8edb1d3` |
+| maximal check on long light cover transactions | #34 | #43 | `bd39eec` |
+| maximal sets with a small size limit slower than v0.1.0 (from #19) | #42 | #44 | `c66d052` |
+| FisherInfo allocations at n ≳ 1e15 (P-9) | #40 | #45 | `325ad4b` |
+| `fpgpsp`: no per-surrogate item base and FP-tree rebuild | #39 | #46 | `fde9e41` |
+| `fpgpsp -ge` sampling | #47 | #49 | `95f2794` |
+| reading and preparation pipeline (read once, D8) | #48 | #50 | `37d33b3` |
+
+What each task changed, with measurements and CI runs, is in the
+progress log of issue #24, `CHANGELOG.md` (`[Unreleased]`) and the
+review records.
+
+## v0.1.0 (2026-10-17, released)
 
 - **Development stages 0–4: closed** (`docs/reviews/`). Stage 1 faithful
   port; Stage 2 idiomatic API, sources, streaming; Stage 3 benchmarks and
@@ -40,70 +77,19 @@ linked documents.
 
 ## Next steps
 
-- Future releases: the deferred items below, through pull requests with
-  independent review, following `docs/releasing.md`.
+- Repeat the final integration audit (correctness, API compatibility,
+  packaging, performance against v0.1.0 and C) for the changes since
+  `e6d02b0`.
+- Maintainer: sign off D7, choose the version, release following
+  `docs/releasing.md`.
 
 ## Open problems
 
-- None blocking known. Post-v0.1.0 roadmap: issue #24.
-- FEAT-1 (`fpgpsp`), issue #23: ported as `cmd/fpgpsp` with upstream's
-  defects fixed (U1-U25 in `docs/differences.md`); oracle
-  `reference/build.sh fpgpsp-fixed`, `TestFpgpsp`. The documentation of
-  the reason it had been deferred (#25) is corrected.
-- FEAT-2 (zlib-compressed output `-z`), issue #22: resolved (PR #37).
-  The CLI accepts `-z` like upstream's `USE_ZLIB` build and compresses
-  only the item set/rule output with `compress/zlib`; `reference/build.sh
-  zlib` and `TestZlib` compare decompressed outputs with that build
-  (deviation O12).
-- NEW-1 (perfect extensions beyond the maximum size), issue #21:
-  resolved. The miners' chain walks skip perfect extensions when
-  `Reporter.PexUseful` says they cannot change a result (generators, or
-  a set of zmax items for targets other than closed/maximal), and
-  `Report`/`expand` ignore the extensions of a set of zmax items. T4
-  (`t4-12500 -s-17 -n1`) 7.93 G → 0.50 G instructions (C 5.01 G; 25,000 items: 30.7 G → 1.0 G, C 19.8 G),
-  linear; the review's further shapes `one-N`, `t4b-N` linear too;
-  output identical. Closed/maximal excluded (not needed: `-tc -n1` on
-  T4 was already linear).
-- NEW-3 (Info, the remaining quadratic closed-check shape), issue #20:
-  resolved. The closed scan starts from a short cover transaction
-  (the shortest of the first and the spread ones, or of the whole
-  cover when that one is still long) after the unchanged probes of the
-  first one, and searches long transactions exponentially; `lp50000
-  -As -tc -s-2 -n1` 7.0 s → 0.06 s (C 3.7 s), output identical, no
-  regression above 1 % instructions on the `-tc` rows (M5 §4, §7.5).
-  Still quadratic, outside the check: such data with `-n2`/`-n3`
-  (projection) and with `-At` (top-down tree build); `-tm` on it (the
-  maximal check counts the long line, an exact pruning exists, triage
-  issue #34); and the challenge's `adv1f -At -q-2` shape (1.64 s,
-  C 0.02 s through its incomplete repository check).
-- M5A-1 (dense maximal checks near the size limit), issue #19 (PR #33):
-  parent-condensed sibling bit rows answer the children's maximal checks
-  by popcount; built by an actual-work rule with a history-scaled bound
-  on the remaining checked children; target `d20000x200d30 -tm -s2 -n3`
-  97 s → about 20 s (C 39 s), no measured regression, worst case bounded
-  at 3.25× a level's ordinary checks (M5 §7.3–§7.4). To re-check before
-  a release: `CloMaxLimited/dense2000x40d60/tm/n3` (+2.3 % in one of
-  three benchstat rounds, review R3-1).
-- Resolved after v0.1.0: RC-2 (Info, `docs/audit/rc1-verification.md`),
-  mining returned nil instead of `ctx.Err()` when the context was
-  canceled inside `OnStart` and nothing was left to mine; fixed by
-  issue #14 (PR #26). TST-3 (Low, `docs/audit/testing.md`), the oracle
-  shared the measure formulas with the implementation; the oracle now
-  has an independent reference for every measure, with the ALG-1, ALG-2
-  and ALG-6 deviations in strict expected-failure tables; issue #15
-  (PR #27). ALG-1 and ALG-6 (statistical measures at large weights and
-  near independence), issue #16 (PR #28): exact cross products,
-  cancellation-free information, exact certainty and `-i`, an accurate
-  Fisher evaluation for n > 170; the numeric contract is in
-  `docs/differences.md`. ALG-2 (threshold rounding at extreme weights),
-  issue #17 (PR #30): hybrid threshold contract in `internal/thresh`,
-  identical to v0.1.0 below x = 2^52 and exact above it ("Threshold
-  contract" in `docs/differences.md`). ALG-3 (CLI absolute thresholds
-  rounded to doubles above 2^53), issue #18 (PR #31): absolute integer
-  literals of `-s`, `-S` and `-F` are exact up to 2^63−1, larger ones
-  saturate as before, every other spelling and all results up to 2^53
-  are unchanged (N3 in `docs/differences.md`).
-- Triage (outside the roadmap): #25 (fpgpsp documentation, corrected in
-  #23), #29 (three difftest harness gaps), #34 (maximal check on the NEW-3 shape). Follow-up noted in PR #28:
-  FisherInfo still allocates for strong associations at n ≳ 1e15 (P-9,
-  Low).
+- None blocking known.
+- Possible follow-up (not filed): above the 128 MiB budget of D8 the
+  CLIs read the input a second time, and that pass still converts every
+  name to a string (3.1× C's instructions on B×360; 29 % fewer than
+  before #48). A byte-slice `BuildBag` would remove it
+  (`docs/reviews/post-v0.1.0/issue-48-review-performance.md`, P3).
+- ALG-1 shipped in v0.1.0 as a documented known limitation and is
+  fixed for the next release (#16).
