@@ -121,7 +121,7 @@ before the chains were bounded by GOMAXPROCS; afterwards 62-83 MB at
 
 ## D8. The command-line programs read the database once if it fits (issue #48)
 
-Proposed on 2026-10-28 for issue #48; pending review.
+Proposed on 2026-10-28 for issue #48; approved by the maintainer on 2026-10-28.
 
 - **Context.** The library reads every source twice and never keeps the
   records (D6, `docs/api-design.md`, `TestLargeFileStreaming`). The CLIs
