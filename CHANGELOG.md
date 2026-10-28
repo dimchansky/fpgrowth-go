@@ -312,8 +312,8 @@ The release workflow publishes the section whose heading matches the tag
 - The statistical evaluation measures are accurate for every total
   transaction weight up to 2^63−1 (audit ALG-1 and ALG-6, #16;
   `docs/differences.md` N1, which was a known limitation of v0.1.0):
-  chi² and Yates (`n y`) within 8 ulps, the information (`i`) within 32
-  ulps, the certainty factor (`z`) within 2^-40, the p-values (`p t g`)
+  chi² and Yates (`n y`) within 8 ulps, the information (`i`) within 64
+  ulps (32 before #40), the certainty factor (`z`) within 2^-40, the p-values (`p t g`)
   within 2^-36·(1+x) and the Fisher tests (`f h m s`) within 2^-36. They
   lost precision from about 10^12 and collapsed beyond (strong
   associations got p = 1, chi² = 0 or information 0), and already within

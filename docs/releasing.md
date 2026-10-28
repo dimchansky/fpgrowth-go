@@ -55,7 +55,8 @@ changelog.
 The commands' compatibility targets are upstream `fpgrowth` (6.21) and
 `fpgpsp` (1.3): options, formats, messages and exit codes change only to
 follow upstream or to fix a documented deviation (for `fpgpsp`, its
-upstream defects U1-U25 in `docs/differences.md` are fixed), and each
+upstream defects, rows U1-U20 and U25 of `docs/differences.md`, are
+fixed), and each
 such change is listed in the changelog.
 
 ### Major versions 2 and later: new import path
