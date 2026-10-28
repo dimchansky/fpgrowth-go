@@ -13,17 +13,24 @@ import (
 // The input helpers below are those of cmd/fpgrowth (run.go): the same
 // reading, spooling of standard input, cancellation and error messages.
 
+// input is the transaction database: the same replayable scan with
+// string and with byte-string item names (for tract.CountBytes).
+type input struct {
+	scan  tract.ScanFunc[string]
+	bytes tract.ByteScanFunc
+}
+
 // openInput opens the transaction file (upstream opens it before the
 // "reading" message, so an open error has no message prefix) and returns
 // a replayable scan over it. Standard input is spooled to a temporary
 // file first, which is removed by cleanup.
-func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFunc[string], *cliError) {
+func (r *runner) openInput(file, name string, cfg tabread.Config) (input, *cliError) {
 	path := file
 	var first *os.File
 	if file != "" {
 		f, err := os.Open(file)
 		if err != nil {
-			return nil, errorf(exitOpen, "cannot open file "+name)
+			return input{}, errorf(exitOpen, "cannot open file "+name)
 		}
 		first = f
 		r.logf("reading %s ... ", name)
@@ -31,7 +38,7 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFun
 		r.logf("reading %s ... ", name)
 		p, cerr := r.spool(name)
 		if cerr != nil {
-			return nil, cerr
+			return input{}, cerr
 		}
 		path = p
 	}
@@ -52,7 +59,10 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFun
 			first.Close()
 		}
 	})
-	return r.ctxScan(tabread.Scan(open, name, cfg)), nil
+	return input{
+		scan:  ctxScan(r.ctx, tabread.Scan(open, name, cfg)),
+		bytes: ctxScan(r.ctx, tabread.ScanBytes(open, name, cfg)),
+	}, nil
 }
 
 // spool copies standard input to a temporary file and returns its path.
@@ -132,18 +142,19 @@ func (r *runner) aborted() error {
 	}
 }
 
-// ctxScan stops a scan when ctx is canceled (checked every 1024 records).
-func (r *runner) ctxScan(scan tract.ScanFunc[string]) tract.ScanFunc[string] {
-	done := r.ctx.Done()
-	return func(yield func([]string, tract.Supp) bool) error {
+// ctxScan stops a scan (a tract.ScanFunc or tract.ByteScanFunc) when ctx
+// is canceled (checked every 1024 records).
+func ctxScan[E any](ctx context.Context, scan func(yield func([]E, tract.Supp) bool) error) func(yield func([]E, tract.Supp) bool) error {
+	done := ctx.Done()
+	return func(yield func([]E, tract.Supp) bool) error {
 		var cerr error
 		cnt := 0
-		err := scan(func(items []string, w tract.Supp) bool {
+		err := scan(func(items []E, w tract.Supp) bool {
 			cnt++
 			if cnt&1023 == 0 {
 				select {
 				case <-done:
-					cerr = r.ctx.Err()
+					cerr = ctx.Err()
 					return false
 				default:
 				}

@@ -74,7 +74,9 @@ type bagBuilder struct {
 // BuildBag reads the database a second time (pass 2) and returns its
 // transaction bag. scan must yield the same records in the same order
 // as all Count passes together; BuildBag returns ErrNotReplayable if the
-// number of records, the total weight or the set of items differ.
+// number of records, the total weight or the set of items differ. If
+// Count retained the records (Retain), BuildBag builds the bag from them
+// instead, without calling scan, and releases them.
 //
 // Every record is recoded (unknown, unselected and removed items are
 // dropped, duplicates ignored), its items are sorted ascending, and the
@@ -88,6 +90,11 @@ type bagBuilder struct {
 func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
 	if !b.isRecoded {
 		panic("tract: ItemBase.BuildBag called before Recode")
+	}
+	if b.ret.on {
+		ret := b.ret
+		b.ret = retained{} // release the records (a later call scans)
+		return b.buildRetained(&ret, zmin)
 	}
 	bld := newBagBuilder(len(b.items))
 	skipUnknown := b.defApp == AppearNone
@@ -132,7 +139,7 @@ func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
 				codes = append(codes, c)
 			}
 		}
-		slices.Sort(codes) // tbg_itsort; then drop duplicates
+		SortItems(codes) // tbg_itsort; then drop duplicates
 		codes = slices.Compact(codes)
 		if zmin > 1 && len(codes) < zmin { // tbg_filter
 			codes = codes[:0]

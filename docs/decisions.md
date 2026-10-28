@@ -118,3 +118,51 @@ before the chains were bounded by GOMAXPROCS; afterwards 62-83 MB at
 - **Command line.** One argument is allowed (output to standard output,
   U6); `-` keeps working. SIGINT stops the program with status 130, as
   fpgrowth.
+
+## D8. The command-line programs read the database once if it fits (issue #48)
+
+Proposed on 2026-10-28 for issue #48; approved by the maintainer on 2026-10-28.
+
+- **Context.** The library reads every source twice and never keeps the
+  records (D6, `docs/api-design.md`, `TestLargeFileStreaming`). The CLIs
+  used the same two passes, so they parsed the input and hashed every
+  item name twice. On 20,000 sparse transactions replicated 30 times
+  (16 MB) the second pass was half of the 6.3G instructions of
+  `fpgrowth -s50`, against 1.4G for the C program, which reads the file
+  once into its transaction bag.
+- **Decision.** `tract.ItemBase.Retain(limit)` makes `Count` keep the
+  distinct identifiers of every counted record (4 bytes per item
+  occurrence and per record, 8 more per record once a weight other than
+  1 occurs; the sizes are stored inline with the identifiers, in
+  128 KiB blocks that are never copied). The next
+  `BuildBag` builds the bag from them through the recoding table instead
+  of calling its scan function, and releases them. If the records exceed
+  the budget, `Count` releases them at once and `BuildBag` scans as
+  before. Both CLIs retain up to 128 MiB (`retainLimit`), except
+  `fpgpsp -gs`, which takes its records from a second scan
+  (`psp.Records`) and builds no bag from the item base; the library
+  does not call `Retain`.
+- **Consequences.** Within the budget, the CLIs read the input once,
+  like upstream, and maximum resident memory grows by the retained
+  records (`fpgrowth` B×30: 24 MB against 6 MB before and 44 MB for C;
+  15 million one-item records, 120 MB retained: 121 MB); above it,
+  memory is bounded by the budget (B×300: 135 MB) and the input is read
+  twice. Released records are collected at once (`runtime.GC`), on
+  both paths: the heap goal set while they were live would otherwise
+  let the next allocations take fresh pages, and `fpgpsp -ge` peaked
+  45 % above main (B×90: 135 MB against 92 MB; now 92 MB, B×300
+  290 MB as main). The
+  output is the same on both paths (`TestGoldenRetention` runs every
+  golden case of both programs with retention, without it, and over
+  budget; `TestItemBase_Retain_matchesScan` compares the bags). Within
+  the budget, a file that changes between the passes is no longer
+  reported as "input changed while reading" (`ErrNotReplayable`); the
+  programs use the records they read, as upstream does. The library keeps
+  its replay check.
+- **Rejected.** Retaining without a budget (memory proportional to the
+  input, as in C); a budget derived from the file size (standard input
+  has none, and the fallback costs little: storing the records is about
+  4 % of pass 1); dense integer identifiers from the reader to a
+  slice-indexed item base (candidate 5 of `docs/benchmarks.md`), which
+  would change the generic item base and every caller, while
+  `tract.CountBytes` already saves the second lookup of pass 1.

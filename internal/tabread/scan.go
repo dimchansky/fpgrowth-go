@@ -38,7 +38,31 @@ func ScanFile(path string, cfg Config) tract.ScanFunc[string] {
 // own reader. Item names are Go strings holding the raw bytes of the
 // fields; within a pass equal names share one string.
 func Scan(open func() (io.ReadCloser, error), name string, cfg Config) tract.ScanFunc[string] {
-	return func(yield func(items []string, weight tract.Supp) bool) (err error) {
+	scan := ScanBytes(open, name, cfg)
+	return func(yield func(items []string, weight tract.Supp) bool) error {
+		names := []string{}
+		intern := map[string]string{}
+		return scan(func(items [][]byte, weight tract.Supp) bool {
+			names = names[:0]
+			for _, item := range items {
+				s, ok := intern[string(item)]
+				if !ok {
+					s = string(item)
+					intern[s] = s
+				}
+				names = append(names, s)
+			}
+			return yield(names, weight)
+		})
+	}
+}
+
+// ScanBytes is Scan with the item names as byte slices, which are only
+// valid during the yield call (see Reader.Next): for a consumer that
+// looks the names up itself (tract.CountBytes), it saves Scan's string
+// interning, a second lookup of every name.
+func ScanBytes(open func() (io.ReadCloser, error), name string, cfg Config) tract.ByteScanFunc {
+	return func(yield func(items [][]byte, weight tract.Supp) bool) (err error) {
 		rc, err := open()
 		if err != nil {
 			return fmt.Errorf("%w %s: %w", ErrOpen, name, err)
@@ -52,8 +76,6 @@ func Scan(open func() (io.ReadCloser, error), name string, cfg Config) tract.Sca
 		}()
 
 		rd := NewReader(rc, name, cfg)
-		names := []string{}
-		intern := map[string]string{}
 		for {
 			items, weight, nerr := rd.Next()
 			if errors.Is(nerr, io.EOF) {
@@ -62,16 +84,7 @@ func Scan(open func() (io.ReadCloser, error), name string, cfg Config) tract.Sca
 			if nerr != nil {
 				return nerr
 			}
-			names = names[:0]
-			for _, item := range items {
-				s, ok := intern[string(item)]
-				if !ok {
-					s = string(item)
-					intern[s] = s
-				}
-				names = append(names, s)
-			}
-			if !yield(names, weight) {
+			if !yield(items, weight) {
 				stopped = true
 				return nil
 			}

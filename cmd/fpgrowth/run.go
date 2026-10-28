@@ -25,6 +25,9 @@ type env struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	// retain is the budget of the retained records in bytes; 0 means
+	// retainLimit and a negative value disables retention (tests).
+	retain int
 	// tempDir is the directory for the spool file of standard input;
 	// empty means os.TempDir().
 	tempDir string
@@ -63,6 +66,22 @@ func run(ctx context.Context, e env) int {
 		return cerr.code
 	}
 	return exitOK
+}
+
+// retainLimit is the memory, in bytes, that the item base may use to keep
+// the counted records for building the transaction bag, so that the
+// database is read once instead of twice (tract.ItemBase.Retain). A
+// larger database is read a second time. The records take 4 bytes per
+// item occurrence and per record, so 128 MiB hold about 25 million item occurrences in records
+// of a few items (a table of roughly 100 MB).
+const retainLimit = 128 << 20
+
+// retainBudget returns the budget of the retained records.
+func (r *runner) retainBudget() int {
+	if r.retain == 0 {
+		return retainLimit
+	}
+	return r.retain
 }
 
 // runner holds the state of the mining pipeline.
@@ -135,6 +154,7 @@ func (r *runner) mine() *cliError {
 	o := r.o
 	cfg := r.tabConfig()
 	ib := tract.NewItemBase[string]()
+	ib.Retain(r.retainBudget()) // read the database once if it fits
 
 	// --- read item selection/appearance indicators ---
 	if o.selFile != nil {
@@ -145,12 +165,13 @@ func (r *runner) mine() *cliError {
 
 	// --- read transaction database (pass 1) ---
 	inName := displayName(*o.inFile, "<stdin>")
-	scan, cerr := r.openInput(*o.inFile, inName, cfg)
+	in, cerr := r.openInput(*o.inFile, inName, cfg)
 	if cerr != nil {
 		return cerr
 	}
+	scan := in.scan
 	start := time.Now()
-	if err := ib.Count(scan); err != nil {
+	if err := tract.CountBytes(ib, in.bytes); err != nil {
 		return r.inputError(err, inName)
 	}
 	n, w := ib.Records(), ib.TotalWeight()
@@ -314,17 +335,24 @@ func (r *runner) readItems(ib *tract.ItemBase[string], file string, cfg tabread.
 	return nil
 }
 
+// input is the transaction database: the same replayable scan with
+// string and with byte-string item names (for tract.CountBytes).
+type input struct {
+	scan  tract.ScanFunc[string]
+	bytes tract.ByteScanFunc
+}
+
 // openInput opens the transaction file (upstream opens it before the
 // "reading" message, so an open error has no message prefix) and returns
 // a replayable scan over it. Standard input is spooled to a temporary
 // file first, which is removed by cleanup.
-func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFunc[string], *cliError) {
+func (r *runner) openInput(file, name string, cfg tabread.Config) (input, *cliError) {
 	path := file
 	var first *os.File
 	if file != "" {
 		f, err := os.Open(file)
 		if err != nil {
-			return nil, errorf(exitOpen, "cannot open file "+name)
+			return input{}, errorf(exitOpen, "cannot open file "+name)
 		}
 		first = f
 		r.logf("reading %s ... ", name)
@@ -332,7 +360,7 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFun
 		r.logf("reading %s ... ", name)
 		p, cerr := r.spool(name)
 		if cerr != nil {
-			return nil, cerr
+			return input{}, cerr
 		}
 		path = p
 	}
@@ -353,7 +381,10 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ScanFun
 			first.Close()
 		}
 	})
-	return r.ctxScan(tabread.Scan(open, name, cfg)), nil
+	return input{
+		scan:  ctxScan(r.ctx, tabread.Scan(open, name, cfg)),
+		bytes: ctxScan(r.ctx, tabread.ScanBytes(open, name, cfg)),
+	}, nil
 }
 
 // spool copies standard input to a temporary file and returns its path.
@@ -433,18 +464,19 @@ func (r *runner) aborted() error {
 	}
 }
 
-// ctxScan stops a scan when ctx is canceled (checked every 1024 records).
-func (r *runner) ctxScan(scan tract.ScanFunc[string]) tract.ScanFunc[string] {
-	done := r.ctx.Done()
-	return func(yield func([]string, tract.Supp) bool) error {
+// ctxScan stops a scan (a tract.ScanFunc or tract.ByteScanFunc) when ctx
+// is canceled (checked every 1024 records).
+func ctxScan[E any](ctx context.Context, scan func(yield func([]E, tract.Supp) bool) error) func(yield func([]E, tract.Supp) bool) error {
+	done := ctx.Done()
+	return func(yield func([]E, tract.Supp) bool) error {
 		var cerr error
 		cnt := 0
-		err := scan(func(items []string, w tract.Supp) bool {
+		err := scan(func(items []E, w tract.Supp) bool {
 			cnt++
 			if cnt&1023 == 0 {
 				select {
 				case <-done:
-					cerr = r.ctx.Err()
+					cerr = ctx.Err()
 					return false
 				default:
 				}

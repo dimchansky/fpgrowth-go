@@ -25,6 +25,9 @@ type env struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	// retain is the budget of the retained records in bytes; 0 means
+	// retainLimit and a negative value disables retention (tests).
+	retain int
 	// tempDir is the directory for the spool file of standard input;
 	// empty means os.TempDir().
 	tempDir string
@@ -69,6 +72,22 @@ func run(ctx context.Context, e env) int {
 	return exitOK
 }
 
+// retainLimit is the memory, in bytes, that the item base may use to keep
+// the counted records for building the transaction bag, so that the
+// database is read once instead of twice (tract.ItemBase.Retain). A
+// larger database is read a second time. The records take 4 bytes per
+// item occurrence and per record, so 128 MiB hold about 25 million item occurrences in records
+// of a few items (a table of roughly 100 MB).
+const retainLimit = 128 << 20
+
+// retainBudget returns the budget of the retained records.
+func (r *runner) retainBudget() int {
+	if r.retain == 0 {
+		return retainLimit
+	}
+	return r.retain
+}
+
 // runner holds the state of one run.
 type runner struct {
 	env
@@ -96,11 +115,23 @@ func (r *runner) done(start time.Time, end string) {
 	r.logf(" done [%.2fs].%s", time.Since(start).Seconds(), end)
 }
 
+// newItemBase returns the item base of the transaction database. It
+// retains the counted records (read the database once if they fit),
+// except for -gs, which takes its records from psp.Records and builds no
+// bag from the item base.
+func (r *runner) newItemBase() *tract.ItemBase[string] {
+	ib := tract.NewItemBase[string]()
+	if r.o.surr != 's' {
+		ib.Retain(r.retainBudget())
+	}
+	return ib
+}
+
 // main is the pipeline of upstream's main after option validation.
 func (r *runner) main() *cliError {
 	o := r.o
 	cfg := r.tabConfig()
-	ib := tract.NewItemBase[string]()
+	ib := r.newItemBase()
 
 	// --- read the item selection ---
 	if o.selFile != nil {
@@ -111,12 +142,13 @@ func (r *runner) main() *cliError {
 
 	// --- read the transaction database ---
 	inName := displayName(*o.inFile, "<stdin>")
-	scan, cerr := r.openInput(*o.inFile, inName, cfg)
+	in, cerr := r.openInput(*o.inFile, inName, cfg)
 	if cerr != nil {
 		return cerr
 	}
+	scan := in.scan
 	start := time.Now()
-	if err := ib.Count(scan); err != nil {
+	if err := tract.CountBytes(ib, in.bytes); err != nil {
 		return r.inputError(err, inName)
 	}
 	n, w := ib.Records(), ib.TotalWeight()

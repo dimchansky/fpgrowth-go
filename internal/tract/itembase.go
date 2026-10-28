@@ -42,9 +42,10 @@ type itemData[T comparable] struct {
 // total transaction weight. Port of upstream's ITEMBASE (tract.c,
 // compiled with TA_READ, created by ib_create(0, 0)).
 //
-// Use it in this order: optionally Select or SetDefaultAppearance and
-// AddAppearance (from an -R file), then Count (pass 1), Recode, and
-// BuildBag (pass 2). Calling a method out of order panics. T must be
+// Use it in this order: optionally Retain, Select or
+// SetDefaultAppearance and AddAppearance (from an -R file), then Count
+// or CountBytes (pass 1), Recode, and BuildBag (pass 2). Calling a
+// method out of order panics. T must be
 // strictly comparable: an interface type holding an incomparable
 // dynamic value panics when used as a map key.
 type ItemBase[T comparable] struct {
@@ -58,6 +59,7 @@ type ItemBase[T comparable] struct {
 	buf       []Item        // scratch: items of the current record
 	check     func(T) error // validation of unknown identifiers (SetCheck)
 	abort     func() error  // cancellation check of BuildBag (SetAbort)
+	ret       retained      // the counted records, if retained (Retain)
 }
 
 // NewItemBase returns an empty item base in which every new item may
@@ -137,6 +139,34 @@ func (b *ItemBase[T]) SetCheck(fn func(T) error) { b.check = fn }
 // nil (the default) disables the check.
 func (b *ItemBase[T]) SetAbort(fn func() error) { b.abort = fn }
 
+// Retain makes Count keep the records it counts in memory, up to limit
+// bytes (4 bytes per distinct item of a record and per record; once a
+// weight other than 1 occurs, 8 more per record, and the arrays the
+// weights outgrew count too), so that the next BuildBag builds the bag
+// from them instead of calling its scan function: the database is read
+// once, like upstream's tbg_read. If the records exceed the budget,
+// Count releases them and BuildBag scans as usual. Released records are
+// collected at once (runtime.GC), so that they do not raise the peak
+// memory of what follows.
+// The first BuildBag releases the retained records; a later one scans.
+//
+// With retained records BuildBag does not read the database again, so it
+// cannot detect a source whose second pass would differ
+// (ErrNotReplayable); the bag is that of the counted records. Retain must
+// be called before the first Count; limit <= 0 disables retention.
+func (b *ItemBase[T]) Retain(limit int) {
+	b.mustNotBeRecoded("Retain")
+	if b.records > 0 {
+		panic("tract: ItemBase.Retain called after Count")
+	}
+	b.ret = retained{on: limit > 0, limit: limit}
+}
+
+// Retaining reports whether the item base keeps the counted records:
+// Retain was called with a positive budget, the records counted so far
+// fit into it, and no BuildBag has released them.
+func (b *ItemBase[T]) Retaining() bool { return b.ret.on }
+
 // add appends a new item with zero counters.
 func (b *ItemBase[T]) add(id T, app Appearance) (Item, error) {
 	if len(b.items) >= maxItems {
@@ -174,53 +204,135 @@ func (b *ItemBase[T]) Count(scan ScanFunc[T]) error {
 	return scanErr
 }
 
+// CountBytes is Count over a scan of byte-string identifiers for an item
+// base of string identifiers: the identifier of an item is string(id).
+// It looks every identifier up once, without converting it to a string,
+// and allocates a string only for a new item; Count over a scan that
+// converts its identifiers would look them up twice (see
+// tabread.ScanBytes). The result is that of Count over the same records
+// with string identifiers.
+func CountBytes(b *ItemBase[string], scan ByteScanFunc) error {
+	b.mustNotBeRecoded("Count")
+	var err error
+	scanErr := scan(func(ids [][]byte, w Supp) bool {
+		err = countBytesRecord(b, ids, w)
+		return err == nil
+	})
+	if err != nil {
+		return err
+	}
+	return scanErr
+}
+
 // countRecord adds one record to the counters.
 func (b *ItemBase[T]) countRecord(ids []T, w Supp) error {
-	if b.records >= math.MaxInt {
-		return fmt.Errorf("more than %d records: %w", math.MaxInt, ErrTooLarge)
+	rec, total, err := b.beginRecord(w)
+	if err != nil {
+		return err
 	}
-	rec := b.records + 1 // record number, also the duplicate marker
+	buf := b.buf[:0]
+	for _, id := range ids {
+		i, known := b.codes[id]
+		if !known {
+			if i, err = b.register(id, rec); err != nil {
+				return err
+			}
+			if i < 0 {
+				continue
+			}
+		}
+		buf = b.keep(buf, i, rec)
+	}
+	b.endRecord(buf, rec, total, w)
+	return nil
+}
+
+// countBytesRecord is countRecord for byte-string identifiers.
+func countBytesRecord(b *ItemBase[string], ids [][]byte, w Supp) error {
+	rec, total, err := b.beginRecord(w)
+	if err != nil {
+		return err
+	}
+	buf := b.buf[:0]
+	for _, id := range ids {
+		i, known := b.codes[string(id)] // no allocation
+		if !known {
+			if i, err = b.register(string(id), rec); err != nil {
+				return err
+			}
+			if i < 0 {
+				continue
+			}
+		}
+		buf = b.keep(buf, i, rec)
+	}
+	b.endRecord(buf, rec, total, w)
+	return nil
+}
+
+// beginRecord checks the next record of weight w and returns its number
+// (also the duplicate marker) and the new total weight.
+func (b *ItemBase[T]) beginRecord(w Supp) (rec int, total Supp, err error) {
+	if b.records >= math.MaxInt {
+		return 0, 0, fmt.Errorf("more than %d records: %w", math.MaxInt, ErrTooLarge)
+	}
+	rec = b.records + 1
 	// Deviation from upstream: negative weights are rejected. Upstream
 	// accepts them and then miscounts (fim16 double counting, perfect
 	// extensions above the true support) or corrupts memory
 	// (docs/upstream/tract.md T1, T7).
 	if w < 0 {
-		return fmt.Errorf("record %d: weight %d: %w", rec, w, ErrNegativeWeight)
+		return 0, 0, fmt.Errorf("record %d: weight %d: %w", rec, w, ErrNegativeWeight)
 	}
 	// Deviation from upstream: an overflowing total weight is an error.
 	// Upstream sums in int (UB, T5). Every frequency and merged weight is
 	// bounded by the total, so they cannot overflow afterwards.
 	total, ok := addChecked(b.wgt, w)
 	if !ok {
-		return fmt.Errorf("record %d: %w", rec, ErrWeightOverflow)
+		return 0, 0, fmt.Errorf("record %d: %w", rec, ErrWeightOverflow)
 	}
-	buf := b.buf[:0]
-	for _, id := range ids {
-		i, known := b.codes[id]
-		if !known {
-			if b.check != nil {
-				if err := b.check(id); err != nil {
-					return fmt.Errorf("record %d: %w", rec, err)
-				}
-			}
-			if b.defApp == AppearNone { // ignore new items
-				continue
-			}
-			var err error
-			if i, err = b.add(id, b.defApp); err != nil {
-				return fmt.Errorf("record %d: %w", rec, err)
-			}
+	return rec, total, nil
+}
+
+// register handles the unknown identifier id of record rec: it returns
+// the new item, or -1 if new items are ignored (default appearance
+// AppearNone).
+func (b *ItemBase[T]) register(id T, rec int) (Item, error) {
+	if b.check != nil {
+		if err := b.check(id); err != nil {
+			return 0, fmt.Errorf("record %d: %w", rec, err)
 		}
-		d := &b.items[i]
-		if d.last == rec { // drop duplicates, keep the first one
-			continue
-		}
-		d.last = rec
-		buf = append(buf, i)
 	}
+	if b.defApp == AppearNone { // ignore new items
+		return -1, nil
+	}
+	i, err := b.add(id, b.defApp)
+	if err != nil {
+		return 0, fmt.Errorf("record %d: %w", rec, err)
+	}
+	return i, nil
+}
+
+// keep appends item i to the items buf of record rec unless the record
+// already contains it (duplicates count once, the first one is kept).
+func (b *ItemBase[T]) keep(buf []Item, i Item, rec int) []Item {
+	d := &b.items[i]
+	if d.last == rec {
+		return buf
+	}
+	d.last = rec
+	return append(buf, i)
+}
+
+// endRecord adds the record rec of weight w with the distinct items buf
+// to the counters; total is the new total weight.
+func (b *ItemBase[T]) endRecord(buf []Item, rec int, total, w Supp) {
 	b.buf = buf
 	b.records = rec
 	b.wgt = total
+	if b.ret.on {
+		b.ret.add(buf, w)
+	}
 	// Deviation from upstream: size·weight and its sum saturate at
 	// math.MaxInt64 instead of overflowing int (UB upstream).
 	xw := mulSaturated(Supp(len(buf)), w)
@@ -232,7 +344,6 @@ func (b *ItemBase[T]) countRecord(ids []T, w Supp) error {
 			b.max = d.frq
 		}
 	}
-	return nil
 }
 
 // Recode removes the items with frequency below smin and those with
@@ -276,13 +387,19 @@ func (b *ItemBase[T]) Recode(smin Supp, order int) int {
 	}
 	k := sortItems(keys, ids, order)
 	items := make([]itemData[T], k)
+	if b.ret.on {
+		b.ret.recode = make([]Item, n)
+	}
 	for c, i := range ids {
 		d := &b.items[i]
+		code := Item(-1) // removed (upstream: map[k] = -1)
 		if c < k {
 			items[c] = *d
-			b.codes[d.id] = Item(c)
-		} else {
-			b.codes[d.id] = -1 // removed (upstream: map[k] = -1)
+			code = Item(c)
+		}
+		b.codes[d.id] = code
+		if b.ret.on {
+			b.ret.recode[i] = code
 		}
 	}
 	b.items = items

@@ -20,3 +20,8 @@ type Supp int64
 // nil. Otherwise ScanFunc returns the first error that prevented the pass
 // from completing, or nil.
 type ScanFunc[T comparable] func(yield func(items []T, weight Supp) bool) error
+
+// ByteScanFunc is a ScanFunc over byte-string identifiers (see
+// CountBytes): the items slice and the byte slices it holds are only
+// valid during the yield call.
+type ByteScanFunc func(yield func(items [][]byte, weight Supp) bool) error

@@ -42,17 +42,29 @@ type tokenizer struct {
 	end    int   // end of the valid bytes of buf
 	srcErr error // error of the last source read, reported once buf is drained
 
-	field []byte // current field, without the C NUL terminator
-	delim delim  // delimiter of the current field
-	rec   int    // 1-based number of the record the current field belongs to
-	fld   int    // 1-based number of the current field within its record
+	// field is the current field, without the C NUL terminator. It is a
+	// view of buf while the field lies inside the buffered block (view),
+	// else it is held in fbuf; fill copies a view to fbuf before it
+	// overwrites buf, so field stays valid until the next read.
+	field []byte
+	fbuf  []byte
+	view  bool
+	delim delim // delimiter of the current field
+	rec   int   // 1-based number of the record the current field belongs to
+	fld   int   // 1-based number of the current field within its record
 }
 
 func newTokenizer(src io.Reader, cfg Config) *tokenizer {
+	return newTokenizerSize(src, cfg, bufSize)
+}
+
+// newTokenizerSize is newTokenizer with a read buffer of size bytes
+// (tests use small buffers to move the block boundaries).
+func newTokenizerSize(src io.Reader, cfg Config, size int) *tokenizer {
 	return &tokenizer{
 		src:   src,
 		cls:   newClassTable(cfg),
-		buf:   make([]byte, bufSize),
+		buf:   make([]byte, size),
 		delim: delimEOF,
 		rec:   1,
 	}
@@ -65,18 +77,21 @@ func (t *tokenizer) is(c int, class byteClass) bool {
 
 // getc returns the next input byte, chEOF or chErr (trd_getc).
 func (t *tokenizer) getc() int {
-	if t.pos < t.end {
-		c := t.buf[t.pos]
-		t.pos++
-		return int(c)
+	if t.pos >= t.end {
+		return t.fill()
 	}
-	return t.fill()
+	t.pos++
+	return int(t.buf[t.pos-1])
 }
 
 // fill reads the next block from the source and returns (and consumes)
 // its first byte, or chEOF/chErr. A source error that comes with data is
 // kept and reported when that data has been consumed, like fread/ferror.
 func (t *tokenizer) fill() int {
+	if t.view { // the field must survive the overwrite of buf
+		t.fbuf = append(t.fbuf[:0], t.field...)
+		t.field, t.view = t.fbuf, false
+	}
 	if t.srcErr != nil {
 		return t.errChar()
 	}
@@ -134,6 +149,63 @@ func (t *tokenizer) stop(c int, d delim) delim {
 	return t.setDelim(d)
 }
 
+// next advances the field and record numbers to the field read next.
+func (t *tokenizer) next() {
+	if t.delim == delimFld {
+		t.fld++
+		return
+	}
+	t.fld = 1
+	// Deviation from upstream: the record number advances when the next
+	// record starts, so it is right for every field, including a last
+	// record cut short by the end of input. Upstream counts a record when
+	// its separator is read and reports the previous record if the input
+	// ends during trailing blanks (cli-io.md B10).
+	if t.delim == delimRec {
+		t.rec++
+	}
+}
+
+// plainField is the fast path of read for the common field: bytes of no
+// class, inside the buffered block, ended by a separator that decides
+// the delimiter without reading further: a record separator, a field
+// separator that is no blank, or a blank field separator followed by a
+// byte of no class, which starts the next field. It reads such a field
+// exactly as read's steps 1-6 would and reports true; for any other
+// input it changes nothing and reports false.
+func (t *tokenizer) plainField() bool {
+	buf, start := t.buf[:t.end], t.pos
+	i := start
+	for i < len(buf) && t.cls[buf[i]] == 0 {
+		i++
+	}
+	if i == start || i >= len(buf) {
+		return false // no field byte first, or the block ends
+	}
+	sep := t.cls[buf[i]]
+	var d delim
+	switch {
+	case sep&classSep == 0: // a blank (or a comment byte) follows
+		return false
+	case sep&classFldSep == 0: // step 4: a record separator
+		d = delimRec
+	case sep&classBlank != 0: // step 6 skips blanks after the separator
+		if i+1 >= len(buf) || t.cls[buf[i+1]] != 0 {
+			return false
+		}
+		d = delimFld // the next byte starts the next field (ungetc)
+	case sep&classRecSep != 0: // step 6: also a record separator
+		d = delimRec
+	default:
+		d = delimFld
+	}
+	t.next()
+	t.field, t.view = buf[start:i:i], true
+	t.pos = i + 1
+	t.delim = d
+	return true
+}
+
 // read reads the next field into t.field and returns its delimiter. Port
 // of trd_read; the numbered steps refer to docs/upstream/cli-io.md 4.3.
 //
@@ -141,20 +213,11 @@ func (t *tokenizer) stop(c int, d delim) delim {
 // (and after skipped comment records). If the input ends after at least
 // one byte of a record, the field is completed with delimRec.
 func (t *tokenizer) read() delim {
-	if t.delim == delimFld {
-		t.fld++
-	} else {
-		t.fld = 1
-		// Deviation from upstream: the record number advances when the
-		// next record starts, so it is right for every field, including
-		// a last record cut short by the end of input. Upstream counts a
-		// record when its separator is read and reports the previous
-		// record if the input ends during trailing blanks (cli-io.md B10).
-		if t.delim == delimRec {
-			t.rec++
-		}
+	if t.plainField() {
+		return t.delim
 	}
-	t.field = t.field[:0]
+	t.next()
+	t.field, t.view = t.fbuf[:0], false
 	c := t.getc()
 	if c < 0 {
 		if c == chEOF && t.delim == delimFld {
@@ -200,7 +263,6 @@ func (t *tokenizer) read() delim {
 	// 4. Read the field up to the next separator or the end of input.
 	// Deviation from upstream: no truncation to TRD_MAXLEN = 1024 bytes
 	// (cli-io.md B14).
-	t.field = append(t.field, byte(c))
 	d, c := t.scanField()
 
 	// 5. Remove trailing blanks. The first byte is not a blank, so at
@@ -231,19 +293,29 @@ func (t *tokenizer) read() delim {
 	return t.setDelim(delimFld)
 }
 
-// scanField appends the bytes up to the next separator to t.field. It
-// returns the delimiter kind and the separator byte that ended the field,
-// which has been consumed, or delimRec/delimErr with chEOF/chErr if the
-// input ended.
+// scanField reads the field that starts with the byte returned by the
+// last getc up to the next separator into t.field. It returns the
+// delimiter kind and the separator byte that ended the field, which has
+// been consumed, or delimRec/delimErr with chEOF/chErr if the input ended.
+//
+// A field inside the buffered block becomes a view of buf without
+// copying; one that continues after the block is copied to fbuf (by fill)
+// and extended there.
 func (t *tokenizer) scanField() (delim, int) {
+	start := t.pos - 1 // the byte of the last getc
+	t.view = true
 	for {
-		i := t.pos
-		for i < t.end && t.cls[t.buf[i]]&classSep == 0 {
+		buf, i := t.buf[:t.end], t.pos
+		for i < len(buf) && t.cls[buf[i]]&classSep == 0 {
 			i++
 		}
-		t.field = append(t.field, t.buf[t.pos:i]...)
-		if i < t.end {
-			c := t.buf[i]
+		if t.view {
+			t.field = buf[start:i:i] // full slice: never appended to
+		} else {
+			t.field = append(t.field, buf[t.pos:i]...)
+		}
+		if i < len(buf) {
+			c := buf[i]
 			t.pos = i + 1
 			if t.cls[c]&classFldSep != 0 {
 				return delimFld, int(c)
@@ -251,7 +323,7 @@ func (t *tokenizer) scanField() (delim, int) {
 			return delimRec, int(c)
 		}
 		t.pos = i
-		c := t.fill()
+		c := t.fill() // copies the view to fbuf
 		switch c {
 		case chEOF:
 			return delimRec, c

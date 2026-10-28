@@ -100,7 +100,8 @@ The release workflow publishes the section whose heading matches the tag
 - `fpgpsp -ge` (estimated pattern spectrum) samples item sets with fewer
   instructions: the partial shuffle keeps the generator state in local
   variables, the probabilities of a sample are sorted by insertion
-  instead of `slices.Sort`, the array is no longer reversed physically
+  instead of `slices.Sort` (which still sorts samples of more than 256
+  items, where insertion sort would be slower), the array is no longer reversed physically
   (the next shuffle works from the back and both order probabilities
   are computed in one pass), and `log(c)` of the support loop comes
   from a table. The random numbers, swap indices, `math.Log` arguments
@@ -113,6 +114,29 @@ The release workflow publishes the section whose heading matches the tag
   5,000 x 10 table -40 % (1.22 times, 2.04 before); the other methods
   are unchanged. See `docs/reviews/post-v0.1.0/issue-47-design.md`
   (#47).
+
+- `fpgrowth` and `fpgpsp` read and prepare the transaction database with
+  about a third of the instructions. They read the input once if its
+  records fit into 128 MiB (4 bytes per item occurrence and per record,
+  about 32 MB for a 16 MB table): the item base keeps the counted records
+  and builds the transaction bag from them, as upstream builds its bag
+  from the records it read; a larger input is read a second time as
+  before. Pass 1 looks every item name up once instead of twice
+  (`tract.CountBytes` over `tabread.ScanBytes`), and the table reader
+  returns fields that lie inside its 64 KiB block as views of it and
+  reads the common field (plain bytes and a separator) on a fast path.
+  Against main (instructions retired, Apple M1 Max) on 20,000 sparse
+  transactions replicated 30 times (16 MB), where reading and preparing
+  is almost the whole run: `fpgrowth -s50` 6.31G to 2.20G (C 1.43G),
+  `fpgpsp -ge -z1` 7.10G to 2.89G (C 1.71G); user time 0.45 s to 0.18 s
+  (C 0.14 s). Above the budget (the same data 300 times, 160 MB):
+  62.9G to 44.6G (C 14.3G). Mining rows gain 1 % to 49 %. Maximum
+  resident memory of `fpgrowth` grows by the retained records (B×30:
+  6 MB to 24 MB, C 44 MB; at most about the budget, 135 MB on B×300);
+  the records are collected as soon as they are released, so `fpgpsp`,
+  whose later structures are larger, peaks as before. Within the budget the programs no longer report an input file
+  that changes between the passes ("input changed while reading"): like
+  upstream, they use what they read. The output is byte-identical (#48).
 
 - Frequent item sets and generators with a small maximum size (`-n`,
   `MaxSize`) no longer take quadratic time on long single paths. Perfect

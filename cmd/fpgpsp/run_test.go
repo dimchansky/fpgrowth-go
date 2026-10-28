@@ -281,3 +281,27 @@ func TestRun_workersSameResult(t *testing.T) {
 		t.Errorf("one worker:\n%s\nmany workers:\n%s", got, want)
 	}
 }
+
+// TestNewItemBaseRetention checks which methods let the item base keep
+// the counted records (decision D8): every method that builds the bag
+// from the item base, and not -gs, which takes its records from
+// psp.Records; a negative env.retain disables retention.
+func TestNewItemBaseRetention(t *testing.T) {
+	for _, tt := range []struct {
+		method string
+		retain int
+		want   bool
+	}{
+		{"-ge", 0, true}, {"-gi", 0, true}, {"-gr", 0, true}, {"-gp", 0, true},
+		{"-gs", 0, false}, {"-gr", -1, false},
+	} {
+		o, _, cerr := parseArgs([]string{tt.method, "in", "out"})
+		if cerr != nil {
+			t.Fatalf("%s: %s", tt.method, cerr.msg)
+		}
+		r := &runner{env: env{retain: tt.retain}, o: &o}
+		if got := r.newItemBase().Retaining(); got != tt.want {
+			t.Errorf("%s, retain %d: retaining = %v, want %v", tt.method, tt.retain, got, tt.want)
+		}
+	}
+}
