@@ -116,14 +116,23 @@ func (r *runner) done(start time.Time, end string) {
 	r.logf(" done [%.2fs].%s", time.Since(start).Seconds(), end)
 }
 
+// newItemBase returns the item base of the transaction database. It
+// retains the counted records (read the database once if they fit),
+// except for -gs, which takes its records from psp.Records and builds no
+// bag from the item base.
+func (r *runner) newItemBase() *tract.ItemBase[string] {
+	ib := tract.NewItemBase[string]()
+	if r.o.surr != 's' {
+		ib.Retain(r.retainBudget())
+	}
+	return ib
+}
+
 // main is the pipeline of upstream's main after option validation.
 func (r *runner) main() *cliError {
 	o := r.o
 	cfg := r.tabConfig()
-	ib := tract.NewItemBase[string]()
-	if o.surr != 's' { // -gs takes its records from psp.Records, no bag
-		ib.Retain(r.retainBudget()) // read the database once if it fits
-	}
+	ib := r.newItemBase()
 
 	// --- read the item selection ---
 	if o.selFile != nil {

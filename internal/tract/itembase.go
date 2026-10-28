@@ -159,6 +159,11 @@ func (b *ItemBase[T]) Retain(limit int) {
 	b.ret = retained{on: limit > 0, limit: limit}
 }
 
+// Retaining reports whether the item base keeps the counted records:
+// Retain was called with a positive budget, the records counted so far
+// fit into it, and no BuildBag has released them.
+func (b *ItemBase[T]) Retaining() bool { return b.ret.on }
+
 // add appends a new item with zero counters.
 func (b *ItemBase[T]) add(id T, app Appearance) (Item, error) {
 	if len(b.items) >= maxItems {
