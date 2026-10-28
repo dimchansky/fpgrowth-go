@@ -1,7 +1,6 @@
 package tabread
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/dimchansky/fpgrowth-go/internal/cconv"
@@ -188,8 +187,12 @@ func newSyntaxError(t *tokenizer, name string, kind error, field []byte) error {
 // cString returns b up to its first NUL byte: upstream handles fields as
 // C strings, so an embedded NUL ends the item name (tract.md T21).
 func cString(b []byte) []byte {
-	if i := bytes.IndexByte(b, 0); i >= 0 {
-		return b[:i]
+	// A plain loop: item names are short, and bytes.IndexByte's call and
+	// setup cost more than the scan for them.
+	for i, c := range b {
+		if c == 0 {
+			return b[:i]
+		}
 	}
 	return b
 }
