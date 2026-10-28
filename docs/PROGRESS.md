@@ -12,10 +12,15 @@ linked documents.
 - **Not released.** No tag and no version are chosen; the maintainer
   decides (`docs/releasing.md`). The new commands and options (`fpgpsp`,
   `-z`) make the next version a minor (v0.X.0).
-- **Before a release:** the final integration audit (first run on
-  `e6d02b0`, 2026-10-26) is repeated for what the later tasks changed;
-  the maintainer's sign-off on D7 (`docs/decisions.md`) is pending. D8
-  was approved on 2026-10-28.
+- **Final integration audit:** first run on `e6d02b0` (2026-10-26; its
+  regression A1 became #42, its documentation findings were fixed in
+  PR #51), repeated on `37d33b3` (2026-10-28): correctness, API and
+  packaging READY WITH CONDITIONS (the D7 sign-off; two Low documentation
+  findings, fixed), performance NO REGRESSIONS (every comparable row
+  9-49 % fewer instructions than v0.1.0, outputs identical to v0.1.0
+  and C). Records: `docs/reviews/post-v0.1.0/final-audit-*.md`.
+- **Before a release:** the maintainer's sign-off on D7
+  (`docs/decisions.md`) is pending. D8 was approved on 2026-10-28.
 
 | Task | Issue | PR | Merge |
 | --- | --- | --- | --- |
@@ -77,9 +82,6 @@ review records.
 
 ## Next steps
 
-- Repeat the final integration audit (correctness, API compatibility,
-  packaging, performance against v0.1.0 and C) for the changes since
-  `e6d02b0`.
 - Maintainer: sign off D7, choose the version, release following
   `docs/releasing.md`.
 
