@@ -39,7 +39,10 @@
 //	thread partition of fpg_genpsp    Partition
 //	taslots, choose, dchoose          taslots, choose, dchoose
 //	simpest, cplxest, samplelp        simpest, cplxest, samplelp
-//	dbl_select, dbl_shuffle           dblSelect
+//	dbl_select, dbl_shuffle           dblSelect (dblSelectBack: on the
+//	                                  reversed array, #47)
+//	dbl_qsort, dbl_reverse            sortAsc; the reversal is implicit
+//	                                  (permProbs, dblSelectBack)
 //	decision border of main           Border, FormatBorder
 //
 // Nothing in this package starts goroutines; a chain is sequential and

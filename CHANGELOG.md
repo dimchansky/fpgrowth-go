@@ -97,6 +97,24 @@ The release workflow publishes the section whose heading matches the tag
   for every method, target, variant and number of chains or workers
   (#39).
 
+- `fpgpsp -ge` (estimated pattern spectrum) samples item sets with fewer
+  instructions: the partial shuffle keeps the generator state in local
+  variables, the probabilities of a sample are sorted by insertion
+  instead of `slices.Sort` (which still sorts samples of more than 256
+  items, where insertion sort would be slower), the array is no longer reversed physically
+  (the next shuffle works from the back and both order probabilities
+  are computed in one pass), and `log(c)` of the support loop comes
+  from a table. The random numbers, swap indices, `math.Log` arguments
+  and floating-point operations are the same, so the output is
+  unchanged (and byte-identical to the C oracle's on every row and
+  differential case checked). Against main
+  (instructions retired, Apple M1 Max): 20,000 sparse transactions
+  -22 % (1.38 times the C oracle's instructions, 1.77 before), a
+  4,000 x 40 dense data set -37 % (1.13 times, 1.80 before), a
+  5,000 x 10 table -40 % (1.22 times, 2.04 before); the other methods
+  are unchanged. See `docs/reviews/post-v0.1.0/issue-47-design.md`
+  (#47).
+
 - `fpgrowth` and `fpgpsp` read and prepare the transaction database with
   about a third of the instructions. They read the input once if its
   records fit into 128 MiB (4 bytes per item occurrence and per record,
