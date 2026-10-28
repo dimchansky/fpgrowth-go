@@ -51,6 +51,7 @@ func setupBase(t *testing.T, kind, n int) *ItemBase[int] {
 func TestItemBase_Retain_matchesScan(t *testing.T) {
 	t.Parallel()
 	r := rand.New(rand.NewPCG(48, 1))
+	midDrops := 0 // runs whose records were dropped after the first record
 	for run := range 400 {
 		n := 1 + r.IntN(30)
 		recs := randomRecords(r, r.IntN(80), n, 1+r.IntN(12), Supp(r.IntN(4)))
@@ -65,11 +66,20 @@ func TestItemBase_Retain_matchesScan(t *testing.T) {
 		kind, zmin, smin, order := r.IntN(3), r.IntN(4), Supp(1+r.IntN(3)), r.IntN(5)-2
 		split := r.IntN(len(recs) + 1) // Count passes: recs[:split], recs[split:]
 		var limit int
-		switch r.IntN(4) {
+		midCount := false
+		switch r.IntN(5) {
 		case 0:
 			limit = 0 // disabled
 		case 1:
 			limit = 1 + r.IntN(4*retainBlock+16) // may be exceeded on the way
+		case 2: // exceeded after the first record, somewhere in the count
+			used := usedBytes(t, setupBase(t, kind, n), recs)
+			if used > 4*retainBlock {
+				limit = 4*retainBlock + r.IntN(used-4*retainBlock)
+				midCount = true
+			} else {
+				limit = used
+			}
 		default:
 			limit = 1 << 30
 		}
@@ -100,6 +110,12 @@ func TestItemBase_Retain_matchesScan(t *testing.T) {
 		if limit == 1<<30 && !retained {
 			t.Fatalf("%s: not retained within the budget", name)
 		}
+		if midCount {
+			if retained {
+				t.Fatalf("%s: retained over the budget", name)
+			}
+			midDrops++
+		}
 		b.Recode(smin, order)
 		passes := 0
 		bag, err := b.BuildBag(countingScan(recs, &passes), zmin)
@@ -124,6 +140,23 @@ func TestItemBase_Retain_matchesScan(t *testing.T) {
 		}
 		checkBagsEqual(t, bag2, wantBag)
 	}
+	if midDrops < 20 {
+		t.Errorf("only %d runs dropped the records in the middle of the count", midDrops)
+	}
+}
+
+// usedBytes returns the bytes the records recs take when b retains them
+// all.
+func usedBytes(t *testing.T, b *ItemBase[int], recs []intRecord) int {
+	t.Helper()
+	b.Retain(1 << 30)
+	if err := b.Count(intScan(recs)); err != nil {
+		t.Fatal(err)
+	}
+	if !b.ret.on {
+		t.Fatal("not retained within 1 GiB")
+	}
+	return b.ret.used
 }
 
 // TestItemBase_Retain_blocks checks records over several blocks of
@@ -191,6 +224,33 @@ func TestItemBase_Retain_budget(t *testing.T) {
 		}
 		if !b.ret.on && (b.ret.blocks != nil || b.ret.lens != nil || b.ret.wgts != nil) {
 			t.Errorf("limit %d: records not released", tt.limit)
+		}
+	}
+
+	// The exact boundary: records that take exactly the budget are kept,
+	// one byte less releases them (with unit weights, with weights, and
+	// over several blocks).
+	many := make([]intRecord, 3000)
+	for k := range many {
+		many[k] = rec(Supp(1+k%2), k%50, 50+k%50, 100+k%7, 200+k%11, 300+k%13,
+			400+k%17, 500+k%19, 600+k%23, 700+k%29, 800+k%31, 900+k%37, 1000+k%41)
+	}
+	for _, recs := range [][]intRecord{
+		{rec(1, 0, 1, 2), rec(1, 1, 2)},
+		{rec(1, 0, 1, 2), rec(2, 1, 2)},
+		many,
+	} {
+		used := usedBytes(t, NewItemBase[int](), recs)
+		for _, limit := range []int{used, used - 1} {
+			b := NewItemBase[int]()
+			b.Retain(limit)
+			if err := b.Count(intScan(recs)); err != nil {
+				t.Fatal(err)
+			}
+			if want := limit == used; b.ret.on != want {
+				t.Errorf("%d records using %d bytes, limit %d: retained = %v, want %v",
+					len(recs), used, limit, b.ret.on, want)
+			}
 		}
 	}
 }
