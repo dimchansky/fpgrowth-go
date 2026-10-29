@@ -15,7 +15,7 @@ import (
 //
 //	m, err := fpg.New[string](cfg)     // fpg_create
 //	err = ib.Count(scan)               // tbg_read (pass 1, by the caller)
-//	err = m.Data(ib, scan)             // fpg_data
+//	err = m.Data(ib, scan)             // fpg_data (or DataBytes)
 //	rep, err := m.Reporter()           // isr_create + fpg_report
 //	rep.SetBorder(...); rep.AddSpectrum(); rep.SetSink(sink) // optional
 //	err = m.Mine(ctx)                  // isr_setup + fpg_mine
@@ -67,6 +67,15 @@ func (m *Miner[T]) Config() Config { return m.cfg }
 // frequent.
 func (m *Miner[T]) Data(ib *tract.ItemBase[T], scan tract.ScanFunc[T]) error {
 	return m.data(ib, func(zmin int) (*tract.Bag, error) { return ib.BuildBag(scan, zmin) })
+}
+
+// DataBytes is Data for an item base of string identifiers with a scan of
+// byte-string identifiers: the bag is built by tract.BuildBagBytes, which
+// looks the identifiers up without converting them to strings. ib must
+// have been counted (tract.CountBytes or ItemBase.Count) over the same
+// records.
+func DataBytes(m *Miner[string], ib *tract.ItemBase[string], scan tract.ByteScanFunc) error {
+	return m.data(ib, func(zmin int) (*tract.Bag, error) { return tract.BuildBagBytes(ib, scan, zmin) })
 }
 
 // DataDense is Data for a database counted by db (tract.DenseBase.Count):

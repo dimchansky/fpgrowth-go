@@ -165,13 +165,12 @@ func (r *runner) mine() *cliError {
 
 	// --- read transaction database (pass 1) ---
 	inName := displayName(*o.inFile, "<stdin>")
-	in, cerr := r.openInput(*o.inFile, inName, cfg)
+	scan, cerr := r.openInput(*o.inFile, inName, cfg)
 	if cerr != nil {
 		return cerr
 	}
-	scan := in.scan
 	start := time.Now()
-	if err := tract.CountBytes(ib, in.bytes); err != nil {
+	if err := tract.CountBytes(ib, scan); err != nil {
 		return r.inputError(err, inName)
 	}
 	n, w := ib.Records(), ib.TotalWeight()
@@ -190,7 +189,9 @@ func (r *runner) mine() *cliError {
 	start = time.Now()
 	r.logf("filtering, sorting and recoding items ... ")
 	ib.SetAbort(r.aborted) // completing a large bag takes a while
-	if err := m.Data(ib, scan); err != nil {
+	// Pass 2, unless the records were retained: over byte-string names,
+	// like pass 1, so that no name is converted to a string (issue #52).
+	if err := fpg.DataBytes(m, ib, scan); err != nil {
 		if errors.Is(err, fpg.ErrNoItems) {
 			return errorf(exitNoItems, "no (frequent) items found")
 		}
@@ -335,24 +336,18 @@ func (r *runner) readItems(ib *tract.ItemBase[string], file string, cfg tabread.
 	return nil
 }
 
-// input is the transaction database: the same replayable scan with
-// string and with byte-string item names (for tract.CountBytes).
-type input struct {
-	scan  tract.ScanFunc[string]
-	bytes tract.ByteScanFunc
-}
-
 // openInput opens the transaction file (upstream opens it before the
 // "reading" message, so an open error has no message prefix) and returns
-// a replayable scan over it. Standard input is spooled to a temporary
+// a replayable scan over it, with byte-string item names (for
+// tract.CountBytes and fpg.DataBytes). Standard input is spooled to a temporary
 // file first, which is removed by cleanup.
-func (r *runner) openInput(file, name string, cfg tabread.Config) (input, *cliError) {
+func (r *runner) openInput(file, name string, cfg tabread.Config) (tract.ByteScanFunc, *cliError) {
 	path := file
 	var first *os.File
 	if file != "" {
 		f, err := os.Open(file)
 		if err != nil {
-			return input{}, errorf(exitOpen, "cannot open file "+name)
+			return nil, errorf(exitOpen, "cannot open file "+name)
 		}
 		first = f
 		r.logf("reading %s ... ", name)
@@ -360,7 +355,7 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (input, *cliEr
 		r.logf("reading %s ... ", name)
 		p, cerr := r.spool(name)
 		if cerr != nil {
-			return input{}, cerr
+			return nil, cerr
 		}
 		path = p
 	}
@@ -381,10 +376,7 @@ func (r *runner) openInput(file, name string, cfg tabread.Config) (input, *cliEr
 			first.Close()
 		}
 	})
-	return input{
-		scan:  ctxScan(r.ctx, tabread.Scan(open, name, cfg)),
-		bytes: ctxScan(r.ctx, tabread.ScanBytes(open, name, cfg)),
-	}, nil
+	return ctxScan(r.ctx, tabread.ScanBytes(open, name, cfg)), nil
 }
 
 // spool copies standard input to a temporary file and returns its path.

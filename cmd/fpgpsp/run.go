@@ -146,7 +146,6 @@ func (r *runner) main() *cliError {
 	if cerr != nil {
 		return cerr
 	}
-	scan := in.scan
 	start := time.Now()
 	if err := tract.CountBytes(ib, in.bytes); err != nil {
 		return r.inputError(err, inName)
@@ -162,7 +161,7 @@ func (r *runner) main() *cliError {
 	var recs [][]tract.Item // Shuffle: the unrecoded records
 	if o.surr == 's' {
 		var err error
-		if recs, err = psp.Records(ib, scan); err != nil {
+		if recs, err = psp.Records(ib, in.scan); err != nil {
 			return r.inputError(err, inName)
 		}
 		if !psp.IsTable(recs, ib.Len()) {
@@ -193,7 +192,7 @@ func (r *runner) main() *cliError {
 		start = time.Now()
 		r.logf("estimating pattern spectrum ... ")
 		var cerr *cliError
-		if spec, cerr = r.estimate(ib, scan, seed); cerr != nil {
+		if spec, cerr = r.estimate(ib, in.bytes, seed); cerr != nil {
 			return cerr
 		}
 	} else {
@@ -212,7 +211,7 @@ func (r *runner) main() *cliError {
 		start = time.Now()
 		r.logf("generating pattern spectrum ... ")
 		var cerr *cliError
-		if spec, cerr = r.generate(ib, scan, recs, method, parts); cerr != nil {
+		if spec, cerr = r.generate(ib, in.bytes, recs, method, parts); cerr != nil {
 			return cerr
 		}
 	}
@@ -233,9 +232,10 @@ func (r *runner) main() *cliError {
 
 // estimate is fpg_estpsp: prepare the data (with the complex variant and
 // the default mode, whatever the options say) and estimate the spectrum.
-func (r *runner) estimate(ib *tract.ItemBase[string], scan tract.ScanFunc[string], seed int64) (*report.Spectrum, *cliError) {
+// scan is the second pass if the records were not retained.
+func (r *runner) estimate(ib *tract.ItemBase[string], scan tract.ByteScanFunc, seed int64) (*report.Spectrum, *cliError) {
 	o := r.o
-	m, d, err := psp.Prepare(ib, scan, o.estimConfig())
+	m, d, err := psp.PrepareBytes(ib, scan, o.estimConfig())
 	if err != nil {
 		return nil, r.prepError(err)
 	}
@@ -257,7 +257,9 @@ func (r *runner) estimate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 // generate is fpg_genpsp: prepare the data, then generate and mine the
 // surrogate data sets of every part (upstream's threads; at most
 // GOMAXPROCS parts run at once) and sum their spectra in part order.
-func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string],
+// scan is the second pass if the records were not retained (all methods
+// but Shuffle, whose records are recs).
+func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ByteScanFunc,
 	recs [][]tract.Item, method psp.Method, parts []psp.Part) (*report.Spectrum, *cliError) {
 	cfg := r.o.minerConfig()
 	var d *psp.Data
@@ -273,7 +275,7 @@ func (r *runner) generate(ib *tract.ItemBase[string], scan tract.ScanFunc[string
 		d = psp.TableData(recs, ib.Len(), zmin)
 		smin, smax = fpg.Thresholds(cfg, ib.TotalWeight())
 	} else {
-		m, data, err := psp.Prepare(ib, scan, cfg)
+		m, data, err := psp.PrepareBytes(ib, scan, cfg)
 		if err != nil {
 			return nil, r.prepError(err)
 		}

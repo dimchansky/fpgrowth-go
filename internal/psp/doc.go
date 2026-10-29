@@ -15,6 +15,7 @@
 //
 //	ib.Count(scan)                    // tbg_read
 //	m, d, err := Prepare(ib, scan, c) // fpg_data of fpg_genpsp/fpg_estpsp (P1)
+//	                                  // (PrepareBytes: byte-string scan)
 //	recs, _ := Records(ib, scan)      // Shuffle: the unprepared records
 //	d := TableData(recs, n, zmin)     //   (FPG_NORECODE|FPG_NOSORT)
 //	parts := Partition(seed, cnt, z)  // the threads of fpg_genpsp

@@ -14,7 +14,9 @@ import (
 // reading, spooling of standard input, cancellation and error messages.
 
 // input is the transaction database: the same replayable scan with
-// string and with byte-string item names (for tract.CountBytes).
+// byte-string item names (for tract.CountBytes and psp.PrepareBytes) and
+// with string item names (for psp.Records, -gs). Unlike cmd/fpgrowth,
+// which needs only the former, fpgpsp keeps both.
 type input struct {
 	scan  tract.ScanFunc[string]
 	bytes tract.ByteScanFunc

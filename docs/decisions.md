@@ -166,3 +166,10 @@ Proposed on 2026-10-28 for issue #48; approved by the maintainer on 2026-10-28.
   slice-indexed item base (candidate 5 of `docs/benchmarks.md`), which
   would change the generic item base and every caller, while
   `tract.CountBytes` already saves the second lookup of pass 1.
+- **Note (2026-10-29, issue #52).** Over the budget, the second pass of
+  both CLIs now uses `tract.BuildBagBytes` (through `fpg.DataBytes` and
+  `psp.PrepareBytes`) over `tabread.ScanBytes`, like pass 1, so no item
+  name is converted to a string; `fpgpsp -gs` still reads its records
+  with `psp.Records` over the string scan. `fpgrowth -s50` on B×360
+  (195 MB): 53.4G to 44.4G instructions (C 17.0G); peak memory and
+  output unchanged (`docs/benchmarks.md`).
