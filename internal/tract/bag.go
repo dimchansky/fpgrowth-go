@@ -99,6 +99,15 @@ func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
 		for _, id := range ids { // recode (upstream: recode)
 			c, known := b.codes[id]
 			if !known {
+				if p.skipUnknown { // what unknown does, without the call
+					if b.check != nil {
+						if err := b.check(id); err != nil {
+							p.err = fmt.Errorf("record %d: %w", p.records, err)
+							return false
+						}
+					}
+					continue
+				}
 				if !p.unknown(id) {
 					return false
 				}

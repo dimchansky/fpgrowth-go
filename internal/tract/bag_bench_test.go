@@ -5,6 +5,7 @@ package tract_test
 // deterministic oracle dataset held in memory as string slices.
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/dimchansky/fpgrowth-go/internal/oracle"
@@ -78,5 +79,30 @@ func BenchmarkBuildBag(b *testing.B) {
 			}
 			b.ReportMetric(float64(nodes), "bag-nodes")
 		})
+	}
+}
+
+// BenchmarkBuildBagSelect is BenchmarkBuildBag with only 20 of 2000
+// items selected (default appearance AppearNone): most identifiers of
+// both passes are unknown and ignored.
+func BenchmarkBuildBagSelect(b *testing.B) {
+	scan := benchScan(b, 2000)
+	sel := make([]string, 20)
+	for i := range sel {
+		sel[i] = strconv.Itoa(i)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		ib := tract.NewItemBase[string]()
+		if err := ib.Select(sel...); err != nil {
+			b.Fatal(err)
+		}
+		if err := ib.Count(scan); err != nil {
+			b.Fatal(err)
+		}
+		ib.Recode(10, 2)
+		if _, err := ib.BuildBag(scan, 1); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

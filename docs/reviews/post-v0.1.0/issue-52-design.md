@@ -90,7 +90,24 @@ The library path is the string `BuildBag` now built on `pass2`.
 `BenchmarkItemBase_BuildBag` and `BenchmarkBuildBag` were run on main
 and #52 interleaved, 6 runs each, with benchstat: -1.4 % (p=0.004),
 -1.6 % (p=0.008) and ~ (p=0.15) in time, and 2 fewer allocations per
-build. There is no regression.
+build.
+
+Note added after the performance review (finding P1): on input where
+most identifiers are unknown and ignored (default appearance
+`AppearNone`, as after `Select`) the first version was 3.4-4.9 % slower
+than main, because every unknown occurrence went through the
+non-inlined `pass2.unknown`. `BuildBag` now skips such an identifier
+in its own loop, calling the check function there if one is set. Main
+vs the fix, 6 interleaved runs, GOMAXPROCS=2: the review's
+`select20` -2.5 % (p=0.008) and then ~ (p=0.59), `select20-check` ~
+(p=0.056), new `BenchmarkBuildBagSelect` ~ (p=0.43),
+`ItemBase_BuildBag` -1.7 % (p=0.009). One shape remains slightly
+slower: 500,000 one-item records +1.7 % (p=0.008), the per-record cost
+of the shared `begin` and `end` helpers (finding P2, accepted).
+
+Peak memory over the budget is unchanged on these rows; on long
+records it falls (4000 records of 10,010 items: 141 to 125 MB), since
+no string is made per field (finding P3).
 
 ## What remains
 
