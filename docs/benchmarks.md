@@ -928,6 +928,28 @@ What remains: hashing is 2.4 times C's (Go's map against upstream's
 string hash table), reading fields 1.4 times, and an input over the
 budget is read twice with the old double lookup in pass 2.
 
+### Second pass over the budget (issue #52)
+
+Above the 128 MiB budget of D8 the second pass now looks the item names
+up as byte slices (`tract.BuildBagBytes` over `tabread.ScanBytes`, as
+pass 1), instead of converting every field to a string. Measured on
+2026-10-29 (Apple M1 Max, Go 1.27, GOMAXPROCS=2, load average 3.5-4.2
+from other sessions; two interleaved rounds, one process at a time,
+instructions within 0.1 % between rounds; the lower of the two shown; output md5
+equal for C, main and #52 on every row). Input B as above; C is the
+release build, `fpgpsp-fixed` for `fpgpsp`.
+
+| Run | C | main | #52 | #52 / main | #52 / C | user s (C / main / #52) | max RSS MB (C / main / #52) |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| fpgrowth -s50 B×360 (195 MB, over the budget) | 16.97G | 53.43G | 44.42G | -16.9 % | 2.62 | 1.72 / 4.14 / 3.44 | 464 / 135 / 135 |
+| fpgpsp -ge -z1 B×360 | 19.92G | 61.88G | 52.85G | -14.6 % | 2.65 | 2.87 / 5.27 / 4.52 | 519 / 421 / 421 |
+| fpgrowth -s50 B×200 (108 MB, within the budget) | 9.42G | 14.40G | 14.40G | -0.0 % | 1.53 | 0.94 / 1.09 / 1.08 | 259 / 127 / 127 |
+| fpgpsp -ge -z1 B×200 | 11.08G | 18.76G | 18.75G | -0.1 % | 1.69 | 1.56 / 1.64 / 1.63 | 259 / 254 / 254 |
+
+Within the budget the second pass is not run, so nothing changes there.
+Over the budget the input is still read and tokenized twice, which is
+most of the remaining gap to C (C reads it once).
+
 ## Reproducing
 
 ```bash

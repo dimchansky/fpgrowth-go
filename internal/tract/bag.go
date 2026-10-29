@@ -88,80 +88,195 @@ type bagBuilder struct {
 // does not filter (target rules, evaluation measures other than none
 // and b). BuildBag does not modify the item base; it may be called again.
 func (b *ItemBase[T]) BuildBag(scan ScanFunc[T], zmin int) (*Bag, error) {
-	if !b.isRecoded {
-		panic("tract: ItemBase.BuildBag called before Recode")
+	if bag, done, err := b.buildFromRetained(zmin); done {
+		return bag, err
 	}
-	if b.ret.on {
-		ret := b.ret
-		b.ret = retained{} // release the records (a later call scans)
-		return b.buildRetained(&ret, zmin)
-	}
-	bld := newBagBuilder(len(b.items))
-	skipUnknown := b.defApp == AppearNone
-	var (
-		records int
-		total   Supp
-		codes   []Item
-		err     error
-	)
+	p := b.newPass2(zmin)
 	scanErr := scan(func(ids []T, w Supp) bool {
-		records++
-		if records > b.records {
-			err = fmt.Errorf("record %d: more records than in pass 1: %w", records, ErrNotReplayable)
+		if !p.begin(w) {
 			return false
 		}
-		if w < 0 {
-			err = fmt.Errorf("record %d: weight %d: %w", records, w, ErrNegativeWeight)
-			return false
-		}
-		var ok bool
-		if total, ok = addChecked(total, w); !ok {
-			err = fmt.Errorf("record %d: %w", records, ErrWeightOverflow)
-			return false
-		}
-		codes = codes[:0]
 		for _, id := range ids { // recode (upstream: recode)
 			c, known := b.codes[id]
 			if !known {
-				if b.check != nil {
-					if err = b.check(id); err != nil {
-						err = fmt.Errorf("record %d: %w", records, err)
-						return false
+				if p.skipUnknown { // what unknown does, without the call
+					if b.check != nil {
+						if err := b.check(id); err != nil {
+							p.err = fmt.Errorf("record %d: %w", p.records, err)
+							return false
+						}
 					}
-				}
-				if skipUnknown {
 					continue
 				}
-				err = fmt.Errorf("record %d: item %v not seen in pass 1: %w", records, id, ErrNotReplayable)
-				return false
+				if !p.unknown(id) {
+					return false
+				}
+				continue
 			}
 			if c >= 0 {
-				codes = append(codes, c)
+				p.codes = append(p.codes, c)
 			}
 		}
-		SortItems(codes) // tbg_itsort; then drop duplicates
-		codes = slices.Compact(codes)
-		if zmin > 1 && len(codes) < zmin { // tbg_filter
-			codes = codes[:0]
-		}
-		if err = bld.add(codes, w); err != nil {
-			err = fmt.Errorf("record %d: %w", records, err)
+		return p.end()
+	})
+	return p.finish(scanErr)
+}
+
+// BuildBagBytes is BuildBag over a scan of byte-string identifiers for
+// an item base of string identifiers, the counterpart of CountBytes: it
+// looks every identifier up without converting it to a string. A string
+// is allocated only for an identifier that is not registered and is
+// passed to the check function (SetCheck) or reported as not replayable;
+// an ignored one (default appearance AppearNone, no check) is skipped
+// without. The result, including every error, is that of BuildBag over the
+// same records with string identifiers.
+func BuildBagBytes(b *ItemBase[string], scan ByteScanFunc, zmin int) (*Bag, error) {
+	if bag, done, err := b.buildFromRetained(zmin); done {
+		return bag, err
+	}
+	p := b.newPass2(zmin)
+	scanErr := scan(func(ids [][]byte, w Supp) bool {
+		if !p.begin(w) {
 			return false
 		}
-		return true
+		for _, id := range ids { // recode (upstream: recode)
+			c, known := b.codes[string(id)] // no allocation
+			if !known {
+				if p.ignore { // skip it without allocating a string
+					continue
+				}
+				if !p.unknown(string(id)) {
+					return false
+				}
+				continue
+			}
+			if c >= 0 {
+				p.codes = append(p.codes, c)
+			}
+		}
+		return p.end()
 	})
-	if err != nil {
-		return nil, err
+	return p.finish(scanErr)
+}
+
+// buildFromRetained is the start of BuildBag and BuildBagBytes: it
+// panics before Recode and, if Count retained the records, releases them
+// and builds the bag from them (done is true).
+func (b *ItemBase[T]) buildFromRetained(zmin int) (bag *Bag, done bool, err error) {
+	if !b.isRecoded {
+		panic("tract: ItemBase.BuildBag called before Recode")
+	}
+	if !b.ret.on {
+		return nil, false, nil
+	}
+	ret := b.ret
+	b.ret = retained{} // release the records (a later call scans)
+	bag, err = b.buildRetained(&ret, zmin)
+	return bag, true, err
+}
+
+// pass2 is the state of a scanning BuildBag: the per-record steps around
+// the identifier lookup, which BuildBag and BuildBagBytes do themselves.
+// For every record the caller calls begin, appends the code of every
+// registered identifier to codes (codes < 0, of removed items, are
+// skipped) and calls unknown for every other one (or skips it if ignore
+// is set, which is what unknown would do), then calls end; it
+// stops the scan as soon as one of them returns false. finish completes
+// the bag.
+type pass2[T comparable] struct {
+	b           *ItemBase[T]
+	bld         *bagBuilder
+	zmin        int
+	skipUnknown bool
+	ignore      bool // skipUnknown, and there is no check function
+	records     int
+	total       Supp
+	w           Supp   // the weight of the current record
+	codes       []Item // the codes of the current record
+	err         error  // the error that stopped the scan
+}
+
+// newPass2 returns the state of a scan of pass 2 with the filter zmin.
+func (b *ItemBase[T]) newPass2(zmin int) *pass2[T] {
+	return &pass2[T]{
+		b:           b,
+		bld:         newBagBuilder(len(b.items)),
+		zmin:        zmin,
+		skipUnknown: b.defApp == AppearNone,
+		ignore:      b.defApp == AppearNone && b.check == nil,
+	}
+}
+
+// begin starts the next record, of weight w.
+func (p *pass2[T]) begin(w Supp) bool {
+	p.records++
+	if p.records > p.b.records {
+		p.err = fmt.Errorf("record %d: more records than in pass 1: %w", p.records, ErrNotReplayable)
+		return false
+	}
+	if w < 0 {
+		p.err = fmt.Errorf("record %d: weight %d: %w", p.records, w, ErrNegativeWeight)
+		return false
+	}
+	var ok bool
+	if p.total, ok = addChecked(p.total, w); !ok {
+		p.err = fmt.Errorf("record %d: %w", p.records, ErrWeightOverflow)
+		return false
+	}
+	p.w = w
+	p.codes = p.codes[:0]
+	return true
+}
+
+// unknown handles the identifier id of the current record that is not
+// registered in the item base: the check function (SetCheck) is called,
+// then id is skipped if new items were ignored in pass 1 (default
+// appearance AppearNone); otherwise the scan is not replayable.
+func (p *pass2[T]) unknown(id T) bool {
+	if p.b.check != nil {
+		if err := p.b.check(id); err != nil {
+			p.err = fmt.Errorf("record %d: %w", p.records, err)
+			return false
+		}
+	}
+	if p.skipUnknown {
+		return true
+	}
+	p.err = fmt.Errorf("record %d: item %v not seen in pass 1: %w", p.records, id, ErrNotReplayable)
+	return false
+}
+
+// end sorts and filters the codes of the current record and adds it to
+// the bag.
+func (p *pass2[T]) end() bool {
+	codes := p.codes
+	SortItems(codes) // tbg_itsort; then drop duplicates
+	codes = slices.Compact(codes)
+	if p.zmin > 1 && len(codes) < p.zmin { // tbg_filter
+		codes = codes[:0]
+	}
+	if err := p.bld.add(codes, p.w); err != nil {
+		p.err = fmt.Errorf("record %d: %w", p.records, err)
+		return false
+	}
+	return true
+}
+
+// finish completes the bag after the scan, which returned scanErr.
+func (p *pass2[T]) finish(scanErr error) (*Bag, error) {
+	if p.err != nil {
+		return nil, p.err
 	}
 	if scanErr != nil {
 		return nil, scanErr
 	}
-	if records != b.records || total != b.wgt {
+	b := p.b
+	if p.records != b.records || p.total != b.wgt {
 		return nil, fmt.Errorf(
 			"pass 2 read %d records of weight %d, pass 1 %d of weight %d: %w",
-			records, total, b.records, b.wgt, ErrNotReplayable)
+			p.records, p.total, b.records, b.wgt, ErrNotReplayable)
 	}
-	return bld.finish(records, total, b.abort)
+	return p.bld.finish(p.records, p.total, b.abort)
 }
 
 // newBagBuilder returns a builder for a bag over n items.

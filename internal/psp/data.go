@@ -93,11 +93,23 @@ func PrepConfig(cfg fpg.Config) fpg.Config {
 // the miner of the preparation (for its thresholds) and the array; the
 // error is fpg.ErrNoItems if no item is frequent.
 func Prepare[T comparable](ib *tract.ItemBase[T], scan tract.ScanFunc[T], cfg fpg.Config) (*fpg.Miner[T], *Data, error) {
+	return prepare(ib, cfg, func(m *fpg.Miner[T]) error { return m.Data(ib, scan) })
+}
+
+// PrepareBytes is Prepare for an item base of string identifiers with a
+// scan of byte-string identifiers (fpg.DataBytes): the identifiers of the
+// second pass are not converted to strings.
+func PrepareBytes(ib *tract.ItemBase[string], scan tract.ByteScanFunc, cfg fpg.Config) (*fpg.Miner[string], *Data, error) {
+	return prepare(ib, cfg, func(m *fpg.Miner[string]) error { return fpg.DataBytes(m, ib, scan) })
+}
+
+// prepare is Prepare with the data preparation of the miner done by data.
+func prepare[T comparable](ib *tract.ItemBase[T], cfg fpg.Config, data func(*fpg.Miner[T]) error) (*fpg.Miner[T], *Data, error) {
 	m, err := fpg.New[T](PrepConfig(cfg))
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := m.Data(ib, scan); err != nil {
+	if err := data(m); err != nil {
 		return nil, nil, err
 	}
 	d, err := FromBag(m.Bag(), ib.Len())

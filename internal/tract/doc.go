@@ -18,6 +18,10 @@
 //	                                // tbg_sort(+1, 0), tbg_reduce(0)
 //	bag.Pack(k)                     // tbg_pack(bag, k)
 //
+// CountBytes and BuildBagBytes are Count and BuildBag over byte-string
+// identifiers for an item base of strings (the CLIs): they look the
+// identifiers up without converting them to strings.
+//
 // Instead of storing every transaction like upstream, pass 2 inserts the
 // recoded transactions into a prefix tree and the bag iterates that tree
 // in exactly the order of upstream's sorted and reduced bag.
@@ -33,7 +37,7 @@
 //	ib_readsel                       ItemBase.Select
 //	ib_readapp                       ItemBase.SetDefaultAppearance,
 //	                                 ItemBase.AddAppearance
-//	ib_read (counting), tbg_read     ItemBase.Count
+//	ib_read (counting), tbg_read     ItemBase.Count, CountBytes
 //	ib_recode, idm_sort              ItemBase.Recode
 //	nocmp, asccmp, descmp,           itemComparator
 //	asccmpx, descmpx
@@ -47,7 +51,7 @@
 //	ib_getwgt                        ItemBase.TotalWeight
 //	ib_maxfrq                        ItemBase.MaxFrequency
 //	TABAG                            Bag
-//	tbg_add, recode, tbg_filter,     ItemBase.BuildBag
+//	tbg_add, recode, tbg_filter,     ItemBase.BuildBag, BuildBagBytes
 //	tbg_itsort, tbg_sort, ta_cmp,
 //	tbg_reduce
 //	tbg_pack, ta_pack                Bag.Pack, Bag.PackCount, Item.IsPacked,
