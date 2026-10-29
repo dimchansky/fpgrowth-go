@@ -926,7 +926,8 @@ v0.1.0 equals main on these rows.
 
 What remains: hashing is 2.4 times C's (Go's map against upstream's
 string hash table), reading fields 1.4 times, and an input over the
-budget is read twice with the old double lookup in pass 2.
+budget is read twice with the old double lookup in pass 2 (the string
+conversions of pass 2 were removed by #52, below).
 
 ### Second pass over the budget (issue #52)
 

@@ -4,9 +4,9 @@ Durable project state so work can resume after a context reset. Keep this
 short: current status, next steps, open problems. Details belong in the
 linked documents.
 
-## Current status (2026-10-28, post-v0.1.0 cycle complete, not released)
+## Current status (2026-10-29, post-v0.1.0 cycle complete, not released)
 
-- **Roadmap #24: all 17 tasks merged** into `main` with green CI, each
+- **Roadmap #24: all 19 tasks merged** into `main` with green CI, each
   with independent review (records in `docs/reviews/post-v0.1.0/`). No
   Critical or High finding is open.
 - **Not released.** No tag and no version are chosen; the maintainer
@@ -18,7 +18,12 @@ linked documents.
   packaging READY WITH CONDITIONS (the D7 sign-off; two Low documentation
   findings, fixed), performance NO REGRESSIONS (every comparable row
   9-49 % fewer instructions than v0.1.0, outputs identical to v0.1.0
-  and C). Records: `docs/reviews/post-v0.1.0/final-audit-*.md`.
+  and C), and repeated again on `a5f548c` (2026-10-29, after #53 and
+  #52): READY WITH CONDITIONS (the D7 sign-off; two Low documentation
+  findings, fixed) and NO REGRESSIONS (all 52 CLI rows within ±0.64 %
+  of the previous audit, every comparable row 9-49 % below v0.1.0,
+  outputs identical; over-budget rows -15 to -17 %). Records:
+  `docs/reviews/post-v0.1.0/final-audit-*.md`.
 - **Before a release:** the maintainer's sign-off on D7
   (`docs/decisions.md`) is pending. D8 was approved on 2026-10-28.
 
@@ -41,6 +46,8 @@ linked documents.
 | `fpgpsp`: no per-surrogate item base and FP-tree rebuild | #39 | #46 | `fde9e41` |
 | `fpgpsp -ge` sampling | #47 | #49 | `95f2794` |
 | reading and preparation pipeline (read once, D8) | #48 | #50 | `37d33b3` |
+| `TestCancelTreeBuild` bounded by allocations, not wall time | #53 | #54 | `acd8d4a` |
+| over-budget reread with byte-slice names | #52 | #55 | `a5f548c` |
 
 What each task changed, with measurements and CI runs, is in the
 progress log of issue #24, `CHANGELOG.md` (`[Unreleased]`) and the
@@ -88,10 +95,13 @@ review records.
 ## Open problems
 
 - None blocking known.
-- Possible follow-up (not filed): above the 128 MiB budget of D8 the
-  CLIs read the input a second time, and that pass still converts every
-  name to a string (3.1× C's instructions on B×360; 29 % fewer than
-  before #48). A byte-slice `BuildBag` would remove it
-  (`docs/reviews/post-v0.1.0/issue-48-review-performance.md`, P3).
+- Above the 128 MiB budget of D8 the CLIs still read and tokenize the
+  input twice (since #52 without string conversions): about 2.6× C's
+  instructions on B×360. Removing it needs a larger budget or a spill
+  format, which D8 rejected for now.
+- Accepted test limits from the #53 reviews: `TestCancelTreeBuild` does
+  not detect work after the cancellation that does not allocate (D1),
+  and no test covers the build-loop cancellation checks
+  (`buildCheckEvery`, F1). Not filed.
 - ALG-1 shipped in v0.1.0 as a documented known limitation and is
   fixed for the next release (#16).
