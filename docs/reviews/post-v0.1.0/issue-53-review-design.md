@@ -22,15 +22,20 @@
 
 ## Critic's report
 
+Scope: `fpgrowth_test.go` (the only file changed): does the `TotalAlloc`
+bound catch the defect class for all 5 subtests; measurement points;
+comment accuracy; what is lost compared with the 30 ms latency check.
+Daytime run on 2026-10-29 under load 10.9-23.6 from other work; no
+conclusion rests on wall time except D1 (a difference of about 1000x).
 
-## Evidence examined
+### Evidence examined
 
 - Issue #53 (no comments). Acceptance: every subtest still fails when the check before the tree build is removed; passes reliably under `-race`.
 - `git diff origin/main...HEAD`, commit message.
 - `fpgrowth.go` (`start`/OnStart, `m.Reporter`, `Mine`), `internal/fpg/fpg.go` `Miner.Mine`, `mine.go` (`mineItemSets`, `topLevel`, `buildCheckEvery`), `simple.go`/`complex.go`/`single.go`/`topdown.go`/`tree.go`, `arena.go` (`presize`, `treePresize`), `workspace.go`.
 - No library code starts goroutines (only `cmd/`). `fpg.Workspace` arena reuse is used only by `internal/psp`.
 
-## Commands run
+### Commands run
 
 Mutations reverted with `git checkout -- internal`; raw output in `review-design/mut-*.txt`.
 
@@ -47,7 +52,7 @@ Mutations reverted with `git checkout -- internal`; raw output in `review-design
 
 gofmt empty; vet, staticcheck ok; `go test ./...` ok; `go test -race .` ok (52.9 s); `go test -race -shuffle=on -run TestCancel .` ok.
 
-## Findings
+### Findings
 
 | ID | Severity | Status | Summary | Evidence |
 | --- | --- | --- | --- | --- |
@@ -56,15 +61,15 @@ gofmt empty; vet, staticcheck ok; `go test ./...` ok; `go test -race .` ok (52.9
 | D3 | info | Confirmed | Measurement points correct; `ReadMemStats` outside the latency window; `TotalAlloc` cumulative; no other allocators in the window; values identical across plain, -race, -shuffle, repeats. | Base runs |
 | D4 | info | Confirmed | Comment arithmetic correct (58.9x; 10.3x); `fpNode` is 16 B on 386 too. | `simple.go:12`, `arena.go` |
 
-## Fixes requested
+### Fixes requested
 
 1. D1: (a) restore a loose latency check immune to scheduler noise (fail only if every one of 3 reruns exceeds ~30-50 ms), or (b) document that only allocations are bounded.
 2. D2 (optional): state the no-presize margin or its dependence on `buildCheckEvery`.
 
-## Performance impact
+### Performance impact
 
 None (test only).
 
-## Decision
+### Decision
 
 **ACCEPT WITH CONDITIONS** (D1 Medium; rest Low/info). Both acceptance criteria of #53 met.
