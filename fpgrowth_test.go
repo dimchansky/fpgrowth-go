@@ -7,6 +7,7 @@ import (
 	"iter"
 	"math"
 	"math/rand/v2"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -942,16 +943,23 @@ func sparseSource(n int) Source[int] {
 	})
 }
 
-// treeBuildLatencyLimit bounds the return after a cancellation in
-// OnStart in TestCancelTreeBuild. Building the whole top-level FP-tree
-// takes 104-490 ms there (Apple M1 Max, unloaded; measured with the
-// cancellation checks removed), while a run with the checks returns in
-// well under 0.1 ms. The test runs sequentially, so parallel tests'
-// CPU and GC load (which cost 219-241 ms on hosted runners) no longer
-// delays it; the limit leaves a wide margin for descheduling but stays
-// far below a whole tree build, which is what the test is meant to
-// catch, also on faster machines.
-const treeBuildLatencyLimit = 30 * time.Millisecond
+// treeBuildAllocLimit bounds the heap bytes allocated between the
+// cancellation in OnStart and the return in TestCancelTreeBuild. It
+// replaces a 30 ms wall-clock limit that hosted macOS runners exceeded
+// under -race (34 ms) without any code change. With the cancellation
+// checks in place every subtest allocates 71,232 bytes in 12 objects on
+// darwin/arm64 (the reporter set-up and the result sink for 1000 items;
+// the same with -race and on every path; 62,784 bytes on linux/386).
+// Without the check at the start of Miner.Mine, every path first
+// allocates the node arena of the top-level FP-tree, presized for the
+// whole bag: 128-285 MB, and 43-95 MB with -race (100,000 transactions),
+// whether or not the build loop's own checks then stop it. 4 MiB is about
+// 59 times the measured value and a tenth of the smallest tree. A tree
+// built without a presized arena allocates its nodes while it grows: when
+// the build loop's checks (every buildCheckEvery transactions) stop it
+// after the first block it has allocated 9-14 MB, only 2-3 times the
+// limit, and that margin shrinks with buildCheckEvery.
+const treeBuildAllocLimit = 4 << 20
 
 // TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
 // is built from a large bag: every algorithm (and the item set tree path
@@ -959,14 +967,18 @@ const treeBuildLatencyLimit = 30 * time.Millisecond
 // promptly, without reporting anything, instead of first building the
 // whole tree.
 //
-// The test and its subtests do not run in parallel: between the
-// cancellation and the return there is only O(items) work (the reporter
-// set-up and the check at the start of Miner.Mine), so every latency
-// beyond a few milliseconds is the goroutine waiting for a CPU or doing
-// GC work while other parallel tests run. Measured with -cpu 1,
-// GOMEMLIMIT=300MiB and the whole package in parallel: 62 ms and 184 ms
-// spent in Reporter (normally 1 us); a hosted macOS runner showed 241 ms.
-// A sequential top-level test runs while all parallel tests are paused.
+// Between the cancellation and the return there is only O(items) work
+// (the reporter set-up and the check at the start of Miner.Mine), while
+// building the tree allocates its nodes. The test bounds that work by
+// the bytes allocated in between (runtime.MemStats.TotalAlloc), which
+// does not depend on the machine's load; the latency is only logged,
+// since hosted runners deschedule the goroutine or make it assist GC for
+// tens of milliseconds. Work that does not allocate (a pass over the bag
+// before the check, for example) is therefore no longer detected; the
+// tree build, which the test is meant to catch, always allocates.
+// MemStats is process-wide, so the test and its subtests do not run in
+// parallel: a sequential top-level test runs while all parallel tests
+// are paused, so no other test allocates in between.
 func TestCancelTreeBuild(t *testing.T) {
 	n := 300_000
 	if raceEnabled {
@@ -994,24 +1006,29 @@ func TestCancelTreeBuild(t *testing.T) {
 		t.Run(r.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			var before, after runtime.MemStats
 			var canceled time.Time
 			calls := 0
 			err := r.mine(ctx, func(Stats) error {
+				runtime.ReadMemStats(&before)
 				canceled = time.Now()
 				cancel()
 				return nil
 			}, func() { calls++ })
 			latency := time.Since(canceled)
+			runtime.ReadMemStats(&after)
 			if err != context.Canceled {
 				t.Fatalf("got %v", err)
 			}
 			if calls != 0 {
 				t.Errorf("%d results after the cancellation", calls)
 			}
-			if latency > treeBuildLatencyLimit {
-				t.Errorf("returned %v after the cancellation", latency)
+			bytes := after.TotalAlloc - before.TotalAlloc
+			if bytes > treeBuildAllocLimit {
+				t.Errorf("allocated %d bytes after the cancellation, want at most %d", bytes, treeBuildAllocLimit)
 			}
-			t.Logf("returned %v after the cancellation", latency)
+			t.Logf("allocated %d bytes in %d objects and returned %v after the cancellation",
+				bytes, after.Mallocs-before.Mallocs, latency)
 		})
 	}
 }
