@@ -949,14 +949,16 @@ func sparseSource(n int) Source[int] {
 // under -race (34 ms) without any code change. With the cancellation
 // checks in place every subtest allocates 71,232 bytes in 12 objects on
 // darwin/arm64 (the reporter set-up and the result sink for 1000 items;
-// the same with -race and on every path). Without the check at the start
-// of Miner.Mine, every path first allocates the node arena of the
-// top-level FP-tree, presized for the whole bag: 128-285 MB, and 43-95 MB
-// with -race (100,000 transactions), whether or not the build loop's own
-// checks then stop it. A tree built without a presized arena would
-// allocate its nodes while it grows, so the bound does not depend on the
-// presizing. 4 MiB is about 59 times the measured value and a tenth of
-// the smallest tree.
+// the same with -race and on every path; 62,784 bytes on linux/386).
+// Without the check at the start of Miner.Mine, every path first
+// allocates the node arena of the top-level FP-tree, presized for the
+// whole bag: 128-285 MB, and 43-95 MB with -race (100,000 transactions),
+// whether or not the build loop's own checks then stop it. 4 MiB is about
+// 59 times the measured value and a tenth of the smallest tree. A tree
+// built without a presized arena allocates its nodes while it grows: when
+// the build loop's checks (every buildCheckEvery transactions) stop it
+// after the first block it has allocated 9-14 MB, only 2-3 times the
+// limit, and that margin shrinks with buildCheckEvery.
 const treeBuildAllocLimit = 4 << 20
 
 // TestCancelTreeBuild cancels in OnStart, before the top-level FP-tree
@@ -971,10 +973,12 @@ const treeBuildAllocLimit = 4 << 20
 // the bytes allocated in between (runtime.MemStats.TotalAlloc), which
 // does not depend on the machine's load; the latency is only logged,
 // since hosted runners deschedule the goroutine or make it assist GC for
-// tens of milliseconds. MemStats is process-wide, so the test and its
-// subtests do not run in parallel: a sequential top-level test runs
-// while all parallel tests are paused, so no other test allocates in
-// between.
+// tens of milliseconds. Work that does not allocate (a pass over the bag
+// before the check, for example) is therefore no longer detected; the
+// tree build, which the test is meant to catch, always allocates.
+// MemStats is process-wide, so the test and its subtests do not run in
+// parallel: a sequential top-level test runs while all parallel tests
+// are paused, so no other test allocates in between.
 func TestCancelTreeBuild(t *testing.T) {
 	n := 300_000
 	if raceEnabled {
