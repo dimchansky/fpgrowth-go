@@ -161,6 +161,26 @@ func TestBuildBagBytes_errors(t *testing.T) {
 			t.Errorf("%s: error %v, want %v", tt.name, err, tt.want)
 		}
 	}
+	// A record error wins over the error of a scan that fails after yield
+	// returned false, in both passes.
+	for _, bytes := range []bool{false, true} {
+		b := NewItemBase[string]()
+		if err := b.Count(strScan(recs...)); err != nil {
+			t.Fatal(err)
+		}
+		b.Recode(1, 0)
+		bad := []strRecord{srec(-1, "a")}
+		sscan, bscan := failingScans(bad, len(bad))
+		var err error
+		if bytes {
+			_, err = BuildBagBytes(b, bscan, 0)
+		} else {
+			_, err = b.BuildBag(sscan, 0)
+		}
+		if !errors.Is(err, ErrNegativeWeight) || errors.Is(err, errScan2) {
+			t.Errorf("bytes %v: error %v, want the record error", bytes, err)
+		}
+	}
 	b := NewItemBase[string]()
 	mustPanic(t, "BuildBagBytes before Recode", func() { _, _ = BuildBagBytes(b, bytesScan(), 0) })
 }

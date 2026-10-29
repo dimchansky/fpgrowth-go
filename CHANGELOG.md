@@ -140,7 +140,8 @@ The release workflow publishes the section whose heading matches the tag
 
 - Above the 128 MiB budget, the second read of the input by `fpgrowth`
   and `fpgpsp` looks the item names up as byte slices, like the first,
-  instead of converting every name to a string (`tract.BuildBagBytes`).
+  instead of converting every name to a string (`tract.BuildBagBytes`;
+  `fpgpsp -gs` still reads its records through the string scan).
   On 195 MB of sparse transactions (instructions retired, Apple M1 Max):
   `fpgrowth -s50` 53.4G to 44.4G (C 17.0G), `fpgpsp -ge -z1` 61.9G to
   52.9G (C 19.9G); user time 4.1 s to 3.4 s. Inputs within the budget,
