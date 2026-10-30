@@ -45,15 +45,16 @@ The results (item sets, rules, supports and evaluation values) are checked
 against Christian Borgelt's C program, built from the unmodified sources,
 and against a brute-force oracle (see [Testing](#testing)). Performance
 figures in this README and in `docs/benchmarks.md` are measurements on one
-machine (Apple M1 Max); on that machine the Go CLI took 1.12–2.08× the C
-program's wall time across the 32 main benchmark configurations
-(geometric mean 1.60×). That mean was computed by hand from the medians
-of five runs per configuration (no committed tool computes it, and no
-significance test was made), and it excludes the 15 size-limited
-closed/maximal (`-n`) configurations: there Go was faster than C on dense
-data with a small size limit, but 2.2–3.2× slower than C on the large
-sparse dataset (1.7–3.0× in the independent audit's re-run), where Go
-performs an exact check that C omits (deviation M5). Validate on your own
+machine (Apple M1 Max); on that machine the Go CLI took 1.08–1.59× the C
+program's wall time with output to `/dev/null` across the 32 main
+benchmark configurations (geometric mean 1.37×; 1.61× in v0.1.0), and
+1.8–2.1× its instructions. That mean comes from the medians of five runs
+per configuration (no committed tool computes it, and no significance
+test was made), and it excludes the size-limited closed/maximal (`-n`)
+configurations: there Go was faster than C on dense data with a small
+size limit, but 1.6–2.2× slower than C on the large sparse dataset, where
+Go performs an exact check that C omits (deviation M5). Details:
+[docs/benchmarks.md](docs/benchmarks.md#go-vs-c-on-2026-10-30). Validate on your own
 workloads. Releases are tagged on GitHub (the first was v0.1.0); while
 the major version is 0 the API may still change
 ([docs/releasing.md](docs/releasing.md)). An independent audit before
@@ -1174,11 +1175,11 @@ equal to the definition. The argument and the test evidence are in
 [docs/m5-investigation.md](docs/m5-investigation.md). Measured costs
 ([docs/benchmarks.md](docs/benchmarks.md#m5-size-limited-closedmaximal)):
 on dense data with a small `-n` the Go program is faster than C; on
-large sparse data it takes 2.2–3.2× C's wall time. On dense data with
+large sparse data it takes 1.6–2.2× C's wall time. On dense data with
 many maximal sets of exactly the maximum size, the children of a parent
 are checked together over the parent's transactions (issue #19). The
 independent audit's case, `-tm -s2 -n3` on 20,000 transactions of 200
-items, takes Go 19.8 s and 111 MB (before: 97 s), C 39.1 s and 1,259 MB;
+items, takes Go 19.1 s and 114 MB (before: 97 s), C 40.0 s and 1,128 MB;
 C's output is not exact in general. Without a maximum size below the
 longest transaction nothing is checked.
 
@@ -1255,12 +1256,15 @@ plus two upstream crashes that it avoids and five latent defects
   tree and the closed/maximal repository are limited to 2^31-1 nodes or
   items (`ErrTooLarge`).
 - Performance was measured against the C program on one machine only
-  ([docs/benchmarks.md](docs/benchmarks.md)): Go takes about 1.1–2.1× C's
-  wall time on the main configurations. Closed and maximal mining with a
+  ([docs/benchmarks.md](docs/benchmarks.md#go-vs-c-on-2026-10-30)): Go takes
+  about 1.1–1.6× C's wall time on the main configurations. An input whose
+  records exceed the CLIs' 128 MiB budget is read twice (about 2.6× C's
+  instructions); `fpgpsp` takes 0.6–2.8× the instructions of the fixed C
+  program, depending on the method. Closed and maximal mining with a
   maximum size runs an exact check that C omits (M5); it is faster than C
   on dense data with a small size limit (also on the independent audit's
-  case of dense maximal sets of exactly the maximum size: 19.8 s against
-  C's 39.1 s since issue #19), but 2.2–3.2× slower on large sparse data.
+  case of dense maximal sets of exactly the maximum size: 19.1 s against
+  C's 40.0 s), but 1.6–2.2× slower on large sparse data.
 - Numeric limits for very large weights (`docs/differences.md`; the
   former limits N1 of the statistical measures, audit ALG-1, N2 of the
   relative thresholds, audit ALG-2, and N3 of the CLI absolute

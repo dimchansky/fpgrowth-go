@@ -24,8 +24,12 @@ linked documents.
   of the previous audit, every comparable row 9-49 % below v0.1.0,
   outputs identical; over-budget rows -15 to -17 %). Records:
   `docs/reviews/post-v0.1.0/final-audit-*.md`.
-- **Before a release:** the maintainer's sign-off on D7
-  (`docs/decisions.md`) is pending. D8 was approved on 2026-10-28.
+- **Sign-offs:** D7 was approved on 2026-10-30, D8 on 2026-10-28. No
+  condition of the audits is open.
+- **Gap to C (2026-10-30, `docs/benchmarks.md`):** on the 32 main
+  configurations Go takes 1.37× C's wall time with output to `/dev/null`
+  (geometric mean; 1.61× at the end of Stage 3) and 1.8-2.1× its
+  instructions.
 
 | Task | Issue | PR | Merge |
 | --- | --- | --- | --- |
@@ -89,7 +93,7 @@ review records.
 
 ## Next steps
 
-- Maintainer: sign off D7, choose the version, release following
+- Maintainer: choose the version, release following
   `docs/releasing.md`.
 
 ## Open problems
