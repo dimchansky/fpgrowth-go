@@ -12,6 +12,8 @@ The release workflow publishes the section whose heading matches the tag
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 
 - `fpgpsp`, the second program of the upstream sources, as `cmd/fpgpsp`:
@@ -473,5 +475,6 @@ crashes. In summary:
   modules it needs, `tars.c` and `pspest.c`, are not) and
   zlib-compressed output (`-z`, off in upstream's default build).
 
-[Unreleased]: https://github.com/dimchansky/fpgrowth-go/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dimchansky/fpgrowth-go/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dimchansky/fpgrowth-go/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dimchansky/fpgrowth-go/releases/tag/v0.1.0
