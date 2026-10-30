@@ -58,8 +58,8 @@ goroutines, explicit evaluation filtering.
 ## D7. fpgpsp: a separate command with upstream's defects fixed (issue #23)
 
 Proposed on 2026-10-23 for issue #23 and reviewed by two independent
-critics (`docs/reviews/post-v0.1.0/issue-23-*.md`); awaiting the
-maintainer's sign-off.
+critics (`docs/reviews/post-v0.1.0/issue-23-*.md`); approved by the
+maintainer on 2026-10-30.
 
 - **Shape.** A second command, `cmd/fpgpsp`, with upstream's options,
   formats, messages and exit codes; no library API for now (a later
@@ -108,7 +108,8 @@ before the chains were bounded by GOMAXPROCS; afterwards 62-83 MB at
   instructions on the shapes above (`-gr` now 0.61 times C's, the
   others 1.8-2.4 times), `-ge` unchanged, 0.09 MB instead of 3.3 MB
   allocated per surrogate
-  (`docs/reviews/post-v0.1.0/issue-39-design.md`).
+  (`docs/reviews/post-v0.1.0/issue-39-design.md`). The current figures
+  are in `docs/benchmarks.md` ("Go vs C on 2026-10-30").
 - **Floating point.** The estimation follows C compiled with
   `-ffp-contract=off` (explicit rounding of products, `mulAdd`). Because
   `log` and `exp` may differ in the last bit between Go and the

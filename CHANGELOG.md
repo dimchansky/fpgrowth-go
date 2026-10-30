@@ -78,6 +78,17 @@ The release workflow publishes the section whose heading matches the tag
 
 ### Changed
 
+- Performance against the C program, on one machine (Apple M1 Max;
+  `docs/benchmarks.md`, "Go vs C on 2026-10-30"): on the 32 main
+  configurations the CLI takes 1.37 times C's wall time with output to
+  `/dev/null` (geometric mean, range 1.08-1.59), against 1.61 at v0.1.0, and
+  1.8-2.1 times its instructions (2.1-3.9). Size-limited closed/maximal
+  mining on large sparse data takes 1.6-2.2 times C's wall time (2.2-3.2).
+  Shapes that were quadratic now finish far ahead of C (50,000 long and
+  short transactions: 36 ms against 3.4 s). `fpgpsp` takes 0.59 to 2.75
+  times the instructions of the fixed C program, depending on the method.
+  An input over the CLIs' 128 MiB budget is still read twice, about 2.6
+  times C's instructions.
 - `fpgpsp` generates surrogate data sets with fewer instructions and
   almost no allocation per data set. Every surrogate is still counted,
   recoded and mined on its own with the item codes, prefix-tree bag and

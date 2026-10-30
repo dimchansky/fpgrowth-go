@@ -5,7 +5,9 @@
 are the baseline: measured on commit `c16c2f5` (end of Stage 2) plus the
 new benchmark files only, before any optimization (the M5 rows were
 re-measured on `3e5d372`, see there). [After optimization](#after-optimization)
-records every optimization attempt and the state after them. The numbers describe one machine
+records every optimization attempt and the state after them.
+[Go vs C on 2026-10-30](#go-vs-c-on-2026-10-30) is the current gap to C;
+use it instead of the older tables, which are kept as history. The numbers describe one machine
 under the load stated below; they are not general performance claims.
 Re-run the commands in [Reproducing](#reproducing) before comparing a
 later state against this one, on the same machine and toolchain.
@@ -21,6 +23,7 @@ Contents:
 - [Profiles](#profiles)
 - [Optimization candidates](#optimization-candidates)
 - [After optimization](#after-optimization)
+- [Go vs C on 2026-10-30](#go-vs-c-on-2026-10-30)
 - [Reproducing](#reproducing)
 - [Appendix: full results](#appendix-full-results)
 
@@ -951,6 +954,85 @@ Within the budget the second pass is not run, so nothing changes there.
 Over the budget the input is still read and tokenized twice, which is
 most of the remaining gap to C (C reads it once).
 
+## Go vs C on 2026-10-30
+
+The current state: commit `cc028ce` (the code of `a5f548c`), Apple M1 Max,
+go1.27.3, Apple clang 21.0.0, `GOMAXPROCS=2` (the older tables used 10,
+which gives Go's collector more cores), load average 4-8 from other
+sessions, one process at a time. `reference/bench/compare.sh` as in
+[Reproducing](#reproducing): 5 runs after 1 warmup for the 32 main and the
+M5 rows, 3 runs without warmup for the rest. All pattern counts matched.
+
+Across the 32 main configurations (geometric means and ranges computed
+from the medians by an uncommitted script, no significance test):
+
+| Output | Go/C wall, 2026-10-30 | Go/C wall, after Stage 3 | Go/C instructions, 2026-10-30 |
+| --- | ---: | ---: | ---: |
+| none (count) | 1.34 (1.08-1.83) | 1.60 (1.12-2.08) | 1.96 (1.77-2.07) |
+| `/dev/null` | 1.37 (1.08-1.59) | 1.61 (1.14-1.96) | 1.93 (1.77-2.05) |
+| file | 1.36 (1.09-1.61) | 1.60 (1.14-2.03) | 1.92 (1.77-2.05) |
+
+The maximum 1.83 is `sparse-r-lift`, whose Go runs spread from 145 to
+313 ms; its `/dev/null` ratio is 1.46. After Stage 3 the instruction ratio
+was 2.1-3.9. The gain comes from reading (#48): sparse and large inputs
+no longer read twice, while the mining itself changed little, so `dense`
+and `long` moved less than `large`.
+
+| Config | Options | Patterns | C wall ms | Go wall ms | Go/C wall | C / Go max RSS MB | Go/C instructions |
+| --- | --- | ---: | ---: | ---: | ---: | --- | ---: |
+| sparse-s | `-s0.1` | 27,703 | 32.0 | 43.2 | 1.35 | 12 / 21 | 2.05 |
+| sparse-c | `-tc -s0.1` | 26,775 | 34.9 | 46.7 | 1.34 | 13 / 21 | 2.04 |
+| large-s | `-s0.05` | 37,505 | 367.4 | 492.6 | 1.34 | 75 / 108 | 2.02 |
+| large-m | `-tm -s0.05` | 11,838 | 368.2 | 514.1 | 1.40 | 74 / 108 | 2.01 |
+| dense-s | `-s5` | 1,294,276 | 397.0 | 469.1 | 1.18 | 95 / 42 | 1.86 |
+| dense-c | `-tc -s5` | 342,016 | 527.5 | 667.8 | 1.27 | 103 / 44 | 1.88 |
+| dense-m | `-tm -s5` | 48,051 | 464.5 | 570.9 | 1.23 | 102 / 44 | 1.85 |
+| dense-g | `-tg -s10` | 194,385 | 178.4 | 250.1 | 1.40 | 73 / 75 | 1.82 |
+| dense-r | `-tr -s10 -c90 -n4` | 41,425 | 142.5 | 215.5 | 1.51 | 12 / 31 | 1.89 |
+| long-s | `-s2.5` | 34,285 | 762.1 | 826.5 | 1.08 | 326 / 84 | 2.03 |
+| long-c | `-tc -s2.5` | 34,285 | 709.1 | 789.5 | 1.11 | 328 / 84 | 2.05 |
+| weighted-s | `-w -s0.2` | 10,343 | 24.5 | 35.2 | 1.43 | 11 / 21 | 1.92 |
+
+These rows are in count mode. Where Go is behind or ahead most, output to
+`/dev/null`:
+
+| Config | Patterns | C wall ms | Go wall ms | Go/C wall | C / Go max RSS MB | Go/C instructions |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| large-c-n2 / large-c-n3 | 12,769 / 25,337 | 372 / 370 | 593 / 624 | 1.59 / 1.69 | 75 / 108 | 2.44 / 2.71 |
+| large-m-n2 / large-m-n3 | 4,091 / 8,512 | 371 / 362 | 701 / 786 | 1.89 / 2.17 | 75 / 108 | 2.66 / 3.00 |
+| m5-tier-m-n3 | 74,921 | 2,146 | 3,857 | 1.80 | 728 / 211 | 3.57 |
+| m5-split-m-n3 | 1,600 | 1,802 | 1,925 | 1.07 | 133 / 247 | 3.28 |
+| m5-d2000-c-n3 | 10,700 | 1,327 | 52 | 0.04 | 36 / 15 | 0.05 |
+| m5-d20000-m-n3 | 1,313,400 | 40,019 | 19,055 | 0.48 | 1,128 / 114 | 2.27 |
+| lp-50000-c-As | 50,000 | 3,404 | 36 | 0.01 | 17 / 33 | 0.02 |
+| t4-12500-s | 12,501 | 488 | 20 | 0.04 | 8 / 12 | 0.05 |
+| one-12500-s | 12,500 | 174 | 12 | 0.07 | 4 / 12 | 0.05 |
+
+On the size-limited rows C's output is not exact in general (M5), so C
+and Go do not do the same work; the pattern counts of the rows above are
+equal all the same. `lp-c20000-c` is missing: a process of that row went
+over the 4 GB limit of the run and was stopped.
+
+`fpgpsp` against the fixed C oracle (`build.sh fpgpsp-fixed`, 3 interleaved
+runs, output md5 equal on every row). B is the sparse table of
+[#48](#reading-and-preparation-issue-48); T is a new uncommitted table of
+5,000 records over 10 columns of 8 values each (Python `random.Random(1)`),
+of the shape of the table C of #39, whose file is gone:
+
+| Run | C instructions | Go instructions | Go/C instructions | user s (C / Go) | max RSS MB (C / Go) |
+| --- | ---: | ---: | ---: | --- | --- |
+| B `-gr -s-20 -c10 -S1 -Z1` | 5.15G | 3.03G | 0.59 | 0.57 / 0.37 | 13 / 17 |
+| B `-gp -s-20 -c20 -S1 -Z1` | 2.32G | 5.42G | 2.34 | 0.46 / 0.64 | 13 / 25 |
+| B `-gi -s-20 -c10 -S1 -Z1` | 0.18G | 0.40G | 2.19 | 0.02 / 0.03 | 12 / 17 |
+| B `-ge -s-20 -S1` | 0.79G | 0.95G | 1.19 | 0.10 / 0.08 | 3 / 11 |
+| T `-gs -s-100 -c50 -S1 -Z1` | 0.58G | 1.60G | 2.75 | 0.10 / 0.15 | 4 / 14 |
+| T `-gp -s-100 -c50 -S1 -Z1` | 0.97G | 2.47G | 2.54 | 0.16 / 0.27 | 4 / 14 |
+
+Reading alone, from [#48](#reading-and-preparation-issue-48) and
+[#52](#second-pass-over-the-budget-issue-52): 1.53× C's instructions for
+`fpgrowth` and 1.69× for `fpgpsp` within the 128 MiB budget of D8, and
+2.6× above it, where the input is still read twice (v0.1.0: about 4.4×).
+
 ## Reproducing
 
 ```bash
@@ -966,8 +1048,9 @@ benchstat old.txt new.txt          # after a change: same machine, same toolchai
 # Go vs C (about 6 minutes without the slow m5-d20000-* rows, which an
 # unfiltered run includes; needs a C compiler and GNU make)
 (cd reference && bench/compare.sh -n 5 -w 1 -o /tmp/fpgcmp)   # /tmp/fpgcmp/summary.md, raw.tsv
-# (configs.txt has 30 M5 rows more than the 32 measured above: m5-*,
-# large-[cm]-n* (review fix S3-2) and the slow m5-d20000-* (issue #19); '^(sparse|large-[scm]$|dense|long|weighted)'
+# (configs.txt has more rows than the 32 measured above: m5-*, large-[cm]-n*
+# (review fix S3-2), the slow m5-d20000-* (issue #19) and the lp-*, adv* and t4-*
+# shapes; '^(sparse|large-[scm]$|dense-[scmg]$|dense-r|dense-[sc]-A|long|weighted)'
 # selects the original 32)
 # only the size-limited closed/maximal (M5) configurations: the pinned
 # dNxKdP datasets and sparse-large with -n (reference/bench/README.md)
