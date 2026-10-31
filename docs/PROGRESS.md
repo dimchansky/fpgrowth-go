@@ -9,8 +9,10 @@ linked documents.
 - **Roadmap #24: all 19 tasks merged** into `main` with green CI, each
   with independent review (records in `docs/reviews/post-v0.1.0/`). No
   Critical or High finding is open.
-- **Release v0.2.0** authorized by the maintainer on 2026-10-30. The new
-  commands and options (`fpgpsp`, `-z`) make it a minor version.
+- **Released: v0.2.0** (2026-10-31, tag on `8634774`): six archives with
+  both commands; checksums and provenance attestations of the darwin/arm64
+  and linux/amd64 archives, the proxy and `go install` verified. The new
+  commands and options (`fpgpsp`, `-z`) made it a minor version.
 - **Final integration audit:** first run on `e6d02b0` (2026-10-26; its
   regression A1 became #42, its documentation findings were fixed in
   PR #51), repeated on `37d33b3` (2026-10-28): correctness, API and
@@ -92,7 +94,7 @@ review records.
 
 ## Next steps
 
-- Tag v0.2.0 and approve its release (`docs/releasing.md`).
+- None planned. The open problems below are optional.
 
 ## Open problems
 
